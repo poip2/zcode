@@ -38,7 +38,7 @@ async function persist(list: RecentEntry[]) {
   }
 }
 
-function addRecent(path: string) {
+async function addRecent(path: string) {
   const name = path.split(/[/\\]/).pop() ?? path;
   const list = get(recentList);
   const filtered = list.filter((e) => e.path !== path);
@@ -47,7 +47,7 @@ function addRecent(path: string) {
     ...filtered,
   ].slice(0, MAX_RECENTS);
   recentList.set(updated);
-  persist(updated);
+  await persist(updated);
 }
 
 export const recents = {

@@ -52,6 +52,8 @@
         const w = window.innerWidth;
         if (w < SMALL_WINDOW_THRESHOLD && sidebarVisible && !userCollapsed) {
           sidebarVisible = false;
+        } else if (w >= SMALL_WINDOW_THRESHOLD && !sidebarVisible && !userCollapsed) {
+          sidebarVisible = true;
         }
       }, 100);
     }

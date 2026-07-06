@@ -93,13 +93,13 @@
     try {
       if (newItemMode === "file") {
         const createdPath = await createMarkdownFile(dir, name);
-        cancelNew();
         await refreshTree();
         await loadFile(createdPath);
+        cancelNew();
       } else {
         await createFolder(dir, name);
-        cancelNew();
         await refreshTree();
+        cancelNew();
       }
     } catch (err) {
       newItemError = String(err);

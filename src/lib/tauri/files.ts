@@ -57,7 +57,7 @@ export async function loadFile(path: string): Promise<void> {
     });
 
     getCurrentWindow().setTitle(`${fileName} — zcode`).catch(() => {});
-    recents.addRecent(absolutePath);
+    await recents.addRecent(absolutePath);
   } catch (err) {
     document.set({
       filePath: absolutePath,

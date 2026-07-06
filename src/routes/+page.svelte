@@ -40,7 +40,8 @@
     };
 
     window.addEventListener("keydown", handleKeydown);
-    window.addEventListener("dragover", (e) => e.preventDefault());
+    function handleDragOver(e: DragEvent) { e.preventDefault(); }
+    window.addEventListener("dragover", handleDragOver);
     window.addEventListener("drop", handleDrop);
 
     // Window resize listener for auto-collapse
@@ -58,7 +59,7 @@
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
-      window.removeEventListener("dragover", (e) => e.preventDefault());
+      window.removeEventListener("dragover", handleDragOver);
       window.removeEventListener("drop", handleDrop);
       window.removeEventListener("resize", handleResize);
     };

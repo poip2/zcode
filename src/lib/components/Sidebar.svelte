@@ -403,7 +403,7 @@
           </button>
         {/if}
       {/each}
-    {:else if ft.rootPath && !ft.tree}
+    {:else if ft.rootPath && ft.tree}
       <div class="tree-empty">Empty folder</div>
     {:else if !ft.rootPath}
       <div class="tree-empty hint">Open a folder to browse files</div>

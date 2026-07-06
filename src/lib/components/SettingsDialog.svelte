@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { folderTree } from "$lib/stores/folderTree";
   import { openFolderDialog, listDirTree } from "$lib/tauri/files";
@@ -15,11 +15,17 @@
   let pinnedPath = $state<string | null>(null);
   let dialogEl: HTMLDialogElement | undefined = $state();
 
+  let unsubPinned: () => void;
+
   onMount(() => {
-    pinnedFolder.subscribe((p) => {
+    unsubPinned = pinnedFolder.subscribe((p) => {
       pinnedPath = p;
     });
     pinnedFolder.load();
+  });
+
+  onDestroy(() => {
+    unsubPinned?.();
   });
 
   // Sync dialog open/close with prop

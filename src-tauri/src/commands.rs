@@ -104,7 +104,6 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
                         | "vendor"
                         | "zig-cache"
                         | "zig-out"
-                        | ".svelte-kit"
                 ) {
                     continue;
                 }

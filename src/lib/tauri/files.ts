@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { document } from "../stores/document";
-import { folderTree, type DirNode } from "../stores/folderTree";
+import { type DirNode } from "../stores/folderTree";
 import { recents } from "../stores/recents";
 import { renderFull } from "../renderer/pipeline";
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { document as docStore } from "$lib/stores/document";
   import { initRenderer, renderFull } from "$lib/renderer/pipeline";
   import {
@@ -9,9 +9,14 @@
     getBaseDir,
     allowAssets,
   } from "$lib/tauri/files";
+  import { recents } from "$lib/stores/recents";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import TitleBar from "$lib/components/TitleBar.svelte";
+  import Sidebar from "$lib/components/Sidebar.svelte";
+  import SettingsDialog from "$lib/components/SettingsDialog.svelte";
+
+  const SMALL_WINDOW_THRESHOLD = 640;
 
   let rendererReady = $state(false);
   let isEditing = $state(false);
@@ -19,26 +24,60 @@
   let dirty = $state(false);
   let statusMessage = $state("");
 
+  // Sidebar state
+  let sidebarVisible = $state(true);
+  let userCollapsed = $state(false);
+  let settingsOpen = $state(false);
+
   onMount(() => {
     initRenderer();
     rendererReady = true;
+    recents.load();
 
-    // Expose functions for native menu (Cmd+O from OS open events)
     (window as any).__zcode_open = () => handleOpenDialog();
     (window as any).__zcode_open_path = (path: string) => {
       if (path && rendererReady) loadFile(path);
     };
 
     window.addEventListener("keydown", handleKeydown);
-    window.addEventListener("dragover", (e) => e.preventDefault());
+    function handleDragOver(e: DragEvent) { e.preventDefault(); }
+    window.addEventListener("dragover", handleDragOver);
     window.addEventListener("drop", handleDrop);
+
+    // Window resize listener for auto-collapse
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    function handleResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const w = window.innerWidth;
+        if (w < SMALL_WINDOW_THRESHOLD && sidebarVisible && !userCollapsed) {
+          sidebarVisible = false;
+        } else if (w >= SMALL_WINDOW_THRESHOLD && !sidebarVisible && !userCollapsed) {
+          sidebarVisible = true;
+        }
+      }, 100);
+    }
+    window.addEventListener("resize", handleResize);
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
-      window.removeEventListener("dragover", (e) => e.preventDefault());
+      window.removeEventListener("dragover", handleDragOver);
       window.removeEventListener("drop", handleDrop);
+      window.removeEventListener("resize", handleResize);
     };
   });
+
+  function toggleSidebar() {
+    if (sidebarVisible) {
+      // User is manually hiding
+      sidebarVisible = false;
+      userCollapsed = true;
+    } else {
+      // User is manually showing
+      sidebarVisible = true;
+      userCollapsed = false;
+    }
+  }
 
   async function handleOpenDialog() {
     const path = await openFileDialog();
@@ -49,7 +88,6 @@
     e.preventDefault();
     const file = e.dataTransfer?.files?.[0];
     if (file) {
-      // On Tauri desktop, the file path may be available via the webkitRelativePath or path property
       const path = (file as any).path;
       if (path) await loadFile(path);
     }
@@ -60,12 +98,10 @@
     if (!doc.filePath) return;
 
     if (isEditing) {
-      // Exiting edit mode — re-render from editContent to update preview
       if (dirty) {
         const baseDir = getBaseDir(doc.filePath);
         const result = renderFull(editContent, baseDir);
         allowAssets(result.assetPaths);
-
         docStore.set({
           ...doc,
           renderedHtml: result.html,
@@ -121,22 +157,25 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    // Cmd+O: Open file
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "o") {
       e.preventDefault();
       handleOpenDialog();
       return;
     }
-    // Cmd+S: Save
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "s") {
       e.preventDefault();
       if (dirty) handleSave();
       return;
     }
-    // Cmd+E: Toggle edit/preview
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "e") {
       e.preventDefault();
       if ($docStore.filePath) toggleEdit();
+      return;
+    }
+    // Cmd+B: toggle sidebar
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "b") {
+      e.preventDefault();
+      toggleSidebar();
       return;
     }
   }
@@ -150,79 +189,108 @@
 </script>
 
 <div class="app-root">
-  {#if !rendererReady}
-    <div class="state-center">
-      <p class="state-text">Loading...</p>
-    </div>
-  {:else if doc.loading}
-    <div class="state-center">
-      <p class="state-text">Opening file...</p>
-    </div>
-  {:else if doc.error}
-    <div class="state-center">
-      <div class="error-box">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <p class="error-msg">{doc.error}</p>
-        <button class="retry-btn" onclick={handleOpenDialog}>Open a file</button>
-      </div>
-    </div>
-  {:else if doc.renderedHtml && isEditing}
-    <Editor value={editContent} onChange={handleEditChange} />
-  {:else if doc.renderedHtml}
-    <div class="content-main">
-      <MarkdownRenderer html={doc.renderedHtml} />
-    </div>
-  {:else}
-    <div class="state-center">
-      <div class="empty-state">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        <h2>Open a Markdown file</h2>
-        <p class="hint">Press <kbd>⌘O</kbd> or drag a .md file here</p>
-        <button class="open-btn" onclick={handleOpenDialog}>Open File...</button>
-      </div>
-    </div>
-  {/if}
+  <TitleBar {sidebarVisible} onToggleSidebar={toggleSidebar} onOpenSettings={() => (settingsOpen = true)} />
 
-  <!-- Bottom status bar -->
-  {#if doc.filePath || dirty || statusMessage}
-    <div class="status-bar">
-      {#if statusMessage}
-        <span class="status-msg">{statusMessage}</span>
+  <div class="app-body">
+    {#if sidebarVisible}
+      <Sidebar />
+    {/if}
+
+    <main class="main-pane">
+      {#if !rendererReady}
+        <div class="state-center">
+          <p class="state-text">Loading…</p>
+        </div>
+      {:else if doc.loading}
+        <div class="state-center">
+          <p class="state-text">Opening file…</p>
+        </div>
+      {:else if doc.error}
+        <div class="state-center">
+          <div class="error-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p class="error-msg">{doc.error}</p>
+            <button class="retry-btn" onclick={handleOpenDialog}>Open a file</button>
+          </div>
+        </div>
+      {:else if doc.renderedHtml && isEditing}
+        <Editor value={editContent} onChange={handleEditChange} />
+      {:else if doc.renderedHtml}
+        <div class="content-main">
+          <MarkdownRenderer html={doc.renderedHtml} />
+        </div>
       {:else}
-        <span class="status-file">{doc.fileName ?? ""}</span>
-        {#if dirty}
-          <span class="status-dirty">(unsaved)</span>
-        {/if}
-        {#if isEditing}
-          <span class="status-mode">— Editing</span>
-        {:else}
-          <span class="status-mode">— Preview</span>
-        {/if}
+        <div class="state-center">
+          <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            <h2>Open a Markdown file</h2>
+            <p class="hint">Press <kbd>⌘O</kbd> or drag a .md file here</p>
+            <button class="open-btn" onclick={handleOpenDialog}>Open File…</button>
+          </div>
+        </div>
       {/if}
-      <span class="status-hints">⌘O Open &nbsp; ⌘E Edit &nbsp; ⌘S Save</span>
-    </div>
-  {/if}
+
+      <!-- Status bar -->
+      {#if doc.filePath || dirty || statusMessage}
+        <div class="status-bar">
+          {#if statusMessage}
+            <span class="status-msg">{statusMessage}</span>
+          {:else}
+            <span class="status-file">{doc.fileName ?? ""}</span>
+            {#if dirty}
+              <span class="status-dirty">(unsaved)</span>
+            {/if}
+            {#if isEditing}
+              <span class="status-mode">— Editing</span>
+            {:else}
+              <span class="status-mode">— Preview</span>
+            {/if}
+          {/if}
+          <span class="status-hints">⌘O Open &nbsp; ⌘E Edit &nbsp; ⌘S Save &nbsp; ⌘B Sidebar</span>
+        </div>
+      {/if}
+    </main>
+  </div>
+
+  <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
 </div>
 
 <style>
   .app-root {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
-    background: #fafafa;
-    color: #1c1c1e;
+    height: 100vh;
+    background: var(--zc-bg-page, #FAF9F6);
+    color: var(--zc-text-primary, #1F1E1C);
+    overflow: hidden;
+  }
+
+  .app-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .main-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--zc-bg-chrome, #F4F2ED);
+    overflow-y: auto;
   }
 
   .state-center {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 80vh;
+    min-height: 60vh;
+    flex: 1;
   }
 
   .state-text {
     font-size: 14px;
-    color: #aeaeb2;
+    color: var(--zc-text-tertiary, #A8A49D);
   }
 
   .error-box {
@@ -236,7 +304,7 @@
 
   .error-msg {
     font-size: 13px;
-    color: #8e8e93;
+    color: var(--zc-text-secondary, #8A8782);
     line-height: 1.5;
   }
 
@@ -247,7 +315,7 @@
     border: 1px solid #e5e5ea;
     border-radius: 6px;
     cursor: pointer;
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   .retry-btn:hover {
@@ -264,12 +332,12 @@
   .empty-state h2 {
     font-size: 18px;
     font-weight: 600;
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   .hint {
     font-size: 13px;
-    color: #8e8e93;
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   .hint kbd {
@@ -287,7 +355,7 @@
     padding: 8px 20px;
     font-size: 14px;
     font-weight: 500;
-    background: #0891B2;
+    background: var(--zc-text-primary, #1F1E1C);
     color: white;
     border: none;
     border-radius: 8px;
@@ -295,7 +363,7 @@
   }
 
   .open-btn:hover {
-    background: #0E7490;
+    opacity: 0.9;
   }
 
   .content-main {
@@ -304,25 +372,22 @@
   }
 
   .status-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
     height: 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 12px;
     font-size: 11px;
-    background: #f2f2f7;
-    border-top: 1px solid #e5e5ea;
-    color: #8e8e93;
+    background: var(--zc-bg-chrome, #F4F2ED);
+    border-top: 1px solid var(--zc-border, #E7E4DD);
+    color: var(--zc-text-secondary, #8A8782);
     font-family: -apple-system, sans-serif;
+    flex-shrink: 0;
   }
 
   .status-file {
     font-weight: 500;
-    color: #636366;
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   .status-dirty {
@@ -331,16 +396,16 @@
   }
 
   .status-mode {
-    color: #8e8e93;
+    color: var(--zc-text-secondary, #8A8782);
     margin-left: 4px;
   }
 
   .status-msg {
-    color: #0891B2;
+    color: var(--zc-text-secondary, #8A8782);
     font-weight: 500;
   }
 
   .status-hints {
-    color: #aeaeb2;
+    color: var(--zc-text-tertiary, #A8A49D);
   }
 </style>

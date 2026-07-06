@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { document } from "../stores/document";
+import { type DirNode } from "../stores/folderTree";
+import { recents } from "../stores/recents";
 import { renderFull } from "../renderer/pipeline";
 
 export async function readMarkdownFile(path: string): Promise<string> {
@@ -55,6 +57,7 @@ export async function loadFile(path: string): Promise<void> {
     });
 
     getCurrentWindow().setTitle(`${fileName} — zcode`).catch(() => {});
+    await recents.addRecent(absolutePath);
   } catch (err) {
     document.set({
       filePath: absolutePath,
@@ -94,3 +97,38 @@ export async function allowAssets(paths: string[]): Promise<void> {
   if (paths.length === 0) return;
   await invoke("allow_assets", { paths }).catch(() => {});
 }
+
+// ---- Folder tree commands ----
+
+export async function listDirTree(rootPath: string): Promise<DirNode> {
+  return invoke<DirNode>("read_dir_tree", { root: rootPath });
+}
+
+export async function createMarkdownFile(dir: string, name: string): Promise<string> {
+  return invoke<string>("create_markdown_file", { dir, name });
+}
+
+export async function createFolder(dir: string, name: string): Promise<string> {
+  return invoke<string>("create_folder", { dir, name });
+}
+
+export async function pathExists(path: string): Promise<boolean> {
+  return invoke<boolean>("path_exists", { path });
+}
+
+export async function openFolderDialog(): Promise<string | null> {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+    });
+    if (selected) {
+      const path = typeof selected === "string" ? selected : (selected as any)?.path ?? String(selected);
+      return path;
+    }
+  } catch (err) {
+    console.error("Folder dialog error:", err);
+  }
+  return null;
+}
+

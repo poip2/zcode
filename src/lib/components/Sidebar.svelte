@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let autoLoadDone = false;
+</script>
+
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
@@ -39,20 +43,22 @@
   onMount(async () => {
     recents.load();
     await pinnedFolder.load();
-    // Auto-load pinned folder on startup
-    const p = $pinnedFolder;
-    if (p) {
-      const exists = await pathExists(p).catch(() => false);
-      if (exists) {
-        const current = get(folderTree);
-        if (current.rootPath === p && current.tree !== null) return;
-        folderTree.setRoot(p);
-        folderTree.setLoading(true);
-        try {
-          const tree = await listDirTree(p);
-          folderTree.setTree(tree);
-        } catch (err) {
-          folderTree.setError(`Failed to read pinned folder: ${err}`);
+    if (!autoLoadDone) {
+      autoLoadDone = true;
+      const p = $pinnedFolder;
+      if (p) {
+        const exists = await pathExists(p).catch(() => false);
+        if (exists) {
+          const current = get(folderTree);
+          if (current.rootPath === p && current.tree !== null) return;
+          folderTree.setRoot(p);
+          folderTree.setLoading(true);
+          try {
+            const tree = await listDirTree(p);
+            folderTree.setTree(tree);
+          } catch (err) {
+            folderTree.setError(`Failed to read pinned folder: ${err}`);
+          }
         }
       }
     }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { document as docStore } from "$lib/stores/document";
   import { folderTree, type DirNode } from "$lib/stores/folderTree";
   import { recents } from "$lib/stores/recents";
@@ -16,6 +17,7 @@
   // New file/folder inline editing
   let newItemMode = $state<null | "file" | "folder">(null);
   let newItemName = $state("");
+  let newItemError = $state("");
   let newItemInput: HTMLInputElement | undefined = $state();
 
   let recentExpanded = $state(true);
@@ -42,6 +44,8 @@
     if (p) {
       const exists = await pathExists(p).catch(() => false);
       if (exists) {
+        const current = get(folderTree);
+        if (current.rootPath === p && current.tree !== null) return;
         folderTree.setRoot(p);
         folderTree.setLoading(true);
         try {
@@ -57,6 +61,7 @@
   function startNew(mode: "file" | "folder") {
     newItemMode = mode;
     newItemName = "";
+    newItemError = "";
     // Focus after DOM update
     requestAnimationFrame(() => {
       newItemInput?.focus();
@@ -66,6 +71,7 @@
   function cancelNew() {
     newItemMode = null;
     newItemName = "";
+    newItemError = "";
   }
 
   async function confirmNew() {
@@ -90,8 +96,7 @@
         await refreshTree();
       }
     } catch (err) {
-      // TODO: show error toast
-      console.error("Create failed:", err);
+      newItemError = String(err);
     }
   }
 
@@ -238,6 +243,9 @@
         </svg>
       </button>
     </div>
+    {#if newItemError}
+      <div class="new-item-error">{newItemError}</div>
+    {/if}
   {/if}
 
   <!-- File tree -->
@@ -461,7 +469,6 @@
     min-width: 200px;
     height: 100%;
     background: var(--zc-bg-card, #FDFDFB);
-    border-right: 1px solid var(--zc-border, #E7E4DD);
     margin: 10px 0 10px 10px;
     border-radius: 12px;
     border: 1px solid var(--zc-border-soft, #ECE9E2);
@@ -553,6 +560,14 @@
 
   .new-item-input::placeholder {
     color: var(--zc-text-tertiary, #A8A49D);
+  }
+
+  .new-item-error {
+    font-size: 11px;
+    color: var(--zc-danger, #C44);
+    padding: 2px 8px 2px 14px;
+    display: block;
+    width: 100%;
   }
 
   /* Tree scroll area */

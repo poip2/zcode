@@ -1,5 +1,5 @@
 import { writable, get } from "svelte/store";
-import { Store } from "@tauri-apps/plugin-store";
+import { getStore } from "./sharedStore";
 
 export interface RecentEntry {
   path: string;
@@ -9,15 +9,6 @@ export interface RecentEntry {
 
 const STORE_KEY = "recents";
 const MAX_RECENTS = 20;
-
-let storePromise: Promise<Store> | null = null;
-
-function getStore(): Promise<Store> {
-  if (!storePromise) {
-    storePromise = Store.load("zcode-recents.json");
-  }
-  return storePromise;
-}
 
 const recentList = writable<RecentEntry[]>([]);
 

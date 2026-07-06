@@ -15,7 +15,6 @@
   import TitleBar from "$lib/components/TitleBar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import SettingsDialog from "$lib/components/SettingsDialog.svelte";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
 
   const SMALL_WINDOW_THRESHOLD = 640;
 

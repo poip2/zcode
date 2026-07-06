@@ -1,16 +1,7 @@
 import { writable } from "svelte/store";
-import { Store } from "@tauri-apps/plugin-store";
+import { getStore } from "./sharedStore";
 
 const STORE_KEY = "pinnedFolder";
-
-let storePromise: Promise<Store> | null = null;
-
-function getStore(): Promise<Store> {
-  if (!storePromise) {
-    storePromise = Store.load("zcode-recents.json");
-  }
-  return storePromise;
-}
 
 const pinnedPath = writable<string | null>(null);
 

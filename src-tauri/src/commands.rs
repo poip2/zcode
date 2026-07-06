@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 const MAX_TREE_DEPTH: u32 = 3;
@@ -111,7 +111,7 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
 
             if let Some(subnode) = build_dir_node(&path, depth + 1) {
                 // Only include directory if it has children
-                if subnode.children.as_ref().map_or(false, |c| !c.is_empty()) {
+                if subnode.children.as_ref().is_some_and(|c| !c.is_empty()) {
                     children.push(subnode);
                 }
             }
@@ -145,7 +145,11 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
     // Sort: directories first (alphabetically), then files (alphabetically)
     children.sort_by(|a, b| {
         if a.is_dir != b.is_dir {
-            if a.is_dir { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
+            if a.is_dir {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
         } else {
             a.name.to_lowercase().cmp(&b.name.to_lowercase())
         }
@@ -160,7 +164,11 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let children = if children.is_empty() { None } else { Some(children) };
+    let children = if children.is_empty() {
+        None
+    } else {
+        Some(children)
+    };
 
     Some(DirNode {
         name,
@@ -178,14 +186,19 @@ pub fn create_markdown_file(dir: String, name: String) -> Result<String, String>
         return Err(format!("Not a directory: {}", dir));
     }
 
-    let filename = if name.ends_with(".md") || name.ends_with(".markdown") || name.ends_with(".mdown") || name.ends_with(".mkd") {
+    let filename = if name.ends_with(".md")
+        || name.ends_with(".markdown")
+        || name.ends_with(".mdown")
+        || name.ends_with(".mkd")
+    {
         name
     } else {
         format!("{}.md", name)
     };
 
     validate_simple_name(&filename)?;
-    let canonical_dir = dir_path.canonicalize()
+    let canonical_dir = dir_path
+        .canonicalize()
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
     let file_path = canonical_dir.join(&filename);
 
@@ -198,7 +211,7 @@ pub fn create_markdown_file(dir: String, name: String) -> Result<String, String>
     file_path
         .to_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| format!("Path is not valid UTF-8"))
+        .ok_or_else(|| "Path is not valid UTF-8".to_string())
 }
 
 #[tauri::command]
@@ -209,7 +222,8 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
     }
 
     validate_simple_name(&name)?;
-    let canonical_dir = dir_path.canonicalize()
+    let canonical_dir = dir_path
+        .canonicalize()
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
     let folder_path = canonical_dir.join(&name);
 
@@ -222,7 +236,7 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
     folder_path
         .to_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| format!("Path is not valid UTF-8"))
+        .ok_or_else(|| "Path is not valid UTF-8".to_string())
 }
 
 fn validate_simple_name(name: &str) -> Result<(), String> {
@@ -230,8 +244,10 @@ fn validate_simple_name(name: &str) -> Result<(), String> {
         return Err("Name cannot be empty".to_string());
     }
     let p = Path::new(name);
-    if p.file_name().map_or(true, |f| f != p.as_os_str()) {
-        return Err("Name must be a simple file or folder name without directory components".to_string());
+    if p.file_name() != Some(p.as_os_str()) {
+        return Err(
+            "Name must be a simple file or folder name without directory components".to_string(),
+        );
     }
     if name == "." || name == ".." {
         return Err("Invalid name".to_string());

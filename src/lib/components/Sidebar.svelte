@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { document as docStore } from "$lib/stores/document";
   import { folderTree, type DirNode } from "$lib/stores/folderTree";
   import { recents } from "$lib/stores/recents";
@@ -26,8 +26,12 @@
   let pinnedPath = $derived($pinnedFolder);
 
   let recentList = $state<{ path: string; name: string; openedAt: number }[]>([]);
-  recents.subscribe((list) => {
+  const unsubRecents = recents.subscribe((list) => {
     recentList = list;
+  });
+
+  onDestroy(() => {
+    unsubRecents();
   });
 
   onMount(async () => {
@@ -228,7 +232,7 @@
         onkeydown={handleNewKeydown}
         onblur={cancelNew}
       />
-      <button class="sb-icon-btn confirm-btn" onclick={confirmNew} title="Confirm" data-tauri-drag-region="false">
+      <button class="sb-icon-btn confirm-btn" onmousedown={confirmNew} title="Confirm" data-tauri-drag-region="false">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <polyline points="4,8 7,12 13,4"/>
         </svg>

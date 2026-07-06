@@ -132,16 +132,3 @@ export async function openFolderDialog(): Promise<string | null> {
   return null;
 }
 
-export async function refreshFolderTree() {
-  const ft = folderTree;
-  let root: string | null = null;
-  ft.subscribe((s) => { root = s.rootPath; })();
-  if (!root) return;
-  ft.setLoading(true);
-  try {
-    const tree = await listDirTree(root);
-    ft.setTree(tree);
-  } catch (err) {
-    ft.setError(`Failed to read folder: ${err}`);
-  }
-}

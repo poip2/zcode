@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-const MAX_TREE_DEPTH: u32 = 6;
+const MAX_TREE_DEPTH: u32 = 3;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DirNode {
@@ -100,7 +100,6 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
                         | "target"
                         | "dist"
                         | "build"
-                        | ".git"
                         | "__pycache__"
                         | "vendor"
                         | "zig-cache"
@@ -186,7 +185,10 @@ pub fn create_markdown_file(dir: String, name: String) -> Result<String, String>
         format!("{}.md", name)
     };
 
-    let file_path = dir_path.join(&filename);
+    validate_simple_name(&filename)?;
+    let canonical_dir = dir_path.canonicalize()
+        .map_err(|e| format!("Failed to resolve directory: {}", e))?;
+    let file_path = canonical_dir.join(&filename);
 
     if file_path.exists() {
         return Err(format!("File already exists: {}", file_path.display()));
@@ -207,7 +209,10 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
         return Err(format!("Not a directory: {}", dir));
     }
 
-    let folder_path = dir_path.join(&name);
+    validate_simple_name(&name)?;
+    let canonical_dir = dir_path.canonicalize()
+        .map_err(|e| format!("Failed to resolve directory: {}", e))?;
+    let folder_path = canonical_dir.join(&name);
 
     if folder_path.exists() {
         return Err(format!("Folder already exists: {}", folder_path.display()));
@@ -219,6 +224,20 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
         .to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| format!("Path is not valid UTF-8"))
+}
+
+fn validate_simple_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Name cannot be empty".to_string());
+    }
+    let p = Path::new(name);
+    if p.file_name().map_or(true, |f| f != p.as_os_str()) {
+        return Err("Name must be a simple file or folder name without directory components".to_string());
+    }
+    if name == "." || name == ".." {
+        return Err("Invalid name".to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]

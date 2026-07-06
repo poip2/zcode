@@ -46,21 +46,22 @@
 
     // Window resize listener for auto-collapse
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-    window.addEventListener("resize", () => {
+    function handleResize() {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         const w = window.innerWidth;
         if (w < SMALL_WINDOW_THRESHOLD && sidebarVisible && !userCollapsed) {
-          // Small window — auto collapse
           sidebarVisible = false;
         }
       }, 100);
-    });
+    }
+    window.addEventListener("resize", handleResize);
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
       window.removeEventListener("dragover", (e) => e.preventDefault());
       window.removeEventListener("drop", handleDrop);
+      window.removeEventListener("resize", handleResize);
     };
   });
 

@@ -46,7 +46,7 @@
 
 <style>
   .md-content {
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   article :global(h1) {
@@ -54,20 +54,20 @@
     font-weight: 700;
     letter-spacing: -0.02em;
     margin-top: 1.5em;
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   article :global(h2) {
     font-size: 1.4em;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   article :global(h3) {
     font-size: 1.15em;
     font-weight: 600;
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   article :global(pre) {
@@ -75,7 +75,7 @@
     padding: 1em 1.2em;
     overflow-x: auto;
     font-size: 0.8em;
-    border: 1px solid #e5e5ea;
+    border: 1px solid var(--zc-border, #E7E4DD);
     background: #f6f8fa !important;
     color: #24292f !important;
   }
@@ -89,7 +89,7 @@
     padding: 0.15em 0.4em;
     border-radius: 5px;
     font-size: 0.85em;
-    color: #0E7490;
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   article :global(:not(pre) > code)::before,
@@ -107,7 +107,7 @@
 
   article :global(th),
   article :global(td) {
-    border: 1px solid #e5e5ea;
+    border: 1px solid var(--zc-border, #E7E4DD);
     padding: 0.5em 0.75em;
     text-align: left;
   }
@@ -116,14 +116,14 @@
     background: #f2f2f7;
     font-weight: 600;
     font-size: 0.9em;
-    color: #636366;
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   article :global(blockquote) {
-    border-left: 3px solid #0891B2;
+    border-left: 3px solid var(--zc-text-secondary, #8A8782);
     padding-left: 1em;
     margin-left: 0;
-    color: #636366;
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   article :global(img) {
@@ -134,7 +134,7 @@
 
   article :global(hr) {
     border: none;
-    border-top: 1px solid #e5e5ea;
+    border-top: 1px solid var(--zc-border, #E7E4DD);
     margin: 2em 0;
   }
 
@@ -145,11 +145,11 @@
 
   article :global(.task-list-item input[type="checkbox"]) {
     margin-right: 0.5em;
-    accent-color: #0891B2;
+    accent-color: var(--zc-text-secondary, #8A8782);
   }
 
   article :global(a) {
-    color: #0891B2;
+    color: var(--zc-text-secondary, #8A8782);
     text-decoration: none;
   }
 

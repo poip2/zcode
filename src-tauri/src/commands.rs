@@ -1,6 +1,20 @@
 use std::fs;
 use std::path::Path;
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
+
+const MAX_TREE_DEPTH: u32 = 6;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DirNode {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub children: Option<Vec<DirNode>>,
+}
 
 #[tauri::command]
 pub fn read_markdown_file(path: String) -> Result<String, String> {
@@ -39,6 +53,172 @@ pub fn resolve_path(path: String) -> Result<String, String> {
         .to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| format!("Path is not valid UTF-8: {}", path))
+}
+
+#[tauri::command]
+pub fn path_exists(path: String) -> bool {
+    Path::new(&path).exists()
+}
+
+#[tauri::command]
+pub fn read_dir_tree(root: String) -> Result<DirNode, String> {
+    let root_path = Path::new(&root);
+    if !root_path.exists() {
+        return Err(format!("Directory not found: {}", root));
+    }
+    if !root_path.is_dir() {
+        return Err(format!("Not a directory: {}", root));
+    }
+    build_dir_node(root_path, 0).ok_or_else(|| format!("Failed to read directory: {}", root))
+}
+
+fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
+    if depth > MAX_TREE_DEPTH {
+        return None;
+    }
+
+    let entries = fs::read_dir(dir).ok()?;
+    let mut children: Vec<DirNode> = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        // Skip hidden files/directories
+        if let Some(name) = path.file_name() {
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+        }
+
+        if path.is_dir() {
+            // Skip common non-content directories
+            if let Some(name) = path.file_name() {
+                let n = name.to_string_lossy();
+                if matches!(
+                    n.as_ref(),
+                    "node_modules"
+                        | "target"
+                        | "dist"
+                        | "build"
+                        | ".git"
+                        | "__pycache__"
+                        | "vendor"
+                        | "zig-cache"
+                        | "zig-out"
+                        | ".svelte-kit"
+                ) {
+                    continue;
+                }
+            }
+
+            if let Some(subnode) = build_dir_node(&path, depth + 1) {
+                // Only include directory if it has children
+                if subnode.children.as_ref().map_or(false, |c| !c.is_empty()) {
+                    children.push(subnode);
+                }
+            }
+        } else if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd" {
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+
+                    let modified = entry
+                        .metadata()
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64);
+
+                    children.push(DirNode {
+                        name,
+                        path: path.to_string_lossy().to_string(),
+                        is_dir: false,
+                        modified,
+                        children: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort: directories first (alphabetically), then files (alphabetically)
+    children.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            if a.is_dir { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
+        } else {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        }
+    });
+
+    if children.is_empty() && depth > 0 {
+        return None;
+    }
+
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let children = if children.is_empty() { None } else { Some(children) };
+
+    Some(DirNode {
+        name,
+        path: dir.to_string_lossy().to_string(),
+        is_dir: true,
+        modified: None,
+        children,
+    })
+}
+
+#[tauri::command]
+pub fn create_markdown_file(dir: String, name: String) -> Result<String, String> {
+    let dir_path = Path::new(&dir);
+    if !dir_path.is_dir() {
+        return Err(format!("Not a directory: {}", dir));
+    }
+
+    let filename = if name.ends_with(".md") || name.ends_with(".markdown") || name.ends_with(".mdown") || name.ends_with(".mkd") {
+        name
+    } else {
+        format!("{}.md", name)
+    };
+
+    let file_path = dir_path.join(&filename);
+
+    if file_path.exists() {
+        return Err(format!("File already exists: {}", file_path.display()));
+    }
+
+    fs::write(&file_path, "").map_err(|e| format!("Failed to create file: {}", e))?;
+
+    file_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("Path is not valid UTF-8"))
+}
+
+#[tauri::command]
+pub fn create_folder(dir: String, name: String) -> Result<String, String> {
+    let dir_path = Path::new(&dir);
+    if !dir_path.is_dir() {
+        return Err(format!("Not a directory: {}", dir));
+    }
+
+    let folder_path = dir_path.join(&name);
+
+    if folder_path.exists() {
+        return Err(format!("Folder already exists: {}", folder_path.display()));
+    }
+
+    fs::create_dir(&folder_path).map_err(|e| format!("Failed to create folder: {}", e))?;
+
+    folder_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("Path is not valid UTF-8"))
 }
 
 #[tauri::command]

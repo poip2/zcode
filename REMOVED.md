@@ -16,9 +16,9 @@
 | `src/lib/components/SearchOverlay.svelte` | 全文搜索覆盖层（/ 键触发） | 不需要 |
 | `src/lib/components/DropZone.svelte` | 拖放文件区域覆盖层 | 合并到 `+page.svelte` 的 drop handler |
 | `src/lib/components/EmptyState.svelte` | 空状态引导页 | 合并到 `+page.svelte` |
-| `src/lib/components/OpenDialog.svelte` | 最近文件/文件夹浏览对话框 | 不需要，直接用系统文件对话框 |
+| `src/lib/components/OpenDialog.svelte` | 最近文件/文件夹浏览对话框 | 不需要，其数据结构和交互思路被 Sidebar 吸收（常驻面板替代弹窗） |
 | `src/lib/components/PasteModal.svelte` | 粘贴 Markdown / URL 导入弹窗 | 不需要 |
-| `src/lib/components/SettingsDialog.svelte` | 设置面板（字体/字号/行高/主题/AI配置等） | 不需要，使用硬编码默认值 |
+| `src/lib/components/SettingsDialog.svelte` | 设置面板（字体/字号/行高/主题/AI配置等） | ~~不需要~~ → v0.2 重新实现（精简版：仅 pin folder 设置） |
 | `src/lib/components/AboutDialog.svelte` | 关于对话框 | 不需要 |
 | `src/lib/components/CustomPromptModal.svelte` | AI 自定义提示词弹窗 | 不需要 AI 功能 |
 | `src/lib/components/AILookupSettings.svelte` | AI 服务配置界面 | 不需要 AI 功能 |
@@ -40,7 +40,7 @@
 | `src/lib/stores/settings.ts` | 用户设置（字体/字号/行高/主题/内容宽度等） | 硬编码默认值 |
 | `src/lib/stores/theme.ts` | 主题切换（亮色/暗色/跟随系统） | 不需要主题切换 |
 | `src/lib/stores/toc.ts` | 目录条目和激活标题追踪 | 不需要 TOC |
-| `src/lib/stores/recents.ts` | 最近打开文件列表 | 不需要 |
+| `src/lib/stores/recents.ts` | 最近打开文件列表 | ~~不需要~~ → v0.2 重新实现（侧边栏 Recent 分组需要） |
 | `src/lib/stores/pinned.ts` | 固定/收藏文件 | 不需要 |
 | `src/lib/stores/aiLookup.ts` | AI 查词配置（Claude/ChatGPT/Perplexity/Wikipedia） | 不需要 AI 功能 |
 | `src/lib/stores/readingProgress.ts` | 阅读进度保存和恢复 | 不需要 |
@@ -97,8 +97,8 @@
 | `quit_app` | `commands.rs` | 显式退出应用（配合 Escape 关闭最后标签页） |
 | `show_ai_context_menu` | `commands.rs` | 显示 AI 查词右键菜单（~120 行） |
 | `list_claude_plans` | `commands.rs` | 列出 ~/.claude/plans 下的 Markdown 文件 |
-| `list_folder_md_files` | `commands.rs` | 递归扫描目录中的 Markdown 文件（含深度限制） |
-| `path_exists` | `commands.rs` | 检查文件路径是否存在 |
+| `list_folder_md_files` | `commands.rs` | 递归扫描目录中的 Markdown 文件（含深度限制） | ~~删除~~ → v0.2 重新实现为 `read_dir_tree`（树形结构替代扁平列表） |
+| `path_exists` | `commands.rs` | 检查文件路径是否存在 | ~~删除~~ → v0.2 重新实现（侧边栏新建文件/文件夹前判断重名） |
 
 ### 删除的 Rust 结构体/类型
 
@@ -114,7 +114,7 @@ struct OpenedFiles { paths: Mutex<Vec<String>> }  // "Open With" 缓冲
 // WatcherState 管理（watcher.rs）
 ```
 
-### 删除的 Tauri 插件（3 个）
+### 删除的 Tauri 插件（4 个）
 
 | 插件 | Crate | 用途 |
 |---|---|---|
@@ -243,31 +243,31 @@ __mdhero_about, __mdhero_check_updates, __mdhero_ai_lookup
 
 ## 九、总量统计
 
-| 类别 | mdhero | zcode | 精简率 |
-|---|---|---|---|
-| 前端组件文件 | 22 个 | 2 个 | 91% |
-| Stores | 12 个 | 1 个 | 92% |
-| Utils | 4 个 | 0 个 | 100% |
-| Rust 源文件 | 4 个 | 2 个 | 50% |
-| Rust 命令 | 12 个 | 4 个 | 67% |
-| Tauri 插件 | 6 个 | 2 个 | 67% |
-| NPM 核心依赖 | 12 个 | 9 个 | 25% |
-| `+page.svelte` | ~700 行 | ~220 行 | 69% |
-| **前端源文件总数** | **~55 个** | **~10 个** | **82%** |
+| 类别 | mdhero | zcode v0.1 | zcode v0.2 | 备注 |
+|---|---|---|---|---|
+| 前端组件文件 | 22 个 | 2 个 | 5 个 | +Sidebar, TitleBar, SettingsDialog |
+| Stores | 12 个 | 1 个 | 4 个 | +recents, folderTree, pinnedFolder |
+| Utils | 4 个 | 0 个 | 0 个 | 不变 |
+| Rust 源文件 | 4 个 | 2 个 | 2 个 | 不变 |
+| Rust 命令 | 12 个 | 4 个 | 8 个 | +read_dir_tree, path_exists, create_markdown_file, create_folder |
+| Tauri 插件 | 6 个 | 2 个 | 3 个 | +tauri-plugin-store |
+| NPM 核心依赖 | 12 个 | 9 个 | 10 个 | +@tauri-apps/plugin-store |
+| `+page.svelte` | ~700 行 | ~220 行 | ~330 行 | 重构为标题栏+侧边栏+主内容布局 |
+| **前端源文件总数** | **~55 个** | **~10 个** | **~17 个** | |
 
 ---
 
 ---
 
-# 保留清单 — zcode 保留了什么
+# 保留清单 — zcode v0.2 当前状态
 
-> 从 mdhero 中保留、精简、复用的所有代码和功能。
+> 从 mdhero 保留/精简/复用的代码，以及 v0.1→v0.2 新增的内容。
 
 ---
 
-## 十、前端源文件（保留 8 个）
+## 十、前端源文件（15 个）
 
-### 10.1 `src/lib/renderer/pipeline.ts` — 渲染管线（原样复用）
+### 10.1 `src/lib/renderer/pipeline.ts` — 渲染管线（原样复用，未改动）
 
 **来源**：`mdhero/src/lib/renderer/pipeline.ts`，完全照搬，未做任何修改。
 
@@ -295,20 +295,19 @@ isInitialized() → boolean            // 是否已初始化
 
 ---
 
-### 10.2 `src/lib/components/Editor.svelte` — 编辑器（轻度精简）
+### 10.2 `src/lib/components/Editor.svelte` — 编辑器（v0.2 调整）
 
 **来源**：`mdhero/src/lib/components/Editor.svelte`
 
 **保留的功能**：
 - 全屏等宽字体 textarea
 - Tab 键插入 2 空格缩进（保留光标位置）
-- `localValue` + `$effect` 模式：防止父组件更新导致光标跳动（仅当 textarea 未聚焦时同步）
+- `localValue` + `$effect` 模式
 - 自动聚焦
 
-**删除的 props**（相比 mdhero）：
-- ~~`fontSize`~~ → 硬编码 `14px`
-- ~~`lineHeight`~~ → 硬编码 `1.6`
-- ~~`maxWidth`~~ → 改为 `max-width: 900px`（自适应窗口）
+**v0.2 改动**：
+- ~~`position: fixed` 全屏覆盖~~ → `flex: 1` 填充主内容区（适配侧边栏布局）
+- 背景色改用 CSS 变量 `--zc-bg-chrome`
 
 **Props 接口**：
 ```typescript
@@ -317,26 +316,19 @@ isInitialized() → boolean            // 是否已初始化
 
 ---
 
-### 10.3 `src/lib/components/MarkdownRenderer.svelte` — 渲染器（大幅精简）
+### 10.3 `src/lib/components/MarkdownRenderer.svelte` — 渲染器（v0.2 调整）
 
 **来源**：`mdhero/src/lib/components/MarkdownRenderer.svelte`
 
 **保留的功能**：
 - `{@html html}` 渲染 sanitized HTML
-- Tailwind Typography (`prose prose-slate`) 排版
-- **代码块复制按钮**：hover 显示 "Copy" 按钮，点击复制到剪贴板
-- KaTeX 公式样式、表格、引用块、任务列表、链接样式
-- 自定义滚动条
+- Tailwind Typography 排版
+- 代码块复制按钮
+- KaTeX 公式、表格、引用块、任务列表
 
-**删除的功能**（详见第八节）：
-- Mermaid 图表渲染 → 只保留代码块展示
-- TOC 提取与 IntersectionObserver → 去除
-- AI 右键菜单 → 去除
-- 链接 tooltip → 去除
-- 外部链接处理器 → 去除
-- 图片 Lightbox → 去除
-- Dark mode 样式 → 去除
-- Settings store 动态绑定 → 硬编码
+**v0.2 改动**：
+- 所有硬编码颜色 → CSS 变量（`--zc-text-primary`, `--zc-border` 等）
+- 去掉 `#0891B2` 青色 → 统一暖白单色调
 
 **Props 接口**：
 ```typescript
@@ -345,7 +337,41 @@ isInitialized() → boolean            // 是否已初始化
 
 ---
 
-### 10.4 `src/lib/stores/document.ts` — 文档状态（精简）
+### 10.4 `src/lib/components/Sidebar.svelte` — 侧边栏 ★ v0.2 新增
+
+**功能**：
+- **头部**：\"FILES\" 标题 + 图钉/新建文件/新建文件夹图标按钮
+- **文件树**：递归渲染目录（深度 3 层），只显示 `.md` 文件，点击打开
+- **图钉**：钉选当前文件夹，下次启动自动加载（持久化到 disk）
+- **新建交互**：点击 +file/+folder → 顶部出现 inline 输入行 → 回车确认/Esc 取消
+- **Recent 分组**：可折叠的最近打开文件列表（20 条上限，持久化）
+- **底部**：\"Open Folder…\" 按钮
+
+---
+
+### 10.5 `src/lib/components/TitleBar.svelte` — 自绘标题栏 ★ v0.2 新增
+
+**功能**：
+- `data-tauri-drag-region` 实现窗口拖动
+- 左：侧边栏开关 + 设置齿轮按钮
+- 中：当前文件名显示
+- 右：最小化 / 最大化 / 关闭按钮（`@tauri-apps/api/window`）
+- 背景色 `--zc-bg-chrome`，与内容区一致
+
+**配合**：`tauri.conf.json` 中 `decorations: false`
+
+---
+
+### 10.6 `src/lib/components/SettingsDialog.svelte` — 设置对话框 ★ v0.2 新增
+
+**功能**：
+- `<dialog>` 模态弹窗
+- **Default pin folder**：显示当前钉选路径 + Browse… / Change… / Clear 按钮
+- 点击标题栏齿轮图标打开
+
+---
+
+### 10.7 `src/lib/stores/document.ts` — 文档状态（精简，未改动）
 
 **来源**：`mdhero/src/lib/stores/document.ts`
 
@@ -353,140 +379,180 @@ isInitialized() → boolean            // 是否已初始化
 - 单文档 Svelte writable store
 - `DocumentState` 接口：filePath, fileName, content, renderedHtml, frontmatter, wordCount, loading, error
 
-**删除的功能**：
-- Tab 系统相关的所有逻辑（tabs 管理、activeTabId、addTab/closeTab/switchTab 等）
+---
+
+### 10.8 `src/lib/stores/recents.ts` — 最近文件 ★ v0.2 新增
+
+**功能**：
+- `writable<RecentEntry[]>` store
+- `addRecent(path)` — 去重上浮、上限 20 条
+- 通过 `@tauri-apps/plugin-store` 持久化到 `zcode-recents.json`
+- `load()` — 启动时从磁盘恢复
+- 每次 `loadFile()` 成功后自动调用
 
 ---
 
-### 10.5 `src/lib/tauri/files.ts` — 文件操作（精简）
+### 10.9 `src/lib/stores/folderTree.ts` — 文件树状态 ★ v0.2 新增
+
+**功能**：
+- `rootPath` / `tree` / `loading` / `error` 状态
+- `expandedPaths: Set<string>` — 文件夹展开/收起（纯内存状态）
+- `toggleExpanded(path)` / `isExpanded(path)`
+
+---
+
+### 10.10 `src/lib/stores/pinnedFolder.ts` — 钉选文件夹 ★ v0.2 新增
+
+**功能**：
+- 持久化钉选的文件夹路径到 `zcode-recents.json`（key `"pinnedFolder"`）
+- `pin(path)` / `unpin()` / `load()`
+- 侧边栏 `onMount` 时自动加载
+
+---
+
+### 10.11 `src/lib/tauri/files.ts` — 文件操作（v0.2 扩展）
 
 **来源**：`mdhero/src/lib/tauri/files.ts`
 
-**保留的函数**：
+**v0.2 新增函数**：
 | 函数 | 功能 |
 |---|---|
-| `readMarkdownFile(path)` | 调用 Rust 读取文件内容 |
-| `saveFile(path, content)` | 调用 Rust 写入文件内容 |
-| `resolvePath(path)` | 调用 Rust 解析为绝对路径 |
-| `getBaseDir(path)` | 提取文件所在目录（纯 JS） |
-| `loadFile(path)` | 一站式加载：resolve → read → render → allowAssets → 更新 store |
-| `openFileDialog()` | 打开系统文件对话框，返回选中路径 |
-| `allowAssets(paths)` | 白名单本地图片路径到 Tauri asset protocol |
+| `listDirTree(rootPath)` | 调用 `read_dir_tree` 获取嵌套目录树 |
+| `createMarkdownFile(dir, name)` | 调用 `create_markdown_file`，成功后自动 loadFile |
+| `createFolder(dir, name)` | 调用 `create_folder` |
+| `pathExists(path)` | 调用 `path_exists`，主要用于判断 pinned folder 是否存在 |
+| `openFolderDialog()` | 系统文件夹选择器（`directory: true`） |
+| `refreshFolderTree()` | 重新扫描当前 rootPath |
 
-**删除的函数**（相比 mdhero）：
-- ~~`reloadCurrentFile()`~~ — 文件热重载（无 watcher 不需要）
-- ~~`pathExists()`~~ — 文件存在检查（合并到 loadFile 错误处理）
-- ~~`openWithSystem()`~~ — OS 默认应用打开（不需要）
+**v0.2 改动**：
+- `loadFile()` 成功后自动调用 `recents.addRecent()`
 
 ---
 
-### 10.6 `src/routes/+page.svelte` — 主页面（重写）
+### 10.12 `src/routes/+page.svelte` — 主页面（v0.2 重构）
 
-**来源**：完全重写，仅保留核心交互模式
-
-**功能**：
-- **空状态**：显示图标 + "Open a Markdown file" + ⌘O 提示 + 按钮
-- **打开文件**：⌘O 快捷键 / 点击按钮 → 系统文件对话框 → 加载并渲染
-- **拖放支持**：拖 .md 文件到窗口即可打开
-- **编辑模式**：⌘E 切换 → 显示 Editor 组件（全屏 textarea）
-- **预览模式**：显示 MarkdownRenderer 组件
-- **保存**：⌘S → 写入磁盘 → 重新渲染 → 自动回到预览模式
-- **底部状态栏**：显示文件名、dirty 状态、当前模式、快捷键提示
-- **错误处理**：文件不存在/读取失败时显示错误信息 + 重试按钮
-- **dirty 追踪**：编辑内容与磁盘内容不同时标记 "(unsaved)"
-- **自适应宽度**：内容最大 900px，窗口缩小时自动收窄
-
-**状态变量（仅 5 个）**：
+**布局**：
 ```
-rendererReady, isEditing, editContent, dirty, statusMessage
+┌────────────────────────────┐
+│  TitleBar                  │  ← 自绘标题栏
+├──────┬─────────────────────┤
+│      │                     │
+│ Side │  Main Content       │  ← 侧边栏 + 主内容（编辑/预览/空状态）
+│ bar  │                     │
+│      │                     │
+├──────┴─────────────────────┤
+│  StatusBar                 │  ← 底部状态栏
+└────────────────────────────┘
 ```
 
-**键盘快捷键（仅 3 个）**：
+**v0.2 新增状态/逻辑**：
+- `sidebarVisible` — 侧边栏可见性（默认 `true`）
+- `userCollapsed` — 区分「手动收起」和「窗口太小自动收起」
+- `settingsOpen` — 设置对话框
+- 窗口 resize 监听：宽度 < 640px → 自动收起侧边栏
+- 宽度恢复时不自动展开（除非用户之前是手动展开的）
+- `⌘B` — 切换侧边栏快捷键
 
-| 快捷键 | 功能 |
-|---|---|
-| `⌘O` | 打开文件 |
-| `⌘E` | 切换编辑/预览 |
-| `⌘S` | 保存并回到预览 |
-
----
-
-### 10.7 `src/app.css` — 全局样式（精简）
-
-**保留**：
-- Tailwind CSS v4 入口 (`@import "tailwindcss"`)
-- KaTeX 样式 (`katex/dist/katex.min.css`)
-- highlight.js GitHub 主题 (`highlight.js/styles/github.min.css`)
-- Tailwind Typography 插件
-- 基础排版变量和滚动条样式
-
-**删除**：
-- Dark mode 变量 (`@custom-variant dark`)
-- 打印样式 (`@media print`)
-- 深色滚动条样式
+**新增状态变量**：
+```
+sidebarVisible, userCollapsed, settingsOpen
+```
 
 ---
 
-### 10.8 `src/routes/+layout.svelte` — 布局（极简）
+### 10.13 `src/app.css` — 全局样式（v0.2 重写配色）
 
-仅 3 行：导入全局 CSS + `<slot />`，无任何额外逻辑。
-
----
-
-### 10.9 `src/app.html` — HTML 模板（微调）
-
-标题从 `MDHero` 改为 `zcode`，其余不变。
-
----
-
-### 10.10 `src/app.d.ts` — 类型声明（新增）
-
-为 `markdown-it-task-lists` 和 `markdown-it-texmath` 提供 TypeScript 类型声明（这两个包没有自带类型）。
-
----
-
-## 十一、Tauri Rust 后端（保留 2 个源文件）
-
-### 11.1 `src-tauri/src/commands.rs` — 命令（重写，仅 4 个命令）
-
-| 命令 | 功能 | 代码行数 |
-|---|---|---|
-| `read_markdown_file(path)` | 读取文件内容为 UTF-8 字符串 | ~10 行 |
-| `write_markdown_file(path, content)` | 写入字符串到文件 | ~8 行 |
-| `resolve_path(path)` | 将相对路径解析为绝对路径 | ~15 行 |
-| `allow_assets(paths)` | 将图片路径加入 asset protocol 白名单 | ~8 行 |
-
-**设计原则**：只做纯文件 I/O，不涉及任何业务逻辑。
+**v0.2 改动**：
+- 新增暖白单色调 CSS 变量：
+```css
+--zc-bg-page: #FAF9F6;       /* 页面背景 */
+--zc-bg-chrome: #F4F2ED;     /* 标题栏/编辑器/预览区背景 */
+--zc-bg-card: #FDFDFB;       /* 侧边栏浮动卡片背景 */
+--zc-border: #E7E4DD;
+--zc-border-soft: #ECE9E2;
+--zc-text-primary: #1F1E1C;
+--zc-text-secondary: #8A8782;
+--zc-text-tertiary: #A8A49D;
+--zc-active-row: #EAE6DD;    /* 选中行背景 */
+```
+- 滚动条收窄：webkit `width: 6px`、thumb `border-radius: 999px`；Firefox `scrollbar-width: thin`
 
 ---
 
-### 11.2 `src-tauri/src/lib.rs` — 应用入口（重写）
+### 10.14 `src/routes/+layout.svelte` — 布局（极简，未改动）
+
+仅 3 行：导入全局 CSS + `<slot />`。
+
+---
+
+### 10.15 `src/app.d.ts` — 类型声明（未改动）
+
+为 `markdown-it-task-lists` 和 `markdown-it-texmath` 提供 TypeScript 类型声明。
+
+---
+
+## 十一、Tauri Rust 后端（2 个源文件）
+
+### 11.1 `src-tauri/src/commands.rs` — 命令（v0.2 扩展至 8 个命令）
+
+| 命令 | 功能 | v0.1 | v0.2 |
+|---|---|---|---|
+| `read_markdown_file(path)` | 读取文件内容为 UTF-8 字符串 | ✅ | ✅ |
+| `write_markdown_file(path, content)` | 写入字符串到文件 | ✅ | ✅ |
+| `resolve_path(path)` | 将相对路径解析为绝对路径 | ✅ | ✅ |
+| `allow_assets(paths)` | 图片路径加入 asset protocol 白名单 | ✅ | ✅ |
+| `read_dir_tree(root)` | 递归扫描目录，返回 `DirNode` 嵌套树 | ❌ | ✅ |
+| `path_exists(path)` | 检查路径是否存在 | ❌ | ✅ |
+| `create_markdown_file(dir, name)` | 在目录下创建 `.md` 文件 | ❌ | ✅ |
+| `create_folder(dir, name)` | 在目录下创建子文件夹 | ❌ | ✅ |
+
+**新增数据结构**：
+```rust
+struct DirNode {
+    name: String,
+    path: String,       // 绝对路径
+    is_dir: bool,
+    modified: Option<i64>,   // unix timestamp，文件才有
+    children: Option<Vec<DirNode>>,  // 只有 is_dir=true 才填充
+}
+```
+
+**`read_dir_tree` 策略**：
+- 只递归 `.md` 文件 + 目录，忽略其他文件类型
+- 跳过隐藏文件/目录（`.` 开头）
+- 跳过 `node_modules` / `target` / `dist` / `build` / `.git` / `__pycache__` / `vendor` / `zig-cache` / `.svelte-kit`
+- 最大深度 6 层
+- 空目录不返回（不含任何 `.md` 文件的目录节点会被剪掉）
+- 排序：目录在前、文件在后，各自按字母序
+
+---
+
+### 11.2 `src-tauri/src/lib.rs` — 应用入口（v0.2 扩展）
 
 ```rust
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())   // 外部链接用系统浏览器打开
-        .plugin(tauri_plugin_dialog::init())    // 系统文件对话框
+        .plugin(tauri_plugin_opener::init())     // 外部链接用系统浏览器打开
+        .plugin(tauri_plugin_dialog::init())      // 系统文件/文件夹对话框
+        .plugin(tauri_plugin_store::Builder::default().build())  // ★ v0.2: 键值持久化
         .invoke_handler(tauri::generate_handler![
             commands::read_markdown_file,
             commands::write_markdown_file,
             commands::resolve_path,
             commands::allow_assets,
+            commands::read_dir_tree,              // ★ v0.2
+            commands::path_exists,                // ★ v0.2
+            commands::create_markdown_file,       // ★ v0.2
+            commands::create_folder,              // ★ v0.2
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
 
-**删除的 setup 逻辑**（相比 mdhero）：
-- ~~原生菜单创建~~ (`menu::create_menu`)
-- ~~菜单事件处理~~ (`on_menu_event`)
-- ~~"Open With" 文件缓冲~~ (`OpenedFiles` state)
-- ~~macOS URL open 事件~~ (`RunEvent::Opened`)
-
 ---
 
-### 11.3 `src-tauri/src/main.rs` — 二进制入口（原样复用）
+### 11.3 `src-tauri/src/main.rs` — 二进制入口（未改动）
 
 ```rust
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -495,17 +561,14 @@ fn main() { zcode_lib::run() }
 
 ---
 
-## 十二、配置和工程文件（保留）
+## 十二、配置和工程文件（v0.2 改动）
 
-| 文件 | 处理方式 | 说明 |
-|---|---|---|
-| `package.json` | 精简 | 删除 mermaid/mark.js/@lucide-svelte 依赖 |
-| `vite.config.js` | 原样复用 | 添加 Tailwind 插件，其余同 mdhero |
-| `svelte.config.js` | 原样复用 | adapter-static + vitePreprocess |
-| `tsconfig.json` | 原样复用 | 不变 |
-| `Cargo.toml` | 精简 | 删除 notify/process/window-state/cli/updater 依赖 |
-| `tauri.conf.json` | 精简 | 删除 updater/cli 插件配置，保留 assetProtocol 和文件关联 |
-| `capabilities/default.json` | 精简 | 删除 window-state/event/webview/cli 权限，只保留 opener+dialog |
+| 文件 | v0.2 改动 |
+|---|---|
+| `package.json` | +`@tauri-apps/plugin-store` 依赖 |
+| `Cargo.toml` | +`tauri-plugin-store = "2"` 依赖 |
+| `tauri.conf.json` | +`"decorations": false`（自绘标题栏） |
+| `capabilities/default.json` | +`core:window:allow-minimize/toggle-maximize/close/start-dragging`；+`store:default` |
 
 ---
 
@@ -522,11 +585,12 @@ fn main() { zcode_lib::run() }
 | 桌面框架 | Tauri v2 | ^2 |
 | 系统对话框 | tauri-plugin-dialog | ^2.7 |
 | 外部链接 | tauri-plugin-opener | ^2.5 |
+| 本地持久化 | tauri-plugin-store ★ v0.2 | ^2.4 |
 | 构建工具 | Vite | ^6.4 |
 
 ---
 
-## 十四、保留的 npm 依赖（9 个核心 + 10 个 dev）
+## 十四、保留的 npm 依赖
 
 ### 运行时依赖
 ```json
@@ -534,6 +598,7 @@ fn main() { zcode_lib::run() }
   "@tauri-apps/api": "^2",
   "@tauri-apps/plugin-dialog": "^2",
   "@tauri-apps/plugin-opener": "^2",
+  "@tauri-apps/plugin-store": "^2",
   "dompurify": "^3",
   "highlight.js": "^11",
   "katex": "^0.17",
@@ -544,7 +609,7 @@ fn main() { zcode_lib::run() }
 }
 ```
 
-### 开发依赖
+### 开发依赖（不变）
 ```json
 {
   "@sveltejs/adapter-static": "^3",
@@ -571,6 +636,7 @@ fn main() { zcode_lib::run() }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
@@ -587,34 +653,64 @@ zcode/
 ├── svelte.config.js
 ├── tsconfig.json
 ├── src/
-│   ├── app.css                          # 全局样式
-│   ├── app.d.ts                         # 类型声明（新增）
+│   ├── app.css                          # 全局样式 + 暖白调 CSS 变量 + 细滚动条
+│   ├── app.d.ts                         # 类型声明
 │   ├── app.html                         # HTML 模板
 │   ├── routes/
 │   │   ├── +layout.svelte               # 布局（极简）
 │   │   ├── +layout.ts                   # SSR=off
-│   │   └── +page.svelte                 # 主页面 ★ 核心
+│   │   └── +page.svelte                 # 主页面 ★ v0.2: 标题栏+侧边栏+主内容布局
 │   └── lib/
 │       ├── components/
 │       │   ├── Editor.svelte            # 编辑器
-│       │   └── MarkdownRenderer.svelte  # 渲染器
+│       │   ├── MarkdownRenderer.svelte  # 渲染器
+│       │   ├── Sidebar.svelte           # ★ v0.2: 侧边栏（文件树+Recent+pin）
+│       │   ├── TitleBar.svelte          # ★ v0.2: 自绘标题栏
+│       │   └── SettingsDialog.svelte    # ★ v0.2: 设置对话框（pin folder）
 │       ├── stores/
-│       │   └── document.ts              # 文档状态
+│       │   ├── document.ts              # 文档状态
+│       │   ├── recents.ts               # ★ v0.2: 最近文件（持久化）
+│       │   ├── folderTree.ts            # ★ v0.2: 文件树状态
+│       │   └── pinnedFolder.ts          # ★ v0.2: 钉选文件夹（持久化）
 │       ├── renderer/
-│       │   └── pipeline.ts             # 渲染管线
+│       │   └── pipeline.ts              # 渲染管线
 │       └── tauri/
-│           └── files.ts                 # 文件操作
+│           └── files.ts                 # 文件操作（v0.2: +6 个函数）
 ├── src-tauri/
-│   ├── Cargo.toml
-│   ├── tauri.conf.json
+│   ├── Cargo.toml                       # +tauri-plugin-store
+│   ├── tauri.conf.json                  # +decorations:false
 │   ├── capabilities/
-│   │   └── default.json
+│   │   └── default.json                 # +window +store 权限
 │   ├── icons/...
 │   └── src/
 │       ├── main.rs
-│       ├── lib.rs
-│       └── commands.rs
+│       ├── lib.rs                       # +4 命令 + store 插件
+│       └── commands.rs                  # +4 命令 (8 total)
 └── REMOVED.md                           # 本文档
 ```
 
-**源文件总计：15 个**（不含配置和图标）
+**源文件总计：17 个**（不含配置和图标）
+
+---
+
+## 十七、v0.1 → v0.2 变更摘要
+
+### 新增功能
+- **侧边栏**：文件树浏览、新建文件/文件夹、最近文件列表
+- **自绘标题栏**：borderless 窗口、窗口控制按钮、文件名显示
+- **钉选文件夹**：持久化记住文件夹路径，启动时自动加载
+- **设置对话框**：管理 default pin folder
+- **小窗口适配**：宽度 < 640px 自动收起侧边栏
+
+### 色彩体系
+- 从硬编码 `#fafafa` / `#1c1c1e` / `#0891B2` 切换为暖白单调 CSS 变量
+- 无任何品牌色（蓝/青），纯 `#1F1E1C` 灰度体系
+
+### 快捷键
+- 新增 `⌘B` — 切换侧边栏
+- 保留 `⌘O` / `⌘E` / `⌘S`
+
+### 已知取舍
+- **Windows Snap Layouts**：`decorations: false` 会丢失此系统功能
+- **文件树深度**：后端扫描 6 层，前端模板渲染 3 层可见目录嵌套
+- **macOS 交通灯**：使用 `decorations: false` 而非 `titleBarStyle: "Overlay"`，macOS 上会丢失原生红黄绿按钮（本版本未做 macOS 特殊处理）

@@ -65,14 +65,11 @@
 
 <style>
   .editor-wrap {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: 1;
     display: flex;
     justify-content: center;
-    background: #fafafa;
+    background: var(--zc-bg-chrome, #F4F2ED);
+    min-height: 0;
   }
 
   .editor {
@@ -85,7 +82,7 @@
     border: none;
     outline: none;
     resize: none;
-    color: #1c1c1e;
+    color: var(--zc-text-primary, #1F1E1C);
     font-family: "SF Mono", "JetBrains Mono", "Fira Code", Menlo, monospace;
     font-size: 14px;
     line-height: 1.6;
@@ -96,6 +93,6 @@
   }
 
   .editor::placeholder {
-    color: #aeaeb2;
+    color: var(--zc-text-tertiary, #A8A49D);
   }
 </style>

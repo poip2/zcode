@@ -1,0 +1,29 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+@import "highlight.js/styles/github.min.css";
+@plugin "@tailwindcss/typography";
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  background-color: #fafafa;
+  color: #1c1c1e;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c1c4;
+  border-radius: 3px;
+}

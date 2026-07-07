@@ -229,17 +229,19 @@
           <div class="settings-section-title">AI Provider</div>
           <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint.</p>
 
-          <label class="settings-label">Base URL</label>
+          <label class="settings-label" for="settings-base-url">Base URL</label>
           <input
+            id="settings-base-url"
             class="settings-input mono"
             type="text"
             placeholder="https://api.openai.com/v1"
             bind:value={draftBaseUrl}
           />
 
-          <label class="settings-label">API Key</label>
+          <label class="settings-label" for="settings-api-key">API Key</label>
           <div class="api-key-field">
             <input
+              id="settings-api-key"
               class="settings-input mono"
               type={showApiKey ? "text" : "password"}
               bind:value={draftApiKey}
@@ -256,8 +258,9 @@
             </button>
           </div>
 
-          <label class="settings-label">Model</label>
+          <label class="settings-label" for="settings-model">Model</label>
           <input
+            id="settings-model"
             class="settings-input mono"
             type="text"
             placeholder="gpt-4o"

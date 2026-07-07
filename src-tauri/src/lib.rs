@@ -1,3 +1,11 @@
+pub mod agent;
+pub mod error;
+pub mod model;
+pub mod provider;
+pub mod sse;
+pub mod providers;
+pub mod skills;
+pub mod tools;
 mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

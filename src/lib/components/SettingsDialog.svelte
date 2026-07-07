@@ -41,6 +41,7 @@
     { name: "Explain code block", desc: "Add an explanation above the selected code fence", key: "explainCode" as const, enabled: false },
   ]);
 
+  let saveError = $state(false);
   let dialogEl: HTMLDialogElement | undefined = $state();
   let unsubPinned: () => void;
 
@@ -87,17 +88,14 @@
     }
   });
 
-  function handleDialogClose() {
-    onClose();
-  }
-
-  /** Cancel or backdrop click — close without saving */
+  /** Close dialog without saving (close button, cancel button, backdrop click, Esc key) */
   function handleCancel() {
     onClose();
   }
 
   /** Save draft to disk, then close */
   async function handleSave() {
+    saveError = false;
     // Write draft to persisted state
     persistedAiBaseUrl = draftBaseUrl;
     persistedAiApiKey = draftApiKey;
@@ -122,7 +120,11 @@
       skills: skillsSummary,
     });
 
-    if (ok) onClose();
+    if (ok) {
+      onClose();
+    } else {
+      saveError = true;
+    }
   }
 
   async function handleBrowsePin() {
@@ -158,7 +160,7 @@
   bind:this={dialogEl}
   class="settings-dialog"
   onclick={handleBackdropClick}
-  onclose={handleDialogClose}
+  onclose={handleCancel}
 >
   <div
     class="dialog-panel"
@@ -299,6 +301,9 @@
 
     <!-- Footer -->
     <div class="settings-footer">
+      {#if saveError}
+        <div class="save-error">保存失败，请重试</div>
+      {/if}
       <button class="settings-btn-secondary" onclick={handleCancel}>Cancel</button>
       <button class="settings-btn-primary" onclick={handleSave}>Save</button>
     </div>
@@ -434,9 +439,9 @@
     padding: 7px 10px;
     font-size: 13px;
     font-family: inherit;
-    border: 1px solid #D9D5CC;
+    border: 1px solid var(--zc-border, #E7E4DD);
     border-radius: 6px;
-    background: #fff;
+    background: var(--zc-bg-card, #FDFDFB);
     color: var(--zc-text-primary, #1F1E1C);
     outline: none;
     box-sizing: border-box;
@@ -514,8 +519,8 @@
     font-size: 12px;
     font-weight: 500;
     font-family: inherit;
-    border: 1px solid #D9D5CC;
-    background: #fff;
+    border: 1px solid var(--zc-border, #E7E4DD);
+    background: var(--zc-bg-card, #FDFDFB);
     border-radius: 6px;
     cursor: pointer;
     color: var(--zc-text-primary, #1F1E1C);
@@ -597,7 +602,7 @@
   .switch-slider {
     position: absolute;
     inset: 0;
-    background: #D9D5CC;
+    background: var(--zc-border, #E7E4DD);
     border-radius: 999px;
     cursor: pointer;
     transition: background 0.15s;
@@ -610,7 +615,7 @@
     height: 16px;
     left: 2px;
     top: 2px;
-    background: #fff;
+    background: var(--zc-bg-card, #FDFDFB);
     border-radius: 50%;
     transition: transform 0.15s;
     box-shadow: 0 1px 2px rgba(0,0,0,0.2);
@@ -625,6 +630,13 @@
   }
 
   /* ── Footer ── */
+  .save-error {
+    color: #e03e3e;
+    font-size: 12px;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
   .settings-footer {
     display: flex;
     justify-content: flex-end;

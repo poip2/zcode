@@ -243,29 +243,29 @@ __mdhero_about, __mdhero_check_updates, __mdhero_ai_lookup
 
 ## 九、总量统计
 
-| 类别 | mdhero | zcode v0.1 | zcode v0.2 | 备注 |
+| 类别 | mdhero | zcode v0.1 | zcode 当前 | 备注 |
 |---|---|---|---|---|
-| 前端组件文件 | 22 个 | 2 个 | 5 个 | +Sidebar, TitleBar, SettingsDialog |
-| Stores | 12 个 | 1 个 | 4 个 | +recents, folderTree, pinnedFolder |
+| 前端组件文件 | 22 个 | 2 个 | 5 个 | Sidebar, TitleBar, SettingsDialog, Editor, MarkdownRenderer |
+| Stores | 12 个 | 1 个 | 6 个 | +recents, folderTree, pinnedFolder, settings, sharedStore |
 | Utils | 4 个 | 0 个 | 0 个 | 不变 |
-| Rust 源文件 | 4 个 | 2 个 | 2 个 | 不变 |
+| Rust 源文件 | 4 个 | 2 个 | 2 个 | commands.rs + lib.rs（不变） |
 | Rust 命令 | 12 个 | 4 个 | 8 个 | +read_dir_tree, path_exists, create_markdown_file, create_folder |
 | Tauri 插件 | 6 个 | 2 个 | 3 个 | +tauri-plugin-store |
 | NPM 核心依赖 | 12 个 | 9 个 | 10 个 | +@tauri-apps/plugin-store |
-| `+page.svelte` | ~700 行 | ~220 行 | ~330 行 | 重构为标题栏+侧边栏+主内容布局 |
-| **前端源文件总数** | **~55 个** | **~10 个** | **~17 个** | |
+| `+page.svelte` | ~700 行 | ~220 行 | ~330 行 | 标题栏+侧边栏+主内容布局 |
+| **前端源文件总数** | **~55 个** | **~10 个** | **~19 个** | +settings.ts, sharedStore.ts |
 
 ---
 
 ---
 
-# 保留清单 — zcode v0.2 当前状态
+# 保留清单 — zcode 当前状态
 
-> 从 mdhero 保留/精简/复用的代码，以及 v0.1→v0.2 新增的内容。
+> 从 mdhero 保留/精简/复用的代码，以及后续迭代新增的内容。
 
 ---
 
-## 十、前端源文件（15 个）
+## 十、前端源文件（19 个，不含配置和图标）
 
 ### 10.1 `src/lib/renderer/pipeline.ts` — 渲染管线（原样复用，未改动）
 
@@ -362,11 +362,15 @@ isInitialized() → boolean            // 是否已初始化
 
 ---
 
-### 10.6 `src/lib/components/SettingsDialog.svelte` — 设置对话框 ★ v0.2 新增
+### 10.6 `src/lib/components/SettingsDialog.svelte` — 设置对话框 ★ v0.2 新增 / v0.3 扩展
 
 **功能**：
-- `<dialog>` 模态弹窗
-- **Default pin folder**：显示当前钉选路径 + Browse… / Change… / Clear 按钮
+- `<dialog>` 模态弹窗，带 3 个 Tab：**Default Folder** / **AI Provider** / **Skills**
+- **Default Folder**：显示当前钉选路径 + Browse… / Change… 按钮
+- **AI Provider**：Base URL / API Key（可切换明文显示）/ Model 输入
+- **Skills**：4 个 AI 技能开关（Summarize / Fix Grammar / TOC / Explain Code）+ 预留 "Add custom skill" 按钮
+- 保存/取消按钮，保存失败有错误提示
+- 数据持久化到 `zcode-settings.json`（通过 `settings.ts` store）
 - 点击标题栏齿轮图标打开
 
 ---
@@ -414,7 +418,7 @@ isInitialized() → boolean            // 是否已初始化
 
 **来源**：`mdhero/src/lib/tauri/files.ts`
 
-**v0.2 新增函数**：
+**新增函数**：
 | 函数 | 功能 |
 |---|---|
 | `listDirTree(rootPath)` | 调用 `read_dir_tree` 获取嵌套目录树 |
@@ -422,10 +426,11 @@ isInitialized() → boolean            // 是否已初始化
 | `createFolder(dir, name)` | 调用 `create_folder` |
 | `pathExists(path)` | 调用 `path_exists`，主要用于判断 pinned folder 是否存在 |
 | `openFolderDialog()` | 系统文件夹选择器（`directory: true`） |
-| `refreshFolderTree()` | 重新扫描当前 rootPath |
 
-**v0.2 改动**：
-- `loadFile()` 成功后自动调用 `recents.addRecent()`
+**改动**：
+- `loadFile()` 成功后自动调用 `recents.addRecent()` 和 `getCurrentWindow().setTitle()`
+- `openFileDialog()` 过滤器中新增 `markdown` / `mdown` / `mkd` / `txt` 扩展名
+- 移除了 `refreshFolderTree()`（刷新逻辑直接在 Sidebar 中调用 `listDirTree`）
 
 ---
 
@@ -445,13 +450,14 @@ isInitialized() → boolean            // 是否已初始化
 └────────────────────────────┘
 ```
 
-**v0.2 新增状态/逻辑**：
+**新增状态/逻辑**：
 - `sidebarVisible` — 侧边栏可见性（默认 `true`）
 - `userCollapsed` — 区分「手动收起」和「窗口太小自动收起」
 - `settingsOpen` — 设置对话框
-- 窗口 resize 监听：宽度 < 640px → 自动收起侧边栏
+- 窗口 resize 监听（debounce 100ms）：宽度 < 640px → 自动收起侧边栏
 - 宽度恢复时不自动展开（除非用户之前是手动展开的）
 - `⌘B` — 切换侧边栏快捷键
+- 状态栏底部 hint 文本支持 container query 响应式（窄屏时显示简洁版快捷键）
 
 **新增状态变量**：
 ```
@@ -491,9 +497,34 @@ sidebarVisible, userCollapsed, settingsOpen
 
 ---
 
+### 10.16 `src/lib/stores/settings.ts` — 应用设置持久化 ★ v0.3 新增
+
+**功能**：
+- 通过 `@tauri-apps/plugin-store` 持久化到 `zcode-settings.json`
+- `AppSettings` 接口：AI 后端配置（baseUrl / apiKey / model）+ 技能开关
+- `load()` 返回合并默认值的结果（向后兼容旧版本缺少的 key）
+- `save()` 保存到磁盘（明文存储 API Key，未来应改用系统 keychain）
+- 默认值：Summarize / FixGrammar 开启，TOC / ExplainCode 关闭
+
+---
+
+### 10.17 `src/lib/stores/sharedStore.ts` — 共享 Store 实例 ★ v0.3 新增
+
+**功能**：
+- 单例模式暴露 `zcode-recents.json` 的 `@tauri-apps/plugin-store` 实例
+- 被 `recents.ts` 和 `pinnedFolder.ts` 共享，避免重复创建 Store 连接
+
+---
+
+### 10.18 `zcode-mock.html` — 开发 mock 页面 ★ 新增
+
+项目根目录下的独立 HTML 文件，用于在浏览器中快速预览 Markdown 渲染效果（无需启动 Tauri）。
+
+---
+
 ## 十一、Tauri Rust 后端（2 个源文件）
 
-### 11.1 `src-tauri/src/commands.rs` — 命令（v0.2 扩展至 8 个命令）
+### 11.1 `src-tauri/src/commands.rs` — 命令（8 个命令）
 
 | 命令 | 功能 | v0.1 | v0.2 |
 |---|---|---|---|
@@ -518,16 +549,16 @@ struct DirNode {
 ```
 
 **`read_dir_tree` 策略**：
-- 只递归 `.md` 文件 + 目录，忽略其他文件类型
+- 支持 `.md` / `.markdown` / `.mdown` / `.mkd` 文件扩展名
 - 跳过隐藏文件/目录（`.` 开头）
-- 跳过 `node_modules` / `target` / `dist` / `build` / `.git` / `__pycache__` / `vendor` / `zig-cache` / `.svelte-kit`
-- 最大深度 6 层
-- 空目录不返回（不含任何 `.md` 文件的目录节点会被剪掉）
+- 跳过 `node_modules` / `target` / `dist` / `build` / `__pycache__` / `vendor` / `zig-cache` / `zig-out`
+- 最大深度 3 层（`MAX_TREE_DEPTH = 3`，前端 Sidebar 模板也渲染 3 层）
+- 空目录不返回（不含任何 md 文件的目录节点会被剪掉）
 - 排序：目录在前、文件在后，各自按字母序
 
 ---
 
-### 11.2 `src-tauri/src/lib.rs` — 应用入口（v0.2 扩展）
+### 11.2 `src-tauri/src/lib.rs` — 应用入口
 
 ```rust
 pub fn run() {
@@ -567,9 +598,9 @@ fn main() { zcode_lib::run() }
 |---|---|
 | `package.json` | +`@tauri-apps/plugin-store` 依赖 |
 | `Cargo.toml` | +`tauri-plugin-store = "2"` 依赖 |
-| `tauri.conf.json` | +`"decorations": false`（自绘标题栏） |
-| `capabilities/default.json` | +`core:window:allow-minimize/toggle-maximize/close/start-dragging`；+`store:default` |
-| `.github/workflows/build.yml` | ★ v0.2: GitHub Actions CI/CD（push/tag/PR/manual 触发，macOS + Windows 构建并生成 bundle artifact；tag 推送时自动创建 GitHub Release） |
+| `tauri.conf.json` | `decorations: false`（自绘标题栏）；fileAssociations 支持 `.md`/`.markdown`/`.mdown`/`.mkd` |
+| `capabilities/default.json` | +`core:window:allow-set-title/minimize/toggle-maximize/close/start-dragging`；+`store:default` |
+| `.github/workflows/build.yml` | ★ GitHub Actions CI/CD（tag 推送 + 手动触发，macOS + Windows 构建并生成 bundle artifact；tag 推送时自动创建 GitHub Release） |
 
 ---
 
@@ -586,7 +617,7 @@ fn main() { zcode_lib::run() }
 | 桌面框架 | Tauri v2 | ^2 |
 | 系统对话框 | tauri-plugin-dialog | ^2.7 |
 | 外部链接 | tauri-plugin-opener | ^2.5 |
-| 本地持久化 | tauri-plugin-store ★ v0.2 | ^2.4 |
+| 本地持久化 | tauri-plugin-store | ^2.4 |
 | 构建工具 | Vite | ^6.4 |
 
 ---
@@ -650,9 +681,11 @@ serde_json = "1"
 zcode/
 ├── package.json
 ├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
 ├── vite.config.js
 ├── svelte.config.js
 ├── tsconfig.json
+├── zcode-mock.html                      # 开发 mock 页面（浏览器内预览 Markdown）
 ├── src/
 │   ├── app.css                          # 全局样式 + 暖白调 CSS 变量 + 细滚动条
 │   ├── app.d.ts                         # 类型声明
@@ -660,62 +693,75 @@ zcode/
 │   ├── routes/
 │   │   ├── +layout.svelte               # 布局（极简）
 │   │   ├── +layout.ts                   # SSR=off
-│   │   └── +page.svelte                 # 主页面 ★ v0.2: 标题栏+侧边栏+主内容布局
+│   │   └── +page.svelte                 # 主页面：标题栏+侧边栏+主内容布局
 │   └── lib/
 │       ├── components/
 │       │   ├── Editor.svelte            # 编辑器
 │       │   ├── MarkdownRenderer.svelte  # 渲染器
-│       │   ├── Sidebar.svelte           # ★ v0.2: 侧边栏（文件树+Recent+pin）
-│       │   ├── TitleBar.svelte          # ★ v0.2: 自绘标题栏
-│       │   └── SettingsDialog.svelte    # ★ v0.2: 设置对话框（pin folder）
+│       │   ├── Sidebar.svelte           # 侧边栏（文件树+Recent+pin，渲染 3 层嵌套）
+│       │   ├── TitleBar.svelte          # 自绘标题栏
+│       │   └── SettingsDialog.svelte    # 设置对话框（3 个 Tab：Folder/AI/Skills）
 │       ├── stores/
 │       │   ├── document.ts              # 文档状态
-│       │   ├── recents.ts               # ★ v0.2: 最近文件（持久化）
-│       │   ├── folderTree.ts            # ★ v0.2: 文件树状态
-│       │   └── pinnedFolder.ts          # ★ v0.2: 钉选文件夹（持久化）
+│       │   ├── recents.ts               # 最近文件（持久化到 zcode-recents.json）
+│       │   ├── folderTree.ts            # 文件树状态 + 展开/收起
+│       │   ├── pinnedFolder.ts          # 钉选文件夹（持久化到 zcode-recents.json）
+│       │   ├── settings.ts              # 应用设置（持久化到 zcode-settings.json）
+│       │   └── sharedStore.ts           # 共享 Store 单例
 │       ├── renderer/
 │       │   └── pipeline.ts              # 渲染管线
 │       └── tauri/
-│           └── files.ts                 # 文件操作（v0.2: +6 个函数）
+│           └── files.ts                 # 文件操作（8 个函数）
 ├── .github/
 │   └── workflows/
-│       └── build.yml                    # ★ v0.2: CI/CD（macOS + Windows 构建，tag 自动 Release）
+│       └── build.yml                    # CI/CD（tag 推送 + 手动触发，macOS/Windows 构建+Release）
 ├── src-tauri/
 │   ├── Cargo.toml                       # +tauri-plugin-store
-│   ├── tauri.conf.json                  # +decorations:false
+│   ├── tauri.conf.json                  # decorations:false + fileAssociations
 │   ├── capabilities/
 │   │   └── default.json                 # +window +store 权限
 │   ├── icons/...
 │   └── src/
 │       ├── main.rs
-│       ├── lib.rs                       # +4 命令 + store 插件
-│       └── commands.rs                  # +4 命令 (8 total)
+│       ├── lib.rs                       # 8 命令 + 3 插件
+│       └── commands.rs                  # 8 个命令，MAX_TREE_DEPTH=3
 └── REMOVED.md                           # 本文档
 ```
 
-**源文件总计：17 个**（不含配置和图标）
+**源文件总计：19 个**（不含配置和图标、zcode-mock.html）
 
 ---
 
-## 十七、v0.1 → v0.2 变更摘要
+## 十七、变更摘要
 
 ### 新增功能
-- **侧边栏**：文件树浏览、新建文件/文件夹、最近文件列表
-- **自绘标题栏**：borderless 窗口、窗口控制按钮、文件名显示
+- **侧边栏**：文件树浏览（3 层嵌套）、新建文件/文件夹、最近文件列表
+- **自绘标题栏**：borderless 窗口、窗口控制按钮（最小化/最大化/关闭）、文件名显示
 - **钉选文件夹**：持久化记住文件夹路径，启动时自动加载
-- **设置对话框**：管理 default pin folder
-- **小窗口适配**：宽度 < 640px 自动收起侧边栏
-- **CI/CD 构建流水线**：GitHub Actions 自动化构建 macOS 和 Windows 二进制包；tag 推送时自动创建 GitHub Release 并上传 bundle artifact
+- **设置对话框**：3 个 Tab — Default Folder / AI Provider（含 API Key + Model 配置）/ Skills（4 个 AI 技能开关）
+- **小窗口适配**：宽度 < 640px 自动收起侧边栏，状态栏 hints 通过 container query 响应式适配
+- **CI/CD 构建流水线**：GitHub Actions（tag 推送 + 手动触发），macOS + Windows 构建，tag 自动 Release
+- **AI 后端配置**：OpenAI 兼容 API（baseUrl / apiKey / model），明文存储到 `zcode-settings.json`
+- **共享 Store 实例**：`sharedStore.ts` 单例模式，供 recents 和 pinnedFolder 共用 `zcode-recents.json`
 
 ### 色彩体系
 - 从硬编码 `#fafafa` / `#1c1c1e` / `#0891B2` 切换为暖白单调 CSS 变量
 - 无任何品牌色（蓝/青），纯 `#1F1E1C` 灰度体系
 
 ### 快捷键
-- 新增 `⌘B` — 切换侧边栏
-- 保留 `⌘O` / `⌘E` / `⌘S`
+- `⌘O` — 打开文件
+- `⌘E` — 编辑/预览切换
+- `⌘S` — 保存
+- `⌘B` — 切换侧边栏
+
+### 技术细节
+- `MAX_TREE_DEPTH = 3`（前后端一致）
+- 支持 `.md` / `.markdown` / `.mdown` / `.mkd` 文件扩展名
+- Rust 跳过目录：`node_modules` / `target` / `dist` / `build` / `__pycache__` / `vendor` / `zig-cache` / `zig-out`
+- Store 文件：`zcode-recents.json`（最近文件 + 钉选文件夹）、`zcode-settings.json`（AI 配置 + 技能）
 
 ### 已知取舍
 - **Windows Snap Layouts**：`decorations: false` 会丢失此系统功能
-- **文件树深度**：后端扫描 6 层，前端模板渲染 3 层可见目录嵌套
-- **macOS 交通灯**：使用 `decorations: false` 而非 `titleBarStyle: "Overlay"`，macOS 上会丢失原生红黄绿按钮（本版本未做 macOS 特殊处理）
+- **文件树深度**：后端扫描 3 层，前端 Sidebar 模板渲染 3 层
+- **macOS 交通灯**：使用 `decorations: false` 而非 `titleBarStyle: "Overlay"`，macOS 上会丢失原生红黄绿按钮
+- **API Key 安全**：明文存储到 JSON 文件，未使用 OS keychain（AI 功能仍为 stub 状态时暂可接受）

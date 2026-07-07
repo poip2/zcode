@@ -107,31 +107,31 @@ pub fn migrate_old_settings(data_dir: &std::path::Path, config_dir: &std::path::
 
     let candidates = [data_dir.join("zcode-settings.json"), config_dir.join("zcode-settings.json")];
 
-    let (json_str, legacy_path) = match candidates.iter().find_map(|p| {
-        fs::read_to_string(p).ok().map(|s| (s, p.clone()))
+    // Check all candidate paths. Use the first one that actually contains
+    // a cleartext `aiProvider.apiKey`, not just the first readable file.
+    let (json_str, legacy_path, api_key) = match candidates.iter().find_map(|p| {
+        let s = fs::read_to_string(p).ok()?;
+        let root: serde_json::Value = serde_json::from_str(&s).ok()?;
+        let key = root
+            .get("settings")?
+            .get("aiProvider")?
+            .get("apiKey")?
+            .as_str()
+            .filter(|k| !k.is_empty())?;
+        Some((s, p.clone(), key.to_string()))
     }) {
         Some(x) => x,
         None => return,
     };
 
+    // Re-parse to get mutable access for stripping cleartext
     let mut root: serde_json::Value = match serde_json::from_str(&json_str) {
         Ok(v) => v,
         Err(_) => return,
     };
-
-    let settings = match root.get_mut("settings") {
-        Some(s) => s,
-        None => return,
-    };
-
-    let ai_provider = match settings.get_mut("aiProvider") {
+    let ai_provider = match root.pointer_mut("/settings/aiProvider") {
         Some(ap) => ap,
         None => return,
-    };
-
-    let api_key = match ai_provider.get("apiKey").and_then(|v| v.as_str()) {
-        Some(key) if !key.is_empty() => key.to_string(),
-        _ => return,
     };
 
     // Skip if keyring already has a key — strip cleartext, write masked indicator

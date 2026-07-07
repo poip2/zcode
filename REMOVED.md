@@ -569,6 +569,7 @@ fn main() { zcode_lib::run() }
 | `Cargo.toml` | +`tauri-plugin-store = "2"` 依赖 |
 | `tauri.conf.json` | +`"decorations": false`（自绘标题栏） |
 | `capabilities/default.json` | +`core:window:allow-minimize/toggle-maximize/close/start-dragging`；+`store:default` |
+| `.github/workflows/build.yml` | ★ v0.2: GitHub Actions CI/CD（push/tag/PR/manual 触发，macOS + Windows 构建并生成 bundle artifact；tag 推送时自动创建 GitHub Release） |
 
 ---
 
@@ -676,6 +677,9 @@ zcode/
 │       │   └── pipeline.ts              # 渲染管线
 │       └── tauri/
 │           └── files.ts                 # 文件操作（v0.2: +6 个函数）
+├── .github/
+│   └── workflows/
+│       └── build.yml                    # ★ v0.2: CI/CD（macOS + Windows 构建，tag 自动 Release）
 ├── src-tauri/
 │   ├── Cargo.toml                       # +tauri-plugin-store
 │   ├── tauri.conf.json                  # +decorations:false
@@ -701,6 +705,7 @@ zcode/
 - **钉选文件夹**：持久化记住文件夹路径，启动时自动加载
 - **设置对话框**：管理 default pin folder
 - **小窗口适配**：宽度 < 640px 自动收起侧边栏
+- **CI/CD 构建流水线**：GitHub Actions 自动化构建 macOS 和 Windows 二进制包；tag 推送时自动创建 GitHub Release 并上传 bundle artifact
 
 ### 色彩体系
 - 从硬编码 `#fafafa` / `#1c1c1e` / `#0891B2` 切换为暖白单调 CSS 变量

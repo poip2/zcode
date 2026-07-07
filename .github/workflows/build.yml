@@ -1,0 +1,80 @@
+---
+name: Build
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            name: macOS
+          - platform: windows-latest
+            name: Windows
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # On tag pushes: creates a GitHub Release.
+          # Otherwise: just produces platform bundles.
+          tagName: >-
+            ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: >-
+            ${{ startsWith(github.ref, 'refs/tags/') && format('zcode {0}', github.ref_name) || '' }}
+          releaseBody: |
+            Full changelog:
+            https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}
+
+            ## Install
+            - **macOS**: Download the `.dmg` file
+            - **Windows**: Download the `.msi` installer or `.exe` (NSIS)
+          releaseDraft: false
+          prerelease: false
+
+      - name: Upload artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-${{ matrix.name }}
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: ignore

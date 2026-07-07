@@ -292,7 +292,9 @@ pub async fn call_ai_provider(
         return Err("No Base URL configured. Please set it in Settings > AI Provider.".to_string());
     }
 
-    let model = if model.is_empty() { "gpt-4o".to_string() } else { model };
+    if model.is_empty() {
+        return Err("No model configured. Please set it in Settings > AI Provider.".to_string());
+    }
     let name = provider_name.filter(|s| !s.is_empty()).unwrap_or_else(|| "openai".to_string());
 
     let api_key = settings::get_api_key()?

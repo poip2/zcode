@@ -129,10 +129,11 @@ pub fn migrate_old_settings(app_config_dir: &std::path::PathBuf) {
         _ => return,
     };
 
-    // Skip if keyring already has a key
-    if get_api_key().ok().flatten().is_some() {
+    // Skip if keyring already has a key — strip cleartext, write masked indicator
+    if let Some(existing_key) = get_api_key().ok().flatten() {
         let obj = ai_provider.as_object_mut().unwrap();
         obj.remove("apiKey");
+        obj.insert("maskedApiKey".to_string(), serde_json::Value::String(mask_api_key(&existing_key)));
         if let Ok(new_json) = serde_json::to_string_pretty(&root) {
             let _ = fs::write(&legacy_path, new_json);
         }
@@ -140,14 +141,22 @@ pub fn migrate_old_settings(app_config_dir: &std::path::PathBuf) {
     }
 
     // Write to keyring (best-effort)
-    if set_api_key(&api_key).is_err() {
-        eprintln!("[zcode] Migration: failed to store API key in keychain, keeping legacy file.");
-        return;
+    match set_api_key(&api_key) {
+        Ok(Some(warning)) => {
+            eprintln!("[zcode] Migration: failed to store API key in keychain: {warning}. Keeping legacy file.");
+            return;
+        }
+        Err(e) => {
+            eprintln!("[zcode] Migration: unexpected error storing API key in keychain: {e}. Keeping legacy file.");
+            return;
+        }
+        Ok(None) => {}
     }
 
-    // Strip from legacy file
+    // Strip cleartext from legacy file and write masked indicator
     let obj = ai_provider.as_object_mut().unwrap();
     obj.remove("apiKey");
+    obj.insert("maskedApiKey".to_string(), serde_json::Value::String(mask_api_key(&api_key)));
     if let Ok(new_json) = serde_json::to_string_pretty(&root) {
         if let Err(e) = fs::write(&legacy_path, new_json) {
             eprintln!("[zcode] Migration: saved key to keychain but failed to update legacy file: {e}");

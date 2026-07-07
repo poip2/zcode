@@ -10,7 +10,7 @@
 //! 4. If tool calls: execute tools, append results, goto 3
 //! 5. If done: return final message
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::model::{
     AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent, ToolCall,
     ToolResultMessage, Usage, UserContent, UserMessage,
@@ -259,11 +259,9 @@ impl Agent {
             new_messages.push(prompt);
         }
 
-        // Main loop: assistant → tool calls → results → assistant → ...
-        loop {
-            let mut has_more_tool_calls = true;
+        let mut has_more_tool_calls = true;
 
-            while has_more_tool_calls {
+        while has_more_tool_calls {
                 let current_turn = turn_index;
                 on_event(AgentEvent::TurnStart {
                     session_id: session_id.clone(),
@@ -326,7 +324,7 @@ impl Agent {
                                 });
                             }
                         }
-                        Ok(StreamEvent::Done { reason, message }) => {
+                        Ok(StreamEvent::Done { reason: _, message }) => {
                             assistant_arc = Some(Arc::new(message));
                             // Signal done
                             if let Some(ref msg) = assistant_arc {
@@ -334,13 +332,11 @@ impl Agent {
                                     message: Message::Assistant(Arc::clone(msg)),
                                 });
                             }
-                            has_more_tool_calls = reason == StopReason::ToolUse;
                             break;
                         }
                         Ok(StreamEvent::Error { error, .. }) => {
                             assistant_arc = Some(Arc::new(error));
                             error_occurred = true;
-                            has_more_tool_calls = false;
                             break;
                         }
                         Ok(StreamEvent::Start { .. }) => {
@@ -357,8 +353,6 @@ impl Agent {
                             }));
                         }
                         Err(e) => {
-                            error_occurred = true;
-                            has_more_tool_calls = false;
                             on_event(AgentEvent::AgentEnd {
                                 session_id: session_id.clone(),
                                 messages: new_messages.clone(),
@@ -500,10 +494,6 @@ impl Agent {
 
                 turn_index = turn_index.saturating_add(1);
             }
-
-            // Agent is idle — done
-            break;
-        }
 
         let final_msg = last_assistant.unwrap_or_else(|| AssistantMessage {
             content: vec![],

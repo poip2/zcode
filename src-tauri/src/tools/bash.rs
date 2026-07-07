@@ -96,7 +96,7 @@ impl Tool for BashTool {
                     // Kill on timeout using stored PID
                     if let Some(pid) = pid {
                         let _ = if cfg!(unix) {
-                            std::process::Command::new("kill").arg(pid.to_string()).status()
+                            std::process::Command::new("kill").args(["-9", &pid.to_string()]).status()
                         } else {
                             std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status()
                         };

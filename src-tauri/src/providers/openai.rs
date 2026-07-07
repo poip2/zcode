@@ -49,13 +49,15 @@ impl OpenAIProvider {
         model: impl Into<String>,
         api_key: Option<impl Into<String>>,
         base_url: Option<impl Into<String>>,
-    ) -> Self {
+    ) -> Result<Self> {
         let api_key: Option<String> = api_key.map(|k| k.into());
         let has_api_key = api_key.is_some();
         let mut headers = reqwest::header::HeaderMap::new();
         if let Some(ref key) = api_key {
-            let mut auth = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}"))
-                .expect("invalid api key");
+            let mut auth = reqwest::header::HeaderValue::from_bytes(
+                format!("Bearer {key}").as_bytes(),
+            )
+            .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
             auth.set_sensitive(true);
             headers.insert(reqwest::header::AUTHORIZATION, auth);
         }
@@ -63,9 +65,9 @@ impl OpenAIProvider {
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .build()
-            .expect("failed to create HTTP client");
+            .map_err(|e| Error::api(format!("failed to create HTTP client: {e}")))?;
 
-        Self {
+        Ok(Self {
             client,
             provider: provider.into(),
             model: model.into(),
@@ -73,16 +75,16 @@ impl OpenAIProvider {
                 .map(|u| u.into())
                 .unwrap_or_else(|| OPENAI_API_URL.to_string()),
             has_api_key,
-        }
+        })
     }
 
     /// Create an OpenAI provider (alias for convenience).
-    pub fn openai(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Self {
+    pub fn openai(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Result<Self> {
         Self::new("openai", model, api_key, None::<String>)
     }
 
     /// Create a DeepSeek provider (uses deepseek API).
-    pub fn deepseek(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Self {
+    pub fn deepseek(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Result<Self> {
         Self::new(
             "deepseek",
             model,
@@ -92,7 +94,7 @@ impl OpenAIProvider {
     }
 
     /// Create a Groq provider.
-    pub fn groq(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Self {
+    pub fn groq(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Result<Self> {
         Self::new(
             "groq",
             model,
@@ -102,7 +104,7 @@ impl OpenAIProvider {
     }
 
     /// Create an OpenRouter provider.
-    pub fn openrouter(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Self {
+    pub fn openrouter(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Result<Self> {
         Self::new(
             "openrouter",
             model,

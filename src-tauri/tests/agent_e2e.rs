@@ -11,8 +11,12 @@ use zcode_lib::tools::ToolRegistry;
 use std::path::Path;
 use std::sync::Arc;
 
-const API_KEY: &str = "sk-5d70da53426b406c85dc33faf7ea5c60";
 const MODEL: &str = "deepseek-v4-flash";
+
+fn get_api_key() -> String {
+    std::env::var("ZCODE_TEST_API_KEY")
+        .unwrap_or_else(|_| panic!("ZCODE_TEST_API_KEY env var must be set"))
+}
 
 #[tokio::test]
 async fn test_agent_basic_chat() -> Result<()> {
@@ -23,7 +27,7 @@ async fn test_agent_basic_chat() -> Result<()> {
         MODEL,
         None::<String>,
         Some("https://api.deepseek.com/v1/chat/completions"),
-    ));
+    )?);
 
     let tools = ToolRegistry::new(&[], Path::new("."));
 
@@ -34,7 +38,7 @@ async fn test_agent_basic_chat() -> Result<()> {
     };
     stream_opts.headers.insert(
         "Authorization".into(),
-        format!("Bearer {API_KEY}"),
+        format!("Bearer {}", get_api_key()),
     );
 
     let config = AgentConfig {
@@ -105,7 +109,7 @@ async fn test_agent_with_tools() -> Result<()> {
         MODEL,
         None::<String>,
         Some("https://api.deepseek.com/v1/chat/completions"),
-    ));
+    )?);
 
     let tools = ToolRegistry::new(&["read", "ls"], cwd);
 
@@ -115,7 +119,7 @@ async fn test_agent_with_tools() -> Result<()> {
     };
     stream_opts.headers.insert(
         "Authorization".into(),
-        format!("Bearer {API_KEY}"),
+        format!("Bearer {}", get_api_key()),
     );
 
     let config = AgentConfig {

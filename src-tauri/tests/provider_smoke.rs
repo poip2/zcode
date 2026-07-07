@@ -32,8 +32,12 @@ fn print_stream_event(event: &zcode_lib::model::StreamEvent) {
     }
 }
 
-const API_KEY: &str = "sk-5d70da53426b406c85dc33faf7ea5c60";
 const MODEL: &str = "deepseek-v4-flash";
+
+fn get_api_key() -> String {
+    std::env::var("ZCODE_TEST_API_KEY")
+        .unwrap_or_else(|_| panic!("ZCODE_TEST_API_KEY env var must be set"))
+}
 
 #[tokio::test]
 async fn test_openai_deepseek() -> Result<()> {
@@ -42,7 +46,7 @@ async fn test_openai_deepseek() -> Result<()> {
         MODEL,
         None::<String>,
         Some("https://api.deepseek.com/v1/chat/completions"),
-    );
+    )?;
 
     let messages = vec![Message::User(UserMessage {
         content: UserContent::Text("Say hello in exactly 3 words.".to_string()),
@@ -50,7 +54,7 @@ async fn test_openai_deepseek() -> Result<()> {
     })];
     let context = Context { system_prompt: Some("Be brief."), messages: &messages, tools: &[] };
     let mut opts = StreamOptions { max_tokens: Some(100), ..Default::default() };
-    opts.headers.insert("Authorization".into(), format!("Bearer {API_KEY}"));
+    opts.headers.insert("Authorization".into(), format!("Bearer {}", get_api_key()));
 
     println!("\n=== OpenAI/DeepSeek ===");
     let mut stream = provider.stream(&context, &opts).await?;
@@ -69,7 +73,7 @@ async fn test_anthropic_deepseek() -> Result<()> {
         MODEL,
         None::<String>,
         Some("https://api.deepseek.com/anthropic/v1/messages"),
-    );
+    )?;
 
     let messages = vec![Message::User(UserMessage {
         content: UserContent::Text("Say hello in exactly 3 words. No thinking needed.".to_string()),
@@ -77,7 +81,7 @@ async fn test_anthropic_deepseek() -> Result<()> {
     })];
     let context = Context { system_prompt: Some("Be brief."), messages: &messages, tools: &[] };
     let mut opts = StreamOptions { max_tokens: Some(200), ..Default::default() };
-    opts.headers.insert("Authorization".into(), format!("Bearer {API_KEY}"));
+    opts.headers.insert("Authorization".into(), format!("Bearer {}", get_api_key()));
 
     println!("\n=== Anthropic/DeepSeek ===");
     let mut stream = provider.stream(&context, &opts).await?;

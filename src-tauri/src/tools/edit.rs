@@ -151,9 +151,10 @@ impl Tool for EditTool {
             Error::tool("edit", format!("Failed to read file: {e}"))
         })?;
 
-        let mut total_replacements = 0;
-        for (old_text, new_text) in &edits {
-            let matches: Vec<_> = content.match_indices(old_text.as_str()).collect();
+        let original = content.clone();
+        let mut positions: Vec<usize> = Vec::new();
+        for (old_text, _new_text) in &edits {
+            let matches: Vec<_> = original.match_indices(old_text.as_str()).collect();
             if matches.is_empty() {
                 return Err(Error::tool(
                     "edit",
@@ -170,10 +171,21 @@ impl Tool for EditTool {
                     ),
                 ));
             }
-            let pos = matches[0].0;
-            content.replace_range(pos..pos + old_text.len(), new_text);
-            total_replacements += 1;
+            positions.push(matches[0].0);
         }
+
+        let mut sorted: Vec<(usize, &str, &str)> = positions
+            .iter()
+            .enumerate()
+            .map(|(i, &pos)| (pos, edits[i].0.as_str(), edits[i].1.as_str()))
+            .collect();
+        sorted.sort_by_key(|(pos, _, _)| std::cmp::Reverse(*pos));
+
+        for (pos, old_text, new_text) in &sorted {
+            content.replace_range(*pos..pos + old_text.len(), new_text);
+        }
+
+        let total_replacements = edits.len();
 
         tokio::fs::write(&absolute_path, &content).await.map_err(|e| {
             Error::tool("edit", format!("Failed to write file: {e}"))

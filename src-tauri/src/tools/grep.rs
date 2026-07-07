@@ -64,7 +64,7 @@ impl Tool for GrepTool {
 
     fn description(&self) -> &str {
         "Search file contents for a pattern. Returns matching lines with file paths and line numbers. \
-         Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). \
+         Respects .gitignore. Output is truncated to 50KB and at most 100 matches per file. \
          Long lines are truncated to 500 chars."
     }
 

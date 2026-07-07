@@ -40,22 +40,22 @@ impl AnthropicProvider {
         model: impl Into<String>,
         api_key: Option<impl Into<String>>,
         base_url: Option<impl Into<String>>,
-    ) -> Self {
+    ) -> Result<Self> {
         let api_key: Option<String> = api_key.map(|k| k.into());
         let has_api_key = api_key.is_some();
         let mut headers = reqwest::header::HeaderMap::new();
         if let Some(ref key) = api_key {
             if key.starts_with("sk-ant-oat") {
-                // OAuth token → Bearer auth
-                let mut auth =
-                    reqwest::header::HeaderValue::from_str(&format!("Bearer {key}"))
-                        .expect("invalid bearer token");
+                let mut auth = reqwest::header::HeaderValue::from_bytes(
+                    format!("Bearer {key}").as_bytes(),
+                )
+                .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
                 auth.set_sensitive(true);
                 headers.insert(reqwest::header::AUTHORIZATION, auth);
             } else {
-                // API key → x-api-key header
                 let mut api_key_header =
-                    reqwest::header::HeaderValue::from_str(key).expect("invalid api key");
+                    reqwest::header::HeaderValue::from_bytes(key.as_bytes())
+                        .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
                 api_key_header.set_sensitive(true);
                 headers.insert("x-api-key", api_key_header);
             }
@@ -63,9 +63,9 @@ impl AnthropicProvider {
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .build()
-            .expect("failed to create HTTP client");
+            .map_err(|e| Error::api(format!("failed to create HTTP client: {e}")))?;
 
-        Self {
+        Ok(Self {
             client,
             provider: "anthropic".to_string(),
             model: model.into(),
@@ -73,7 +73,7 @@ impl AnthropicProvider {
                 .map(|u| u.into())
                 .unwrap_or_else(|| ANTHROPIC_API_URL.to_string()),
             has_api_key,
-        }
+        })
     }
 
     fn build_request<'a>(
@@ -742,7 +742,6 @@ fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
                     }],
                     is_error: Some(result.is_error),
                 })
-                .take(1)
                 .collect();
             AnthropicMessage {
                 role: "user",

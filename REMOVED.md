@@ -368,10 +368,10 @@ isInitialized() → boolean            // 是否已初始化
 **功能**：
 - `<dialog>` 模态弹窗，带 3 个 Tab：**Default Folder** / **AI Provider** / **Skills**
 - **Default Folder**：显示当前钉选路径 + Browse… / Change… 按钮
-- **AI Provider**：Base URL / API Key（可切换明文显示）/ Model 输入
+- **AI Provider**：Base URL / Model 输入 + API Key（遮罩显示，点击可编辑；编辑模式下眼睛图标切换密码/明文）。API Key 真实值存入 OS keychain，本地 store 仅存脱敏版（如 `sk-5d70d***5c60`）
 - **Skills**：4 个 AI 技能开关（Summarize / Fix Grammar / TOC / Explain Code）+ 预留 "Add custom skill" 按钮
-- 保存/取消按钮，保存失败有错误提示
-- 数据持久化到 `zcode-settings.json`（通过 `settings.ts` store）
+- 保存/取消按钮，保存失败有错误提示；keychain 不可用时显示警告横幅但不阻塞保存
+- 非敏感数据（baseUrl / model / maskedApiKey）持久化到 `zcode-settings.json`（通过 `settings.ts` store）；真实 API Key 通过 Rust `keyring` crate 存入系统 keychain
 - 点击标题栏齿轮图标打开
 
 ---
@@ -502,9 +502,9 @@ sidebarVisible, userCollapsed, settingsOpen
 
 **功能**：
 - 通过 `@tauri-apps/plugin-store` 持久化到 `zcode-settings.json`
-- `AppSettings` 接口：AI 后端配置（baseUrl / apiKey / model）+ 技能开关
+- `AppSettings` 接口：AI 后端配置（baseUrl / model / maskedApiKey）+ 技能开关。`maskedApiKey` 为脱敏版本（如 `sk-5d70d***5c60`），可安全明文存储；真实 apiKey 由 Rust 命令存入 OS keychain
 - `load()` 返回合并默认值的结果（向后兼容旧版本缺少的 key）
-- `save()` 保存到磁盘（明文存储 API Key，未来应改用系统 keychain）
+- `save()` 保存 baseUrl / model / maskedApiKey 到磁盘；真实 apiKey 由 `tauri/ai.ts` 的 `saveApiKey()` 通过 Rust `keyring` crate 写入系统 keychain
 - 默认值：Summarize / FixGrammar 开启，TOC / ExplainCode 关闭
 
 ---
@@ -525,18 +525,20 @@ sidebarVisible, userCollapsed, settingsOpen
 
 ## 十一、Tauri Rust 后端（19 个源文件）
 
-### 11.1 `src-tauri/src/commands.rs` — 命令（8 个命令）
+### 11.1 `src-tauri/src/commands.rs` — 命令（10 个命令）
 
-| 命令 | 功能 | v0.1 | v0.2 |
-|---|---|---|---|
-| `read_markdown_file(path)` | 读取文件内容为 UTF-8 字符串 | ✅ | ✅ |
-| `write_markdown_file(path, content)` | 写入字符串到文件 | ✅ | ✅ |
-| `resolve_path(path)` | 将相对路径解析为绝对路径 | ✅ | ✅ |
-| `allow_assets(paths)` | 图片路径加入 asset protocol 白名单 | ✅ | ✅ |
-| `read_dir_tree(root)` | 递归扫描目录，返回 `DirNode` 嵌套树 | ❌ | ✅ |
-| `path_exists(path)` | 检查路径是否存在 | ❌ | ✅ |
-| `create_markdown_file(dir, name)` | 在目录下创建 `.md` 文件 | ❌ | ✅ |
-| `create_folder(dir, name)` | 在目录下创建子文件夹 | ❌ | ✅ |
+| 命令 | 功能 | v0.1 | v0.2 | v0.3+ |
+|---|---|---|---|---|
+| `read_markdown_file(path)` | 读取文件内容为 UTF-8 字符串 | ✅ | ✅ | ✅ |
+| `write_markdown_file(path, content)` | 写入字符串到文件 | ✅ | ✅ | ✅ |
+| `resolve_path(path)` | 将相对路径解析为绝对路径 | ✅ | ✅ | ✅ |
+| `allow_assets(paths)` | 图片路径加入 asset protocol 白名单 | ✅ | ✅ | ✅ |
+| `read_dir_tree(root)` | 递归扫描目录，返回 `DirNode` 嵌套树 | ❌ | ✅ | ✅ |
+| `path_exists(path)` | 检查路径是否存在 | ❌ | ✅ | ✅ |
+| `create_markdown_file(dir, name)` | 在目录下创建 `.md` 文件 | ❌ | ✅ | ✅ |
+| `create_folder(dir, name)` | 在目录下创建子文件夹 | ❌ | ✅ | ✅ |
+| `save_api_key(api_key)` | 将 API Key 存入 OS keychain（空串=删除），keychain 不可用时返回警告 | ❌ | ❌ | ✅ |
+| `call_ai_provider(base_url, model, prompt, provider_name?)` | 从 keychain 读取 API Key 并发起 AI 流式调用，返回完整响应文本 | ❌ | ❌ | ✅ |
 
 **新增数据结构**：
 ```rust
@@ -567,6 +569,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())     // 外部链接用系统浏览器打开
         .plugin(tauri_plugin_dialog::init())      // 系统文件/文件夹对话框
         .plugin(tauri_plugin_store::Builder::default().build())  // ★ v0.2: 键值持久化
+        .setup(|app| {
+            // ★ v0.4: 启动时自动迁移旧版明文 apiKey 到 keychain
+            if let Ok(config_dir) = app.path().app_config_dir() {
+                crate::settings::migrate_old_settings(&config_dir);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::read_markdown_file,
             commands::write_markdown_file,
@@ -576,11 +585,15 @@ pub fn run() {
             commands::path_exists,                // ★ v0.2
             commands::create_markdown_file,       // ★ v0.2
             commands::create_folder,              // ★ v0.2
+            commands::save_api_key,               // ★ v0.4: keychain 存储
+            commands::call_ai_provider,           // ★ v0.4: AI 流式调用（key 从 keychain 读取）
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
+
+**v0.4 新增**：`pub mod settings;` 模块（keychain API Key 存储 + 旧版迁移），`use tauri::Manager;` 引入。
 
 ---
 
@@ -714,6 +727,7 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
+keyring = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -768,7 +782,8 @@ zcode/
 │       ├── renderer/
 │       │   └── pipeline.ts              # 渲染管线
 │       └── tauri/
-│           └── files.ts                 # 文件操作（8 个函数）
+│           ├── files.ts                 # 文件操作（8 个函数）
+│           └── ai.ts                    # AI keychain 操作 + callAIProvider + maskApiKey
 ├── .github/
 │   └── workflows/
 │       └── build.yml                    # CI/CD（tag 推送 + 手动触发，macOS/Windows 构建+Release）
@@ -780,8 +795,9 @@ zcode/
 │   ├── icons/...
 │   ├── src/
 │   │   ├── main.rs
-│   │   ├── lib.rs                       # 8 命令 + 3 插件 + agent pipeline 模块声明
-│   │   ├── commands.rs                  # 8 个命令，MAX_TREE_DEPTH=3
+│   │   ├── lib.rs                       # 10 命令 + 3 插件 + agent pipeline 模块声明 + migration setup
+│   │   ├── commands.rs                  # 10 个命令，MAX_TREE_DEPTH=3
+│   │   ├── settings.rs                  # ★ v0.4: OS keychain API Key 存储 + 脱敏 + 旧版明文迁移
 │   │   ├── agent.rs                     # ★ v0.3: Agent 主循环编排
 │   │   ├── model.rs                     # ★ v0.3: 共享消息/内容块/流事件类型
 │   │   ├── provider.rs                  # ★ v0.3: Provider trait 抽象层
@@ -809,7 +825,7 @@ zcode/
 └── REMOVED.md                           # 本文档
 ```
 
-**源文件总计：38 个**（前端 19 个 + Rust 19 个，不含配置和图标、zcode-mock.html、测试文件）
+**源文件总计：40 个**（前端 20 个 + Rust 20 个，不含配置和图标、zcode-mock.html、测试文件）
 
 ---
 
@@ -822,7 +838,7 @@ zcode/
 - **设置对话框**：3 个 Tab — Default Folder / AI Provider（含 API Key + Model 配置）/ Skills（4 个 AI 技能开关）
 - **小窗口适配**：宽度 < 640px 自动收起侧边栏，状态栏 hints 通过 container query 响应式适配
 - **CI/CD 构建流水线**：GitHub Actions（tag 推送 + 手动触发），macOS + Windows 构建，tag 自动 Release
-- **AI 后端配置**：OpenAI 兼容 API（baseUrl / apiKey / model），明文存储到 `zcode-settings.json`
+- **AI 后端配置 + 调用命令**：OpenAI 兼容 API（baseUrl / model），API Key 通过 `keyring` crate 存入 OS keychain（macOS Keychain / Windows Credential Manager / Linux secret-service），`zcode-settings.json` 仅存脱敏版（如 `sk-5d70d***5c60`）；新增 `call_ai_provider` Rust 命令从 keychain 读取 key 并流式调用 AI；keychain 不可用时保存不阻塞，显示警告横幅；启动时自动迁移旧版明文 apiKey 到 keychain
 - **共享 Store 实例**：`sharedStore.ts` 单例模式，供 recents 和 pinnedFolder 共用 `zcode-recents.json`
 - **AI Agent Pipeline** ★ v0.3：完整的 AI 编程代理（Agent Loop + Provider + Tools + Skills），从 pi-agent-rust 移植，支持 Anthropic 原生 API 和 OpenAI Chat Completions（兼容 20+ 提供商），8 个工具（read/bash/edit/write/grep/find/ls + 路径安全），技能系统（YAML frontmatter + XML system prompt 注入），纯 tokio 异步运行时，15 个测试全部通过
 
@@ -846,5 +862,4 @@ zcode/
 - **Windows Snap Layouts**：`decorations: false` 会丢失此系统功能
 - **文件树深度**：后端扫描 3 层，前端 Sidebar 模板渲染 3 层
 - **macOS 交通灯**：使用 `decorations: false` 而非 `titleBarStyle: "Overlay"`，macOS 上会丢失原生红黄绿按钮
-- **API Key 安全**：明文存储到 JSON 文件，未使用 OS keychain
 - **工具依赖**：grep 工具需系统安装 `rg`（ripgrep），find 工具需系统安装 `fd`（fd-find）

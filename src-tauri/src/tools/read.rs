@@ -105,7 +105,11 @@ impl Tool for ReadTool {
             let bytes = tokio::fs::read(&path).await.map_err(|e| {
                 Error::tool("read", format!("Failed to read image: {e}"))
             })?;
-            let mime = format!("image/{ext}");
+            let mime = if ext == "jpg" || ext == "jpeg" {
+                "image/jpeg".to_string()
+            } else {
+                format!("image/{ext}")
+            };
             let base64 = base64_encode(&bytes);
             return Ok(ToolOutput {
                 content: vec![

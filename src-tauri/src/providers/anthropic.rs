@@ -94,25 +94,22 @@ impl AnthropicProvider {
         };
 
         // Build thinking config
-        let (thinking, output_config) = match options.thinking_level {
-            None | Some(ThinkingLevel::Off) => (None, None),
+        let thinking = match options.thinking_level {
+            None | Some(ThinkingLevel::Off) => None,
             Some(level) => {
-                // Use adaptive thinking by default (modern Anthropic API)
-                let effort = match level {
-                    ThinkingLevel::Minimal => Some("low".to_string()),
-                    ThinkingLevel::Low => Some("low".to_string()),
-                    ThinkingLevel::Medium => Some("medium".to_string()),
-                    ThinkingLevel::High => Some("high".to_string()),
-                    ThinkingLevel::XHigh => Some("xhigh".to_string()),
-                    ThinkingLevel::Off => None,
+                let budget_tokens = match level {
+                    ThinkingLevel::Minimal => 1024,
+                    ThinkingLevel::Low => 2048,
+                    ThinkingLevel::Medium => 4096,
+                    ThinkingLevel::High => 8192,
+                    ThinkingLevel::XHigh => 16384,
+                    ThinkingLevel::Off => unreachable!(),
                 };
-                let thinking = AnthropicThinking {
-                    r#type: "adaptive",
-                    budget_tokens: None,
-                    display: Some("summarized"),
-                };
-                let output_config = AnthropicOutputConfig { effort };
-                (Some(thinking), Some(output_config))
+                Some(AnthropicThinking {
+                    r#type: "enabled",
+                    budget_tokens: Some(budget_tokens),
+                    display: None,
+                })
             }
         };
 
@@ -127,7 +124,6 @@ impl AnthropicProvider {
             tools,
             stream: true,
             thinking,
-            output_config,
         }
     }
 }
@@ -280,8 +276,6 @@ struct AnthropicRequest<'a> {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking: Option<AnthropicThinking>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    output_config: Option<AnthropicOutputConfig>,
 }
 
 #[derive(Debug, Serialize)]
@@ -291,12 +285,6 @@ struct AnthropicThinking {
     budget_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     display: Option<&'static str>,
-}
-
-#[derive(Debug, Serialize)]
-struct AnthropicOutputConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    effort: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

@@ -50,11 +50,9 @@ impl SseStream {
 
     /// Attempt to parse the next complete SSE event from the buffer.
     fn parse_event(&mut self) -> Option<SseEvent> {
-        let buffer_str = String::from_utf8_lossy(&self.buffer);
-        // Find the double newline that terminates an event.
-        if let Some(pos) = buffer_str.find("\n\n") {
-            let event_str = &buffer_str[..pos];
-            let consumed = pos + 2; // include the \n\n
+        if let Some(pos) = self.buffer.windows(2).position(|w| w == b"\n\n") {
+            let consumed = pos + 2;
+            let event_str = String::from_utf8_lossy(&self.buffer[..pos]);
 
             let mut event = SseEvent::default();
             let mut data_lines: Vec<&str> = Vec::new();

@@ -105,7 +105,10 @@ pub fn mask_api_key(key: &str) -> String {
 pub fn migrate_old_settings(data_dir: &std::path::Path, config_dir: &std::path::Path) {
     use std::fs;
 
-    let candidates = [data_dir.join("zcode-settings.json"), config_dir.join("zcode-settings.json")];
+    let candidates = [
+        data_dir.join("zcode-settings.json"),
+        config_dir.join("zcode-settings.json"),
+    ];
 
     // Check all candidate paths. Use the first one that actually contains
     // a cleartext `aiProvider.apiKey`, not just the first readable file.

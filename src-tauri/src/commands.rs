@@ -1,7 +1,7 @@
-use crate::settings;
+use crate::model::{Message, UserContent, UserMessage};
 use crate::provider::{Context, Provider, StreamOptions};
 use crate::providers::OpenAIProvider;
-use crate::model::{Message, UserContent, UserMessage};
+use crate::settings;
 use futures::StreamExt;
 use serde::Serialize;
 use std::fs;
@@ -295,10 +295,13 @@ pub async fn call_ai_provider(
     if model.is_empty() {
         return Err("No model configured. Please set it in Settings > AI Provider.".to_string());
     }
-    let name = provider_name.filter(|s| !s.is_empty()).unwrap_or_else(|| "openai".to_string());
+    let name = provider_name
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "openai".to_string());
 
-    let api_key = settings::get_api_key()?
-        .ok_or_else(|| "No API key configured. Please set it in Settings > AI Provider.".to_string())?;
+    let api_key = settings::get_api_key()?.ok_or_else(|| {
+        "No API key configured. Please set it in Settings > AI Provider.".to_string()
+    })?;
 
     let provider = OpenAIProvider::new(&name, &model, Some(&api_key), Some(&base_url))
         .map_err(|e| e.to_string())?;

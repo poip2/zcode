@@ -13,8 +13,14 @@ use zcode_lib::settings;
 
 #[test]
 fn test_mask_api_key_standard() {
-    assert_eq!(settings::mask_api_key("sk-abc123def4567890abcdef"), "sk-***cdef");
-    assert_eq!(settings::mask_api_key("sk-ant-api03-verylongkey1234567ea5"), "sk-***7ea5");
+    assert_eq!(
+        settings::mask_api_key("sk-abc123def4567890abcdef"),
+        "sk-***cdef"
+    );
+    assert_eq!(
+        settings::mask_api_key("sk-ant-api03-verylongkey1234567ea5"),
+        "sk-***7ea5"
+    );
 }
 
 #[test]
@@ -32,7 +38,10 @@ fn test_mask_api_key_exact_boundary() {
     // 9 chars
     assert_eq!(settings::mask_api_key("123456789"), "123***6789");
     // long openai key
-    assert_eq!(settings::mask_api_key("sk-proj-abcdefghijklmnopqrstuvwxyz"), "sk-***wxyz");
+    assert_eq!(
+        settings::mask_api_key("sk-proj-abcdefghijklmnopqrstuvwxyz"),
+        "sk-***wxyz"
+    );
 }
 
 // ── Store-only masked key (no keychain required) ─────────────────────────
@@ -61,7 +70,10 @@ fn test_set_api_key_returns_warning_when_keychain_unavailable() {
     // rather than Err — this ensures the app never blocks on keychain
     // unavailability.
     let result = settings::set_api_key("test-key-12345");
-    assert!(result.is_ok(), "set_api_key must not panic or return Err even when keychain is unavailable");
+    assert!(
+        result.is_ok(),
+        "set_api_key must not panic or return Err even when keychain is unavailable"
+    );
 
     if let Ok(opt) = result {
         if let Some(warning) = opt {
@@ -126,8 +138,14 @@ fn test_migrate_old_settings_no_api_key() {
     let content = fs::read_to_string(config_dir.join("zcode-settings.json")).unwrap();
     let root: serde_json::Value = serde_json::from_str(&content).unwrap();
     let ai = &root["settings"]["aiProvider"];
-    assert!(ai.get("apiKey").is_none(), "apiKey should not have appeared");
-    assert!(ai.get("maskedApiKey").is_none(), "maskedApiKey should not have appeared");
+    assert!(
+        ai.get("apiKey").is_none(),
+        "apiKey should not have appeared"
+    );
+    assert!(
+        ai.get("maskedApiKey").is_none(),
+        "maskedApiKey should not have appeared"
+    );
 }
 
 #[test]
@@ -154,7 +172,10 @@ fn test_migrate_old_settings_with_api_key_graceful_no_keychain() {
     assert!(config_dir.join("zcode-settings.json").exists());
     let content = fs::read_to_string(config_dir.join("zcode-settings.json")).unwrap();
     eprintln!("Post-migration file: {content}");
-    assert!(!content.is_empty(), "legacy file should not be empty after migration");
+    assert!(
+        !content.is_empty(),
+        "legacy file should not be empty after migration"
+    );
 
     // If keychain IS available, apiKey should be removed and replaced with maskedApiKey
     // If keychain IS NOT available, the file stays intact with cleartext apiKey
@@ -167,7 +188,10 @@ fn test_migrate_old_settings_with_api_key_graceful_no_keychain() {
     // Either the migration succeeded (masked present, cleartext gone) or
     // keychain was unavailable (cleartext still present). Both are valid.
     if has_masked {
-        assert!(!has_api_key, "cleartext apiKey must be removed when maskedApiKey is present");
+        assert!(
+            !has_api_key,
+            "cleartext apiKey must be removed when maskedApiKey is present"
+        );
     } else {
         // Migration couldn't store to keychain — file preserved as-is
         assert!(has_api_key, "legacy apiKey should still be in the file");

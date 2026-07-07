@@ -8,8 +8,8 @@
 //! - macOS:   Security framework (Keychain Access) — always available
 //! - Windows: Windows Credential Manager — always available
 //! - Linux:   `secret-service` D-Bus API (requires gnome-keyring, kwallet, or
-//!            similar daemon). In WSL without a daemon, operations will fail
-//!            gracefully with a descriptive error.
+//!   similar daemon). In WSL without a daemon, operations will fail
+//!   gracefully with a descriptive error.
 
 // ============================================================================
 // Constants
@@ -100,7 +100,7 @@ pub fn mask_api_key(key: &str) -> String {
 ///
 /// Called once at app startup. Idempotent: if keyring already has a key
 /// or the old file has no apiKey, it does nothing.
-pub fn migrate_old_settings(app_config_dir: &std::path::PathBuf) {
+pub fn migrate_old_settings(app_config_dir: &std::path::Path) {
     use std::fs;
 
     let legacy_path = app_config_dir.join("zcode-settings.json");
@@ -133,7 +133,10 @@ pub fn migrate_old_settings(app_config_dir: &std::path::PathBuf) {
     if let Some(existing_key) = get_api_key().ok().flatten() {
         let obj = ai_provider.as_object_mut().unwrap();
         obj.remove("apiKey");
-        obj.insert("maskedApiKey".to_string(), serde_json::Value::String(mask_api_key(&existing_key)));
+        obj.insert(
+            "maskedApiKey".to_string(),
+            serde_json::Value::String(mask_api_key(&existing_key)),
+        );
         if let Ok(new_json) = serde_json::to_string_pretty(&root) {
             let _ = fs::write(&legacy_path, new_json);
         }
@@ -156,10 +159,15 @@ pub fn migrate_old_settings(app_config_dir: &std::path::PathBuf) {
     // Strip cleartext from legacy file and write masked indicator
     let obj = ai_provider.as_object_mut().unwrap();
     obj.remove("apiKey");
-    obj.insert("maskedApiKey".to_string(), serde_json::Value::String(mask_api_key(&api_key)));
+    obj.insert(
+        "maskedApiKey".to_string(),
+        serde_json::Value::String(mask_api_key(&api_key)),
+    );
     if let Ok(new_json) = serde_json::to_string_pretty(&root) {
         if let Err(e) = fs::write(&legacy_path, new_json) {
-            eprintln!("[zcode] Migration: saved key to keychain but failed to update legacy file: {e}");
+            eprintln!(
+                "[zcode] Migration: saved key to keychain but failed to update legacy file: {e}"
+            );
         }
     }
 }

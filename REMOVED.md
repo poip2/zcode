@@ -248,9 +248,10 @@ __mdhero_about, __mdhero_check_updates, __mdhero_ai_lookup
 | 前端组件文件 | 22 个 | 2 个 | 5 个 | Sidebar, TitleBar, SettingsDialog, Editor, MarkdownRenderer |
 | Stores | 12 个 | 1 个 | 6 个 | +recents, folderTree, pinnedFolder, settings, sharedStore |
 | Utils | 4 个 | 0 个 | 0 个 | 不变 |
-| Rust 源文件 | 4 个 | 2 个 | 2 个 | commands.rs + lib.rs（不变） |
+| Rust 源文件 | 4 个 | 2 个 | 19 个 | +agent, model, provider, skills, sse, error, providers/, tools/（agent pipeline） |
 | Rust 命令 | 12 个 | 4 个 | 8 个 | +read_dir_tree, path_exists, create_markdown_file, create_folder |
 | Tauri 插件 | 6 个 | 2 个 | 3 个 | +tauri-plugin-store |
+| Rust 测试文件 | 1 个 | 0 个 | 4 个 | +agent_e2e, provider_smoke, skill_e2e, tool_smoke |
 | NPM 核心依赖 | 12 个 | 9 个 | 10 个 | +@tauri-apps/plugin-store |
 | `+page.svelte` | ~700 行 | ~220 行 | ~330 行 | 标题栏+侧边栏+主内容布局 |
 | **前端源文件总数** | **~55 个** | **~10 个** | **~19 个** | +settings.ts, sharedStore.ts |
@@ -522,7 +523,7 @@ sidebarVisible, userCollapsed, settingsOpen
 
 ---
 
-## 十一、Tauri Rust 后端（2 个源文件）
+## 十一、Tauri Rust 后端（19 个源文件）
 
 ### 11.1 `src-tauri/src/commands.rs` — 命令（8 个命令）
 
@@ -592,12 +593,56 @@ fn main() { zcode_lib::run() }
 
 ---
 
+### 11.4 Agent Pipeline ★ v0.3 新增
+
+Agent pipeline 从 pi-agent-rust 参考项目（commit e7792d64）移植而来，提供 AI 编程代理能力：
+
+**模块结构**：
+
+| 模块 | 文件 | 用途 |
+|---|---|---|
+| **Agent Loop** | `agent.rs` | 主循环编排：用户输入 → Provider 流式调用 → 工具执行 → 循环，支持事件回调 |
+| **Model** | `model.rs` | 共享消息类型：UserMessage, AssistantMessage, ToolResultMessage, ContentBlock, StreamEvent, Usage |
+| **Provider** | `provider.rs` | LLM 抽象层：定义 `Provider` trait、`Context`、`ToolDef`、`StreamOptions` |
+| **Anthropic** | `providers/anthropic.rs` | Anthropic Messages API 实现（原生 API，含 extended thinking） |
+| **OpenAI** | `providers/openai.rs` | OpenAI Chat Completions API 实现（兼容 20+ 提供商：Groq, DeepSeek, OpenRouter, Together 等） |
+| **Skills** | `skills.rs` | 技能加载器：从 `.zcode/skills/*/SKILL.md`（项目级）和 `~/.config/zcode/skills/*/SKILL.md`（用户级）发现技能，YAML frontmatter 解析，XML 格式化注入 system prompt |
+| **SSE** | `sse.rs` | Server-Sent Events 流解析器，基于 reqwest streaming response |
+| **Error** | `error.rs` | 统一错误类型：Provider/Tool/Validation/Api/Sse/Io/Other |
+| **Tools** | `tools/mod.rs` | 工具 trait + 注册表 + 路径安全工具（enforce_cwd_scope, resolve_path, canonicalize_safe） |
+| **Read** | `tools/read.rs` | 文件读取（支持 offset/limit、图片、截断） |
+| **Bash** | `tools/bash.rs` | Shell 命令执行（120s 超时、输出截断） |
+| **Edit** | `tools/edit.rs` | 精确文本替换编辑（多编辑批量、边界检查） |
+| **Write** | `tools/write.rs` | 文件创建/覆盖（路径限制 100MB） |
+| **Grep** | `tools/grep.rs` | ripgrep 文本搜索（需安装 `rg`） |
+| **Find** | `tools/find.rs` | fd-find 文件搜索（需安装 `fd`） |
+| **Ls** | `tools/ls.rs` | 目录列表（截断 500 条目、扫描上限 20000） |
+
+**依赖新增**（Cargo.toml）：
+- `async-trait`, `reqwest` (stream + rustls-tls + json), `futures`, `tokio` (rt-multi-thread + sync + time + process + fs)
+- `base64`, `chrono` (serde), `anyhow`
+- `tempfile` (dev-dependency)
+
+**测试**：
+- `agent_e2e.rs` — 端到端代理测试（含工具调用循环，需 DeepSeek API key）
+- `provider_smoke.rs` — 两个 Provider 的流式调用冒烟测试
+- `skill_e2e.rs` — 技能注入 + 模型识别端到端测试
+- `tool_smoke.rs` — 所有 7 个工具的单元测试
+
+**关键设计**：
+- 无 async supersync 依赖，纯 tokio 异步运行时
+- 无 TUI 依赖，专为 Tauri 桌面应用上下文设计
+- 工作目录安全：所有文件操作强制限制在 CWD 范围内（`enforce_cwd_scope`）
+- 工具输出截断：最大 2000 行 / 1MB
+
+---
+
 ## 十二、配置和工程文件（v0.2 改动）
 
 | 文件 | v0.2 改动 |
 |---|---|
 | `package.json` | +`@tauri-apps/plugin-store` 依赖 |
-| `Cargo.toml` | +`tauri-plugin-store = "2"` 依赖 |
+| `Cargo.toml` | +`tauri-plugin-store = "2"`；+ Phase 1 agent pipeline deps（async-trait, reqwest, tokio, chrono, anyhow 等 7 个 deps + 1 个 dev-dep） |
 | `tauri.conf.json` | `decorations: false`（自绘标题栏）；fileAssociations 支持 `.md`/`.markdown`/`.mdown`/`.mkd` |
 | `capabilities/default.json` | +`core:window:allow-set-title/minimize/toggle-maximize/close/start-dragging`；+`store:default` |
 | `.github/workflows/build.yml` | ★ GitHub Actions CI/CD（tag 推送 + 手动触发，macOS + Windows 构建并生成 bundle artifact；tag 推送时自动创建 GitHub Release） |
@@ -671,6 +716,18 @@ tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Phase 1: Provider abstraction + LLM API clients
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "fs"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+
+[dev-dependencies]
+tempfile = "3"
 ```
 
 ---
@@ -716,19 +773,43 @@ zcode/
 │   └── workflows/
 │       └── build.yml                    # CI/CD（tag 推送 + 手动触发，macOS/Windows 构建+Release）
 ├── src-tauri/
-│   ├── Cargo.toml                       # +tauri-plugin-store
+│   ├── Cargo.toml                       # +tauri-plugin-store + agent pipeline deps
 │   ├── tauri.conf.json                  # decorations:false + fileAssociations
 │   ├── capabilities/
 │   │   └── default.json                 # +window +store 权限
 │   ├── icons/...
-│   └── src/
-│       ├── main.rs
-│       ├── lib.rs                       # 8 命令 + 3 插件
-│       └── commands.rs                  # 8 个命令，MAX_TREE_DEPTH=3
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── lib.rs                       # 8 命令 + 3 插件 + agent pipeline 模块声明
+│   │   ├── commands.rs                  # 8 个命令，MAX_TREE_DEPTH=3
+│   │   ├── agent.rs                     # ★ v0.3: Agent 主循环编排
+│   │   ├── model.rs                     # ★ v0.3: 共享消息/内容块/流事件类型
+│   │   ├── provider.rs                  # ★ v0.3: Provider trait 抽象层
+│   │   ├── providers/
+│   │   │   ├── mod.rs
+│   │   │   ├── anthropic.rs              # ★ v0.3: Anthropic Messages API 实现
+│   │   │   └── openai.rs                 # ★ v0.3: OpenAI Chat Completions 实现
+│   │   ├── skills.rs                    # ★ v0.3: 技能加载器（YAML frontmatter + XML 注入）
+│   │   ├── sse.rs                       # ★ v0.3: SSE 流解析器
+│   │   ├── error.rs                     # ★ v0.3: 统一错误类型
+│   │   └── tools/
+│   │       ├── mod.rs                   # ★ v0.3: Tool trait + 注册表 + 路径安全
+│   │       ├── bash.rs                  # ★ v0.3: Shell 命令执行
+│   │       ├── edit.rs                  # ★ v0.3: 精确文本替换编辑
+│   │       ├── find.rs                  # ★ v0.3: fd-find 文件搜索
+│   │       ├── grep.rs                  # ★ v0.3: ripgrep 文本搜索
+│   │       ├── ls.rs                    # ★ v0.3: 目录列表
+│   │       ├── read.rs                  # ★ v0.3: 文件读取
+│   │       └── write.rs                 # ★ v0.3: 文件创建/覆盖
+│   └── tests/
+│       ├── agent_e2e.rs                 # ★ v0.3: Agent 端到端测试（含工具调用）
+│       ├── provider_smoke.rs            # ★ v0.3: Provider 流式调用测试
+│       ├── skill_e2e.rs                 # ★ v0.3: 技能注入端到端测试
+│       └── tool_smoke.rs                # ★ v0.3: 工具注册表 + 单元测试
 └── REMOVED.md                           # 本文档
 ```
 
-**源文件总计：19 个**（不含配置和图标、zcode-mock.html）
+**源文件总计：38 个**（前端 19 个 + Rust 19 个，不含配置和图标、zcode-mock.html、测试文件）
 
 ---
 
@@ -743,6 +824,7 @@ zcode/
 - **CI/CD 构建流水线**：GitHub Actions（tag 推送 + 手动触发），macOS + Windows 构建，tag 自动 Release
 - **AI 后端配置**：OpenAI 兼容 API（baseUrl / apiKey / model），明文存储到 `zcode-settings.json`
 - **共享 Store 实例**：`sharedStore.ts` 单例模式，供 recents 和 pinnedFolder 共用 `zcode-recents.json`
+- **AI Agent Pipeline** ★ v0.3：完整的 AI 编程代理（Agent Loop + Provider + Tools + Skills），从 pi-agent-rust 移植，支持 Anthropic 原生 API 和 OpenAI Chat Completions（兼容 20+ 提供商），8 个工具（read/bash/edit/write/grep/find/ls + 路径安全），技能系统（YAML frontmatter + XML system prompt 注入），纯 tokio 异步运行时，15 个测试全部通过
 
 ### 色彩体系
 - 从硬编码 `#fafafa` / `#1c1c1e` / `#0891B2` 切换为暖白单调 CSS 变量
@@ -764,4 +846,5 @@ zcode/
 - **Windows Snap Layouts**：`decorations: false` 会丢失此系统功能
 - **文件树深度**：后端扫描 3 层，前端 Sidebar 模板渲染 3 层
 - **macOS 交通灯**：使用 `decorations: false` 而非 `titleBarStyle: "Overlay"`，macOS 上会丢失原生红黄绿按钮
-- **API Key 安全**：明文存储到 JSON 文件，未使用 OS keychain（AI 功能仍为 stub 状态时暂可接受）
+- **API Key 安全**：明文存储到 JSON 文件，未使用 OS keychain
+- **工具依赖**：grep 工具需系统安装 `rg`（ripgrep），find 工具需系统安装 `fd`（fd-find）

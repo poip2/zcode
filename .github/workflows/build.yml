@@ -1,6 +1,7 @@
+---
 name: Build
 
-on:
+on:  # yamllint disable-line rule:truthy
   push:
     branches: [main]
     tags: ["v*"]
@@ -50,12 +51,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Only pass tagName / releaseName on tag pushes (creates a GitHub Release).
-          # On all other events the action just produces the platform bundles.
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('zcode {0}', github.ref_name) || '' }}
+          # On tag pushes: creates a GitHub Release.
+          # Otherwise: just produces platform bundles.
+          tagName: >-
+            ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: >-
+            ${{ startsWith(github.ref, 'refs/tags/') && format('zcode {0}', github.ref_name) || '' }}
           releaseBody: |
-            See the full changelog in the [commit history](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}).
+            Full changelog:
+            https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}
 
             ## Install
             - **macOS**: Download the `.dmg` file

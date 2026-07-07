@@ -3,10 +3,7 @@ name: Build
 
 on:  # yamllint disable-line rule:truthy
   push:
-    branches: [master]
     tags: ["v*"]
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -53,10 +50,8 @@ jobs:
         with:
           # On tag pushes: creates a GitHub Release.
           # Otherwise: just produces platform bundles.
-          tagName: >-
-            ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: >-
-            ${{ startsWith(github.ref, 'refs/tags/') && format('zcode {0}', github.ref_name) || '' }}
+          tagName: ${{ github.ref_name }}
+          releaseName: zcode ${{ github.ref_name }}
           releaseBody: |
             Full changelog:
             https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}
@@ -69,6 +64,8 @@ jobs:
 
       - name: Upload artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        # This step never runs because the workflow only triggers on tags.
+        # Kept for reference in case you add branch triggers back in the future.
         uses: actions/upload-artifact@v4
         with:
           name: zcode-${{ matrix.name }}

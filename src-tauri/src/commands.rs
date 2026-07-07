@@ -1,3 +1,8 @@
+use crate::settings;
+use crate::provider::{Context, Provider, StreamOptions};
+use crate::providers::OpenAIProvider;
+use crate::model::{Message, UserContent, UserMessage};
+use futures::StreamExt;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
@@ -253,6 +258,97 @@ fn validate_simple_name(name: &str) -> Result<(), String> {
         return Err("Invalid name".to_string());
     }
     Ok(())
+}
+
+// ============================================================================
+// AI Provider Keychain Commands
+// ============================================================================
+
+/// Store (or overwrite) the API key in the OS keychain.
+/// Returns `Ok(None)` on success, `Ok(Some(warning))` if keychain unavailable.
+#[tauri::command]
+pub async fn save_api_key(api_key: String) -> Result<Option<String>, String> {
+    if api_key.is_empty() {
+        settings::delete_api_key()
+    } else {
+        settings::set_api_key(&api_key)
+    }
+}
+
+/// Reveal the real API key from the keychain (user clicked eye icon).
+#[tauri::command]
+pub async fn reveal_api_key() -> Result<String, String> {
+    settings::get_api_key()?.ok_or_else(|| "No API key stored".to_string())
+}
+
+/// Delete the API key from the keychain.
+#[tauri::command]
+pub async fn delete_api_key() -> Result<Option<String>, String> {
+    settings::delete_api_key()
+}
+
+/// Call the AI provider with a text prompt.
+///
+/// base_url + model come from the frontend (stored in the local store).
+/// apiKey is read from keychain internally — never returned to the caller.
+#[tauri::command]
+pub async fn call_ai_provider(
+    base_url: String,
+    model: String,
+    prompt: String,
+) -> Result<String, String> {
+    if base_url.is_empty() {
+        return Err("No Base URL configured. Please set it in Settings > AI Provider.".to_string());
+    }
+
+    let model = if model.is_empty() { "gpt-4o".to_string() } else { model };
+
+    let api_key = settings::get_api_key()?
+        .ok_or_else(|| "No API key configured. Please set it in Settings > AI Provider.".to_string())?;
+
+    let provider = OpenAIProvider::new("openai", &model, Some(&api_key), Some(&base_url))
+        .map_err(|e| e.to_string())?;
+
+    let user_msg = Message::User(UserMessage {
+        content: UserContent::Text(prompt),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+    });
+
+    let context = Context {
+        system_prompt: None,
+        messages: &[user_msg],
+        tools: &[],
+    };
+
+    let options = StreamOptions::default();
+
+    let mut stream = provider
+        .stream(&context, &options)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut result_text = String::new();
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(crate::model::StreamEvent::TextDelta { delta, .. }) => {
+                result_text.push_str(&delta);
+            }
+            Ok(crate::model::StreamEvent::Error { error, .. }) => {
+                if let Some(msg) = &error.error_message {
+                    return Err(msg.clone());
+                }
+                return Err("Unknown AI provider error".to_string());
+            }
+            Err(e) => return Err(e.to_string()),
+            _ => {}
+        }
+    }
+
+    if result_text.is_empty() {
+        return Err("AI provider returned an empty response.".to_string());
+    }
+
+    Ok(result_text)
 }
 
 #[tauri::command]

@@ -26,7 +26,6 @@ pub fn run() {
             commands::create_folder,
             commands::save_api_key,
             commands::reveal_api_key,
-            commands::delete_api_key,
             commands::call_ai_provider,
         ])
         .run(tauri::generate_context!())

@@ -281,12 +281,6 @@ pub async fn reveal_api_key() -> Result<String, String> {
     settings::get_api_key()?.ok_or_else(|| "No API key stored".to_string())
 }
 
-/// Delete the API key from the keychain.
-#[tauri::command]
-pub async fn delete_api_key() -> Result<Option<String>, String> {
-    settings::delete_api_key()
-}
-
 /// Call the AI provider with a text prompt.
 ///
 /// base_url + model come from the frontend (stored in the local store).

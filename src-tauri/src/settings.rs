@@ -79,43 +79,4 @@ pub fn delete_api_key() -> Result<Option<String>, String> {
     }
 }
 
-/// Mask an API key for display/storage: keep first 3 and last 4 chars.
-///
-/// Example: `"sk-ant-api03-...7ea5"` → `"sk-***7ea5"`
-pub fn mask_api_key(key: &str) -> String {
-    let len = key.len();
-    if len <= 7 {
-        "***".to_string()
-    } else {
-        format!("{}***{}", &key[..3], &key[len.saturating_sub(4)..])
-    }
-}
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mask_standard_key() {
-        assert_eq!(mask_api_key("sk-abc123def4567890abcdef"), "sk-***cdef");
-    }
-
-    #[test]
-    fn test_mask_short_key() {
-        assert_eq!(mask_api_key("abc"), "***");
-    }
-
-    #[test]
-    fn test_mask_exact_7() {
-        assert_eq!(mask_api_key("1234567"), "***");
-    }
-
-    #[test]
-    fn test_mask_8_chars() {
-        assert_eq!(mask_api_key("12345678"), "123***5678");
-    }
-}

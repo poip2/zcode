@@ -21,13 +21,6 @@ export async function revealApiKey(): Promise<string> {
 }
 
 /**
- * Delete the API key from the keychain.
- */
-export async function deleteApiKey(): Promise<string | null> {
-  return invoke<string | null>("delete_api_key");
-}
-
-/**
  * Call the AI provider with a text prompt.
  * base_url + model from store, apiKey from keychain.
  */

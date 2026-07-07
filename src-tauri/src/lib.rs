@@ -1,4 +1,12 @@
+pub mod agent;
 mod commands;
+pub mod error;
+pub mod model;
+pub mod provider;
+pub mod providers;
+pub mod skills;
+pub mod sse;
+pub mod tools;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

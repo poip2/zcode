@@ -23,4 +23,3 @@ vite.config.ts.timestamp-*
 
 # Package
 /package
-pnpm-lock.yaml

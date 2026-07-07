@@ -3,10 +3,10 @@ name: Build
 
 on:  # yamllint disable-line rule:truthy
   push:
-    branches: [main]
+    branches: [master]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 permissions:

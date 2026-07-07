@@ -240,13 +240,18 @@
             {#if dirty}
               <span class="status-dirty">(unsaved)</span>
             {/if}
-            {#if isEditing}
-              <span class="status-mode">— Editing</span>
-            {:else}
-              <span class="status-mode">— Preview</span>
-            {/if}
+            <span class="status-mode">
+              {isEditing ? "— Editing" : "— Preview"}
+            </span>
           {/if}
-          <span class="status-hints">⌘O Open &nbsp; ⌘E Edit &nbsp; ⌘S Save &nbsp; ⌘B Sidebar</span>
+          <span class="status-hints">
+            {#if isEditing}
+              <span class="hint-full">⌘O Open &nbsp; ⌘E Preview &nbsp; ⌘S Save &nbsp; ⌘B Sidebar</span>
+            {:else}
+              <span class="hint-full">⌘O Open &nbsp; ⌘E Edit &nbsp; ⌘S Save &nbsp; ⌘B Sidebar</span>
+            {/if}
+            <span class="hint-compact">⌘O &nbsp; ⌘E &nbsp; ⌘S &nbsp; ⌘B</span>
+          </span>
         </div>
       {/if}
     </main>
@@ -278,6 +283,8 @@
     min-width: 0;
     background: var(--zc-bg-chrome, #F4F2ED);
     overflow-y: auto;
+    container-type: inline-size;
+    container-name: mainpane;
   }
 
   .state-center {
@@ -372,11 +379,13 @@
   }
 
   .status-bar {
-    height: 28px;
+    min-height: 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 5px 12px;
     font-size: 11px;
     background: var(--zc-bg-chrome, #F4F2ED);
     border-top: 1px solid var(--zc-border, #E7E4DD);
@@ -407,5 +416,19 @@
 
   .status-hints {
     color: var(--zc-text-tertiary, #A8A49D);
+    white-space: nowrap;
+  }
+
+  .status-hints .hint-compact {
+    display: none;
+  }
+
+  @container mainpane (max-width: 460px) {
+    .status-hints .hint-full {
+      display: none;
+    }
+    .status-hints .hint-compact {
+      display: inline;
+    }
   }
 </style>

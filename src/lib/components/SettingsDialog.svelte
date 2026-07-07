@@ -3,7 +3,8 @@
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { folderTree } from "$lib/stores/folderTree";
   import { openFolderDialog, listDirTree } from "$lib/tauri/files";
-  import { load as loadSettings, save as saveSettings, type SkillsSettings } from "$lib/stores/settings";
+  import { saveApiKey, maskApiKey } from "$lib/tauri/ai";
+  import { load as loadSettings, save as saveSettings, type SkillsSettings, type AIProviderSettings } from "$lib/stores/settings";
 
   let {
     open = false,
@@ -13,10 +14,8 @@
     onClose: () => void;
   } = $props();
 
-  // ── Persisted settings (loaded once on mount, updated on Save) ──
-  let persistedAiBaseUrl = $state("");
-  let persistedAiApiKey = $state("");
-  let persistedAiModel = $state("");
+  // ── Persisted state (loaded once on mount, updated on Save) ──
+  let persistedAi: AIProviderSettings = $state({ baseUrl: "", model: "" });
   let persistedSkills: SkillsSettings = $state({
     summarize: true,
     fixGrammar: true,
@@ -28,12 +27,16 @@
   let activeTab = $state<"folder" | "ai" | "skills">("folder");
   let pinnedPath = $state<string | null>(null);
 
-  // ── Draft state (populated from persisted on each open, written back on Save) ──
+  // ── AI draft state (populated from store on open, written back on Save) ──
   let draftBaseUrl = $state("");
-  let draftApiKey = $state("");
   let draftModel = $state("");
+  let draftApiKey = $state("");       // transient, never persisted to store
+  let draftMaskedApiKey = $state<string | undefined>(undefined);
   let showApiKey = $state(false);
+  let apiKeyDirty = $state(false);     // true after user types in the key field
+  let aiWarning = $state<string | null>(null);
 
+  // ── Skills draft ──
   let draftSkills = $state([
     { name: "Summarize document", desc: "Generate a short summary of the open file", key: "summarize" as const, enabled: true },
     { name: "Fix grammar", desc: "Rewrite the selection with corrected grammar", key: "fixGrammar" as const, enabled: true },
@@ -51,11 +54,8 @@
     });
     pinnedFolder.load();
 
-    // Load persisted settings from disk (once at startup)
     const s = await loadSettings();
-    persistedAiBaseUrl = s.aiProvider.baseUrl;
-    persistedAiApiKey = s.aiProvider.apiKey;
-    persistedAiModel = s.aiProvider.model;
+    persistedAi = { ...s.aiProvider };
     persistedSkills = { ...s.skills };
   });
 
@@ -63,43 +63,67 @@
     unsubPinned?.();
   });
 
-  // Sync dialog open/close with prop, and populate draft on each open
+  // Populate drafts from persisted state on each open
   $effect(() => {
     if (!dialogEl) return;
     if (open) {
-      // Populate draft from persisted values on each open.
-      // IMPORTANT: do NOT read draftSkills / draftBaseUrl etc. inside this
-      // effect — writing to them is fine, but reading them would make the
-      // effect depend on them and cause an infinite loop.
-      draftBaseUrl = persistedAiBaseUrl;
-      draftApiKey = persistedAiApiKey;
-      draftModel = persistedAiModel;
+      draftBaseUrl = persistedAi.baseUrl;
+      draftModel = persistedAi.model;
+      draftMaskedApiKey = persistedAi.maskedApiKey;
+      draftApiKey = "";
       showApiKey = false;
-      // Rebuild array without reading draftSkills (avoids infinite loop)
+      apiKeyDirty = false;
+      aiWarning = null;
+
       draftSkills = [
         { name: "Summarize document", desc: "Generate a short summary of the open file", key: "summarize" as const, enabled: persistedSkills.summarize },
         { name: "Fix grammar", desc: "Rewrite the selection with corrected grammar", key: "fixGrammar" as const, enabled: persistedSkills.fixGrammar },
         { name: "Generate table of contents", desc: "Insert a TOC from the document's headings", key: "generateToc" as const, enabled: persistedSkills.generateToc },
         { name: "Explain code block", desc: "Add an explanation above the selected code fence", key: "explainCode" as const, enabled: persistedSkills.explainCode },
       ];
+
       if (!dialogEl.open) dialogEl.showModal();
     } else {
       if (dialogEl.open) dialogEl.close();
     }
   });
 
-  /** Close dialog without saving (close button, cancel button, backdrop click, Esc key) */
+  /** Toggle password/text visibility for the API key field. */
+  function handleRevealKey() {
+    showApiKey = !showApiKey;
+  }
+
+  function handleApiKeyInput() {
+    apiKeyDirty = true;
+    showApiKey = false;
+  }
+
   function handleCancel() {
     onClose();
   }
 
-  /** Save draft to disk, then close */
   async function handleSave() {
     saveError = false;
-    // Write draft to persisted state
-    persistedAiBaseUrl = draftBaseUrl;
-    persistedAiApiKey = draftApiKey;
-    persistedAiModel = draftModel;
+    aiWarning = null;
+
+    // Compute masked key if user typed a new one, otherwise reuse stored mask
+    let maskedToStore: string | undefined;
+    if (apiKeyDirty && draftApiKey.trim()) {
+      maskedToStore = maskApiKey(draftApiKey.trim());
+    } else if (!apiKeyDirty) {
+      maskedToStore = draftMaskedApiKey; // keep existing
+    } else {
+      // user cleared the field
+      maskedToStore = undefined;
+    }
+
+    // Save to store first (baseUrl + model + maskedApiKey)
+    const newAi: AIProviderSettings = {
+      baseUrl: draftBaseUrl,
+      model: draftModel,
+      maskedApiKey: maskedToStore,
+    };
+
     const skillsSummary: SkillsSettings = {
       summarize: false,
       fixGrammar: false,
@@ -109,22 +133,36 @@
     for (const s of draftSkills) {
       skillsSummary[s.key] = s.enabled;
     }
+
+    const ok = await saveSettings({ aiProvider: newAi, skills: skillsSummary });
+    if (!ok) {
+      saveError = true;
+      return;
+    }
+
+    // Update persisted state
+    persistedAi = newAi;
     persistedSkills = skillsSummary;
 
-    const ok = await saveSettings({
-      aiProvider: {
-        baseUrl: draftBaseUrl,
-        apiKey: draftApiKey,
-        model: draftModel,
-      },
-      skills: skillsSummary,
-    });
-
-    if (ok) {
-      onClose();
-    } else {
-      saveError = true;
+    // Now handle the real key via keychain (best-effort)
+    if (apiKeyDirty) {
+      if (draftApiKey.trim()) {
+        // Save new key to keychain
+        const warn = await saveApiKey(draftApiKey.trim());
+        if (warn) aiWarning = warn;
+      } else {
+        // User cleared the field — delete from keychain
+        const warn = await saveApiKey("");
+        if (warn) aiWarning = warn;
+      }
     }
+
+    // Clear transient state
+    draftApiKey = "";
+    showApiKey = false;
+    apiKeyDirty = false;
+
+    onClose();
   }
 
   async function handleBrowsePin() {
@@ -229,7 +267,7 @@
       {#if activeTab === "ai"}
         <section class="settings-section">
           <div class="settings-section-title">AI Provider</div>
-          <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint.</p>
+          <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint. Your API key is stored in the system keychain.</p>
 
           <label class="settings-label" for="settings-base-url">Base URL</label>
           <input
@@ -242,24 +280,46 @@
 
           <label class="settings-label" for="settings-api-key">API Key</label>
           <div class="api-key-field">
-            <input
-              id="settings-api-key"
-              class="settings-input mono"
-              type={showApiKey ? "text" : "password"}
-              bind:value={draftApiKey}
-            />
-            <button
-              class="icon-toggle-btn"
-              title="Show/hide key"
-              onclick={() => (showApiKey = !showApiKey)}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            </button>
+            {#if !apiKeyDirty && draftMaskedApiKey && !draftApiKey}
+              <!-- Saved key exists, not editing → show masked, no eye -->
+              <button
+                id="settings-api-key"
+                class="settings-input mono masked-btn"
+                onclick={() => { apiKeyDirty = true; }}
+                title="Click to replace"
+              >
+                <span class="masked-value">{draftMaskedApiKey}</span>
+                <span class="masked-hint">Click to edit</span>
+              </button>
+            {:else}
+              <input
+                id="settings-api-key"
+                class="settings-input mono"
+                type={showApiKey ? "text" : "password"}
+                bind:value={draftApiKey}
+                oninput={handleApiKeyInput}
+                placeholder={draftMaskedApiKey ? "Enter a new key to replace" : "sk-your-key-here"}
+              />
+              <button
+                class="icon-toggle-btn"
+                title={showApiKey ? "Hide key" : "Show key"}
+                onclick={handleRevealKey}
+              >
+                {#if showApiKey}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </svg>
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                {/if}
+              </button>
+            {/if}
           </div>
-
           <label class="settings-label" for="settings-model">Model</label>
           <input
             id="settings-model"
@@ -301,8 +361,18 @@
 
     <!-- Footer -->
     <div class="settings-footer">
-      {#if saveError}
-        <div class="save-error">保存失败，请重试</div>
+      {#if saveError || aiWarning}
+        <div class="footer-messages">
+          {#if saveError}
+            <div class="save-error">保存失败，请重试</div>
+          {/if}
+          {#if aiWarning}
+            <div class="ai-warning-footer">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>{aiWarning}</span>
+            </div>
+          {/if}
+        </div>
       {/if}
       <button class="settings-btn-secondary" onclick={handleCancel}>Cancel</button>
       <button class="settings-btn-primary" onclick={handleSave}>Save</button>
@@ -629,12 +699,69 @@
     transform: translateX(14px);
   }
 
+  /* ── AI Provider states ── */
+  .settings-input.masked-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    background: #f0fef0;
+    border: 1px solid #bbf7d0;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.1s;
+  }
+
+  .settings-input.masked-btn:hover {
+    background: #e6fce6;
+  }
+
+  .masked-value {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--zc-text-primary, #1F1E1C);
+  }
+
+  .masked-hint {
+    font-size: 10px;
+    color: var(--zc-text-tertiary, #A8A49D);
+    flex-shrink: 0;
+  }
+
   /* ── Footer ── */
+  .footer-messages {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 6px;
+    max-width: 280px;
+    word-break: break-word;
+  }
+
   .save-error {
     color: #e03e3e;
-    font-size: 12px;
-    text-align: center;
-    margin-bottom: 6px;
+    font-size: 11px;
+    text-align: left;
+  }
+
+  .ai-warning-footer {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    color: #b45309;
+    font-size: 11px;
+    text-align: left;
+    line-height: 1.4;
+    padding: 6px 8px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 4px;
+  }
+
+  .ai-warning-footer svg {
+    flex-shrink: 0;
+    margin-top: 1px;
   }
 
   .settings-footer {

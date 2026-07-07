@@ -24,6 +24,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-store = "2"
+keyring = "3"
 
 # Phase 1: Provider abstraction + LLM API clients
 async-trait = "0.1"

@@ -18,9 +18,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
-            // Migrate legacy cleartext apiKey from zcode-settings.json to keychain
-            if let Ok(config_dir) = app.path().app_config_dir() {
-                crate::settings::migrate_old_settings(&config_dir);
+            // Migrate legacy cleartext apiKey from zcode-settings.json to keychain.
+            // tauri-plugin-store may persist to app_data_dir or app_config_dir,
+            // so check both.
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                if let Ok(config_dir) = app.path().app_config_dir() {
+                    crate::settings::migrate_old_settings(&data_dir, &config_dir);
+                }
             }
             Ok(())
         })

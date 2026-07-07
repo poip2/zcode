@@ -318,6 +318,22 @@
                   </svg>
                 {/if}
               </button>
+              {#if apiKeyDirty && draftMaskedApiKey}
+                <button
+                  class="key-cancel-btn"
+                  title="Keep existing key"
+                  onclick={() => {
+                    draftApiKey = "";
+                    showApiKey = false;
+                    apiKeyDirty = false;
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <line x1="4" y1="4" x2="12" y2="12"/>
+                    <line x1="12" y1="4" x2="4" y2="12"/>
+                  </svg>
+                </button>
+              {/if}
             {/if}
           </div>
           <label class="settings-label" for="settings-model">Model</label>
@@ -581,6 +597,28 @@
   .icon-toggle-btn:hover {
     background: var(--zc-active-row, #EAE6DD);
     color: var(--zc-text-primary, #1F1E1C);
+  }
+
+  .key-cancel-btn {
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--zc-text-tertiary, #A8A49D);
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .key-cancel-btn:hover {
+    background: rgba(224, 62, 62, 0.1);
+    color: #e03e3e;
   }
 
   /* ── Buttons ── */

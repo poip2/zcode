@@ -336,6 +336,12 @@ pub async fn call_ai_provider(
                 }
                 return Err("Unknown AI provider error".to_string());
             }
+            Ok(crate::model::StreamEvent::Done { message, .. }) => {
+                // The provider may surface errors inside the Done event
+                if let Some(msg) = &message.error_message {
+                    return Err(msg.clone());
+                }
+            }
             Err(e) => return Err(e.to_string()),
             _ => {}
         }

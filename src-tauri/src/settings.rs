@@ -98,15 +98,20 @@ pub fn mask_api_key(key: &str) -> String {
 /// Migrate legacy cleartext apiKey from `zcode-settings.json` into the
 /// keyring, then strip the field from the file.
 ///
-/// Called once at app startup. Idempotent: if keyring already has a key
-/// or the old file has no apiKey, it does nothing.
-pub fn migrate_old_settings(app_config_dir: &std::path::Path) {
+/// Called once at app startup. Checks both `app_data_dir` (where
+/// tauri-plugin-store actually persists) and `app_config_dir`.
+/// Idempotent: if keyring already has a key or no legacy key exists,
+/// it does nothing.
+pub fn migrate_old_settings(data_dir: &std::path::Path, config_dir: &std::path::Path) {
     use std::fs;
 
-    let legacy_path = app_config_dir.join("zcode-settings.json");
-    let json_str = match fs::read_to_string(&legacy_path) {
-        Ok(s) => s,
-        Err(_) => return,
+    let candidates = [data_dir.join("zcode-settings.json"), config_dir.join("zcode-settings.json")];
+
+    let (json_str, legacy_path) = match candidates.iter().find_map(|p| {
+        fs::read_to_string(p).ok().map(|s| (s, p.clone()))
+    }) {
+        Some(x) => x,
+        None => return,
     };
 
     let mut root: serde_json::Value = match serde_json::from_str(&json_str) {

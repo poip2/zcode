@@ -113,7 +113,7 @@ fn test_migrate_old_settings_no_file() {
     let dir = tempfile::tempdir().unwrap();
     let config_dir = PathBuf::from(dir.path());
     // No file exists — migration should be a no-op
-    settings::migrate_old_settings(&config_dir);
+    settings::migrate_old_settings(&config_dir, &config_dir);
     // Assert: no panic, no new file created
     assert!(!config_dir.join("zcode-settings.json").exists());
 }
@@ -132,7 +132,7 @@ fn test_migrate_old_settings_no_api_key() {
 }"#;
     fs::write(config_dir.join("zcode-settings.json"), json).unwrap();
 
-    settings::migrate_old_settings(&config_dir);
+    settings::migrate_old_settings(&config_dir, &config_dir);
 
     // After migration: apiKey was absent, file should remain unchanged (no key to migrate)
     let content = fs::read_to_string(config_dir.join("zcode-settings.json")).unwrap();
@@ -165,7 +165,7 @@ fn test_migrate_old_settings_with_api_key_graceful_no_keychain() {
 }"#;
     fs::write(config_dir.join("zcode-settings.json"), original_json).unwrap();
 
-    settings::migrate_old_settings(&config_dir);
+    settings::migrate_old_settings(&config_dir, &config_dir);
 
     // Keychain unavailable in test env → legacy file should be preserved
     // (not removed, not corrupted)

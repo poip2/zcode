@@ -89,7 +89,7 @@ impl OpenAIProvider {
             "deepseek",
             model,
             api_key,
-            Some("https://api.deepseek.com/chat/completions"),
+            Some("https://api.deepseek.com/v1/chat/completions"),
         )
     }
 

@@ -92,6 +92,70 @@ pub fn mask_api_key(key: &str) -> String {
 }
 
 // ============================================================================
+// Migration
+// ============================================================================
+
+/// Migrate legacy cleartext apiKey from `zcode-settings.json` into the
+/// keyring, then strip the field from the file.
+///
+/// Called once at app startup. Idempotent: if keyring already has a key
+/// or the old file has no apiKey, it does nothing.
+pub fn migrate_old_settings(app_config_dir: &std::path::PathBuf) {
+    use std::fs;
+
+    let legacy_path = app_config_dir.join("zcode-settings.json");
+    let json_str = match fs::read_to_string(&legacy_path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let mut root: serde_json::Value = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let settings = match root.get_mut("settings") {
+        Some(s) => s,
+        None => return,
+    };
+
+    let ai_provider = match settings.get_mut("aiProvider") {
+        Some(ap) => ap,
+        None => return,
+    };
+
+    let api_key = match ai_provider.get("apiKey").and_then(|v| v.as_str()) {
+        Some(key) if !key.is_empty() => key.to_string(),
+        _ => return,
+    };
+
+    // Skip if keyring already has a key
+    if get_api_key().ok().flatten().is_some() {
+        let obj = ai_provider.as_object_mut().unwrap();
+        obj.remove("apiKey");
+        if let Ok(new_json) = serde_json::to_string_pretty(&root) {
+            let _ = fs::write(&legacy_path, new_json);
+        }
+        return;
+    }
+
+    // Write to keyring (best-effort)
+    if set_api_key(&api_key).is_err() {
+        eprintln!("[zcode] Migration: failed to store API key in keychain, keeping legacy file.");
+        return;
+    }
+
+    // Strip from legacy file
+    let obj = ai_provider.as_object_mut().unwrap();
+    obj.remove("apiKey");
+    if let Ok(new_json) = serde_json::to_string_pretty(&root) {
+        if let Err(e) = fs::write(&legacy_path, new_json) {
+            eprintln!("[zcode] Migration: saved key to keychain but failed to update legacy file: {e}");
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

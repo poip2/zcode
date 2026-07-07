@@ -2,9 +2,9 @@
 //!
 //! Run: cargo test --test tool_smoke -- --nocapture
 
-use zcode_lib::error::Result;
-use zcode_lib::tools::{ToolRegistry, Tool};
 use std::path::Path;
+use zcode_lib::error::Result;
+use zcode_lib::tools::ToolRegistry;
 
 #[test]
 fn test_tool_registry_subset() {
@@ -32,11 +32,9 @@ async fn test_read_tool() -> Result<()> {
 
     let registry = ToolRegistry::new(&["read"], tmp.path());
     let tool = registry.get("read").unwrap();
-    let output = tool.execute(
-        "test-id",
-        serde_json::json!({"path": "hello.txt"}),
-        None,
-    ).await?;
+    let output = tool
+        .execute("test-id", serde_json::json!({"path": "hello.txt"}), None)
+        .await?;
     assert!(!output.is_error);
     let text = &output.content[0];
     eprintln!("Read output: {:?}", text);
@@ -49,11 +47,13 @@ async fn test_write_tool() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let registry = ToolRegistry::new(&["write"], tmp.path());
     let tool = registry.get("write").unwrap();
-    let output = tool.execute(
-        "test-id",
-        serde_json::json!({"path": "newfile.txt", "content": "Hello, world!"}),
-        None,
-    ).await?;
+    let output = tool
+        .execute(
+            "test-id",
+            serde_json::json!({"path": "newfile.txt", "content": "Hello, world!"}),
+            None,
+        )
+        .await?;
     assert!(!output.is_error);
     let written = std::fs::read_to_string(tmp.path().join("newfile.txt"))?;
     assert_eq!(written, "Hello, world!");
@@ -69,15 +69,17 @@ async fn test_edit_tool() -> Result<()> {
 
     let registry = ToolRegistry::new(&["edit"], tmp.path());
     let tool = registry.get("edit").unwrap();
-    let output = tool.execute(
-        "test-id",
-        serde_json::json!({
-            "path": "editme.txt",
-            "oldText": "Hello",
-            "newText": "Goodbye"
-        }),
-        None,
-    ).await?;
+    let output = tool
+        .execute(
+            "test-id",
+            serde_json::json!({
+                "path": "editme.txt",
+                "oldText": "Hello",
+                "newText": "Goodbye"
+            }),
+            None,
+        )
+        .await?;
     assert!(!output.is_error);
     let content = std::fs::read_to_string(&file)?;
     assert_eq!(content, "Goodbye, world!\n");
@@ -93,11 +95,9 @@ async fn test_ls_tool() -> Result<()> {
 
     let registry = ToolRegistry::new(&["ls"], tmp.path());
     let tool = registry.get("ls").unwrap();
-    let output = tool.execute(
-        "test-id",
-        serde_json::json!({"path": "."}),
-        None,
-    ).await?;
+    let output = tool
+        .execute("test-id", serde_json::json!({"path": "."}), None)
+        .await?;
     assert!(!output.is_error);
     let text = &output.content[0];
     // Check it contains our files
@@ -115,11 +115,13 @@ async fn test_bash_tool() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let registry = ToolRegistry::new(&["bash"], tmp.path());
     let tool = registry.get("bash").unwrap();
-    let output = tool.execute(
-        "test-id",
-        serde_json::json!({"command": "echo hello world"}),
-        None,
-    ).await?;
+    let output = tool
+        .execute(
+            "test-id",
+            serde_json::json!({"command": "echo hello world"}),
+            None,
+        )
+        .await?;
     assert!(!output.is_error);
     if let zcode_lib::model::ContentBlock::Text(tc) = &output.content[0] {
         assert!(tc.text.contains("hello world"));
@@ -133,15 +135,20 @@ async fn test_bash_tool() -> Result<()> {
 #[tokio::test]
 async fn test_grep_tool_if_rg_available() -> Result<()> {
     let tmp = tempfile::tempdir()?;
-    std::fs::write(tmp.path().join("test.txt"), "hello world\nfoo bar\nhello again\n")?;
+    std::fs::write(
+        tmp.path().join("test.txt"),
+        "hello world\nfoo bar\nhello again\n",
+    )?;
 
     let registry = ToolRegistry::new(&["grep"], tmp.path());
     let tool = registry.get("grep").unwrap();
-    let output = tool.execute(
-        "test-id",
-        serde_json::json!({"pattern": "hello", "path": "."}),
-        None,
-    ).await;
+    let output = tool
+        .execute(
+            "test-id",
+            serde_json::json!({"pattern": "hello", "path": "."}),
+            None,
+        )
+        .await;
 
     match output {
         Ok(out) => {

@@ -38,9 +38,7 @@ pub struct SseStream {
 
 impl SseStream {
     /// Create a new SSE stream from a byte stream.
-    pub fn new(
-        stream: Pin<Box<dyn Stream<Item = std::io::Result<Vec<u8>>> + Send>>,
-    ) -> Self {
+    pub fn new(stream: Pin<Box<dyn Stream<Item = std::io::Result<Vec<u8>>> + Send>>) -> Self {
         Self {
             inner: stream,
             buffer: Vec::new(),
@@ -99,10 +97,7 @@ impl SseStream {
 impl Stream for SseStream {
     type Item = std::io::Result<SseEvent>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // First, try to parse an event from existing buffer
         if let Some(event) = self.parse_event() {
             return Poll::Ready(Some(Ok(event)));
@@ -124,8 +119,7 @@ impl Stream for SseStream {
                 Poll::Ready(None) => {
                     // Underlying stream ended. If there's leftover data, emit it.
                     if !self.buffer.is_empty() {
-                        let remaining =
-                            String::from_utf8_lossy(&self.buffer).to_string();
+                        let remaining = String::from_utf8_lossy(&self.buffer).to_string();
                         self.buffer.clear();
                         return Poll::Ready(Some(Ok(SseEvent {
                             event: "message".to_string(),

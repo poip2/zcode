@@ -4,8 +4,8 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    Tool, ToolEffects, ToolOutput, ToolUpdate, DEFAULT_LS_LIMIT, LS_SCAN_HARD_LIMIT,
-    DEFAULT_MAX_BYTES, resolve_path, enforce_cwd_scope, truncate_output,
+    enforce_cwd_scope, resolve_path, truncate_output, Tool, ToolEffects, ToolOutput, ToolUpdate,
+    DEFAULT_LS_LIMIT, DEFAULT_MAX_BYTES, LS_SCAN_HARD_LIMIT,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -25,14 +25,20 @@ pub struct LsTool {
 
 impl LsTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 #[async_trait]
 impl Tool for LsTool {
-    fn name(&self) -> &str { "ls" }
-    fn label(&self) -> &str { "ls" }
+    fn name(&self) -> &str {
+        "ls"
+    }
+    fn label(&self) -> &str {
+        "ls"
+    }
 
     fn description(&self) -> &str {
         "List directory contents. Returns entries sorted alphabetically, with '/' suffix for \
@@ -73,30 +79,38 @@ impl Tool for LsTool {
             return Err(Error::validation("`limit` must be greater than 0"));
         }
 
-        let dir_path = ls_input.path.as_ref().map_or_else(
-            || self.cwd.clone(),
-            |p| resolve_path(p, &self.cwd),
-        );
+        let dir_path = ls_input
+            .path
+            .as_ref()
+            .map_or_else(|| self.cwd.clone(), |p| resolve_path(p, &self.cwd));
         let dir_path = enforce_cwd_scope(&dir_path, &self.cwd, "ls")?;
 
         if !dir_path.exists() {
-            return Err(Error::tool("ls", format!("Path not found: {}", dir_path.display())));
+            return Err(Error::tool(
+                "ls",
+                format!("Path not found: {}", dir_path.display()),
+            ));
         }
         if !dir_path.is_dir() {
-            return Err(Error::tool("ls", format!("Not a directory: {}", dir_path.display())));
+            return Err(Error::tool(
+                "ls",
+                format!("Not a directory: {}", dir_path.display()),
+            ));
         }
 
         let effective_limit = ls_input.limit.unwrap_or(DEFAULT_LS_LIMIT);
 
-        let mut read_dir = tokio::fs::read_dir(&dir_path).await.map_err(|e| {
-            Error::tool("ls", format!("Cannot read directory: {e}"))
-        })?;
+        let mut read_dir = tokio::fs::read_dir(&dir_path)
+            .await
+            .map_err(|e| Error::tool("ls", format!("Cannot read directory: {e}")))?;
 
         let mut entries: Vec<(String, bool)> = Vec::new();
 
-        while let Some(entry) = read_dir.next_entry().await.map_err(|e| {
-            Error::tool("ls", format!("Cannot read directory entry: {e}"))
-        })? {
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .map_err(|e| Error::tool("ls", format!("Cannot read directory entry: {e}")))?
+        {
             if entries.len() >= LS_SCAN_HARD_LIMIT {
                 break;
             }
@@ -106,7 +120,11 @@ impl Tool for LsTool {
                 continue;
             }
             // Use file_type to check if it's a directory without extra stat
-            let is_dir = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
+            let is_dir = entry
+                .file_type()
+                .await
+                .map(|ft| ft.is_dir())
+                .unwrap_or(false);
             entries.push((name, is_dir));
         }
 
@@ -146,11 +164,16 @@ impl Tool for LsTool {
         let header = format!(
             "{} entries in '{}':\n\n",
             std::cmp::min(total, effective_limit),
-            dir_path.file_name().map(|n| n.to_string_lossy()).unwrap_or_else(|| dir_path.to_string_lossy()),
+            dir_path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_else(|| dir_path.to_string_lossy()),
         );
 
         Ok(ToolOutput {
-            content: vec![ContentBlock::Text(TextContent::new(format!("{header}{output}")))],
+            content: vec![ContentBlock::Text(TextContent::new(format!(
+                "{header}{output}"
+            )))],
             details: serde_json::json!({ "count": total }).into(),
             is_error: false,
         })

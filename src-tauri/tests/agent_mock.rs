@@ -7,15 +7,14 @@ use async_trait::async_trait;
 use futures::stream::{self, Stream};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::Mutex;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::model::{
-    AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent, ToolCall,
-    Usage,
+    AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent, ToolCall, Usage,
 };
 use zcode_lib::provider::{Context, Provider, StreamOptions};
 use zcode_lib::tools::ToolRegistry;
-use std::sync::Mutex;
 
 /// A mock provider that returns a tool call followed by a final text response.
 struct MockProvider {
@@ -54,9 +53,11 @@ impl Provider for MockProvider {
         let idx = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let blocks = self.responses.get(idx).cloned().unwrap_or_else(|| {
-            vec![ContentBlock::Text(TextContent::new("Fallback response"))]
-        });
+        let blocks = self
+            .responses
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| vec![ContentBlock::Text(TextContent::new("Fallback response"))]);
 
         // Build text deltas from content blocks
         let events: Vec<Result<StreamEvent>> = blocks
@@ -148,14 +149,21 @@ async fn test_agent_loop_with_mock_provider() -> Result<()> {
                 AgentEvent::MessageUpdate { delta, .. } => delta.clone(),
                 AgentEvent::MessageEnd { message } => {
                     if let Message::Assistant(ref m) = message {
-                        let has_tool = m.content.iter().any(|b| matches!(b, ContentBlock::ToolCall(_)));
+                        let has_tool = m
+                            .content
+                            .iter()
+                            .any(|b| matches!(b, ContentBlock::ToolCall(_)));
                         format!("[MessageEnd has_tool_call={has_tool}]")
                     } else {
                         "[MessageEnd]".into()
                     }
                 }
                 AgentEvent::ToolStart { tool_name, .. } => format!("[ToolStart: {tool_name}]"),
-                AgentEvent::ToolEnd { tool_name, is_error, .. } => {
+                AgentEvent::ToolEnd {
+                    tool_name,
+                    is_error,
+                    ..
+                } => {
                     format!("[ToolEnd: {tool_name} error={is_error}]")
                 }
                 _ => format!("[{:?}]", std::mem::discriminant(&ev)),
@@ -192,17 +200,18 @@ async fn test_agent_loop_with_mock_provider() -> Result<()> {
         .iter()
         .filter(|e| e.starts_with("[ToolStart"))
         .collect();
-    assert!(
-        !tool_starts.is_empty(),
-        "Expected at least one tool call"
-    );
+    assert!(!tool_starts.is_empty(), "Expected at least one tool call");
 
     // Verify two turns happened
     let turn_starts: Vec<_> = events
         .iter()
         .filter(|e| e.starts_with("[TurnStart"))
         .collect();
-    assert_eq!(turn_starts.len(), 2, "Expected 2 turns (tool call + final response)");
+    assert_eq!(
+        turn_starts.len(),
+        2,
+        "Expected 2 turns (tool call + final response)"
+    );
 
     eprintln!("\nPASS: Agent loop with mock provider works correctly");
     eprintln!("  - Tool call was issued and executed");

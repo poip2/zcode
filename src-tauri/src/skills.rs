@@ -6,6 +6,7 @@
 //! - ~/.config/zcode/skills/*/SKILL.md (user-level)
 
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -32,7 +33,12 @@ pub fn load_skills(
     // 1. Project-level: .zcode/skills/*/SKILL.md
     let project_skills_dir = cwd.join(".zcode").join("skills");
     if project_skills_dir.exists() {
-        load_from_dir(&project_skills_dir, "project", &mut skill_map, &mut diagnostics);
+        load_from_dir(
+            &project_skills_dir,
+            "project",
+            &mut skill_map,
+            &mut diagnostics,
+        );
     }
 
     // 2. User-level: ~/.config/zcode/skills/*/SKILL.md
@@ -50,10 +56,17 @@ pub fn load_skills(
         } else if path.extension().is_some_and(|ext| ext == "md") {
             if let Some(skill) = load_skill_from_file(path, "path") {
                 let name = skill.name.clone();
-                if skill_map.contains_key(&name) {
-                    diagnostics.push(format!("Skill name collision: {name} from {:?}", path));
-                } else {
-                    skill_map.insert(name, skill);
+                match skill_map.entry(name) {
+                    Entry::Occupied(entry) => {
+                        diagnostics.push(format!(
+                            "Skill name collision: {} from {:?}",
+                            entry.key(),
+                            path
+                        ));
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(skill);
+                    }
                 }
             }
         }
@@ -81,13 +94,17 @@ fn load_from_dir(
             if skill_file.exists() {
                 if let Some(skill) = load_skill_from_file(&skill_file, source) {
                     let name = skill.name.clone();
-                    if skill_map.contains_key(&name) {
-                        diagnostics.push(format!(
-                            "Skill name collision: {} from {:?}",
-                            name, skill_file
-                        ));
-                    } else {
-                        skill_map.insert(name, skill);
+                    match skill_map.entry(name) {
+                        Entry::Occupied(entry) => {
+                            diagnostics.push(format!(
+                                "Skill name collision: {} from {:?}",
+                                entry.key(),
+                                skill_file
+                            ));
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(skill);
+                        }
                     }
                 }
             }
@@ -95,8 +112,8 @@ fn load_from_dir(
             // Top-level .md files also treated as skills
             if let Some(skill) = load_skill_from_file(&path, source) {
                 let name = skill.name.clone();
-                if !skill_map.contains_key(&name) {
-                    skill_map.insert(name, skill);
+                if let Entry::Vacant(entry) = skill_map.entry(name) {
+                    entry.insert(skill);
                 }
             }
         }
@@ -108,9 +125,9 @@ fn load_skill_from_file(path: &Path, source: &str) -> Option<Skill> {
     let content = std::fs::read_to_string(path).ok()?;
 
     // Parse YAML frontmatter between --- markers
-    let frontmatter = if content.starts_with("---") {
-        let end = content[3..].find("---")?;
-        &content[3..3 + end]
+    let frontmatter = if let Some(rest) = content.strip_prefix("---") {
+        let end = rest.find("---")?;
+        &rest[..end]
     } else {
         return None;
     };
@@ -118,9 +135,10 @@ fn load_skill_from_file(path: &Path, source: &str) -> Option<Skill> {
     let name = extract_frontmatter_field(frontmatter, "name")?;
     let description = extract_frontmatter_field(frontmatter, "description")
         .unwrap_or_else(|| "No description".to_string());
-    let disable_model_invocation = extract_frontmatter_field(frontmatter, "disable-model-invocation")
-        .map(|v| matches!(v.as_str(), "true" | "yes"))
-        .unwrap_or(false);
+    let disable_model_invocation =
+        extract_frontmatter_field(frontmatter, "disable-model-invocation")
+            .map(|v| matches!(v.as_str(), "true" | "yes"))
+            .unwrap_or(false);
 
     let base_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
 
@@ -168,10 +186,7 @@ pub fn format_skills_for_prompt(skills: &[Skill]) -> String {
 
     for skill in &visible {
         lines.push("  <skill>".to_string());
-        lines.push(format!(
-            "    <name>{}</name>",
-            escape_xml(&skill.name)
-        ));
+        lines.push(format!("    <name>{}</name>", escape_xml(&skill.name)));
         lines.push(format!(
             "    <description>{}</description>",
             escape_xml(&skill.description)
@@ -199,7 +214,6 @@ fn escape_xml(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn setup_test_skill(dir: &Path) {
         let skill_dir = dir.join("test-skill");

@@ -4,21 +4,11 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    Tool, ToolEffects, ToolOutput, ToolUpdate, READ_TOOL_MAX_BYTES, WRITE_TOOL_MAX_BYTES,
-    resolve_path, enforce_cwd_scope,
+    enforce_cwd_scope, resolve_path, Tool, ToolEffects, ToolOutput, ToolUpdate,
+    READ_TOOL_MAX_BYTES, WRITE_TOOL_MAX_BYTES,
 };
 use async_trait::async_trait;
-use serde::Deserialize;
 use std::path::{Path, PathBuf};
-
-/// Input parameters for the edit tool.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EditInput {
-    path: String,
-    old_text: String,
-    new_text: String,
-}
 
 pub struct EditTool {
     cwd: PathBuf,
@@ -26,14 +16,20 @@ pub struct EditTool {
 
 impl EditTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 #[async_trait]
 impl Tool for EditTool {
-    fn name(&self) -> &str { "edit" }
-    fn label(&self) -> &str { "edit" }
+    fn name(&self) -> &str {
+        "edit"
+    }
+    fn label(&self) -> &str {
+        "edit"
+    }
 
     fn description(&self) -> &str {
         "Edit a file by replacing text. The oldText must match a unique region; matching is exact. \
@@ -84,9 +80,9 @@ impl Tool for EditTool {
         input: serde_json::Value,
         _on_update: Option<Box<dyn Fn(ToolUpdate) + Send + Sync>>,
     ) -> Result<ToolOutput> {
-        let path_str = input["path"].as_str().ok_or_else(|| {
-            Error::validation("Missing 'path' parameter")
-        })?;
+        let path_str = input["path"]
+            .as_str()
+            .ok_or_else(|| Error::validation("Missing 'path' parameter"))?;
 
         let absolute_path = resolve_path(path_str, &self.cwd);
         let absolute_path = enforce_cwd_scope(&absolute_path, &self.cwd, "edit")?;
@@ -138,7 +134,10 @@ impl Tool for EditTool {
         })?;
 
         if !meta.is_file() {
-            return Err(Error::tool("edit", format!("Path is not a regular file: {path_str}")));
+            return Err(Error::tool(
+                "edit",
+                format!("Path is not a regular file: {path_str}"),
+            ));
         }
         if meta.len() > READ_TOOL_MAX_BYTES {
             return Err(Error::tool(
@@ -147,9 +146,9 @@ impl Tool for EditTool {
             ));
         }
 
-        let mut content = tokio::fs::read_to_string(&absolute_path).await.map_err(|e| {
-            Error::tool("edit", format!("Failed to read file: {e}"))
-        })?;
+        let mut content = tokio::fs::read_to_string(&absolute_path)
+            .await
+            .map_err(|e| Error::tool("edit", format!("Failed to read file: {e}")))?;
 
         let original = content.clone();
         let mut positions: Vec<usize> = Vec::new();
@@ -158,7 +157,10 @@ impl Tool for EditTool {
             if matches.is_empty() {
                 return Err(Error::tool(
                     "edit",
-                    format!("oldText not found in file: '{}'", truncate_for_error(old_text)),
+                    format!(
+                        "oldText not found in file: '{}'",
+                        truncate_for_error(old_text)
+                    ),
                 ));
             }
             if matches.len() > 1 {
@@ -187,9 +189,9 @@ impl Tool for EditTool {
 
         let total_replacements = edits.len();
 
-        tokio::fs::write(&absolute_path, &content).await.map_err(|e| {
-            Error::tool("edit", format!("Failed to write file: {e}"))
-        })?;
+        tokio::fs::write(&absolute_path, &content)
+            .await
+            .map_err(|e| Error::tool("edit", format!("Failed to write file: {e}")))?;
 
         let msg = format!(
             "Successfully applied {} edit(s) to '{}'. File size: {} bytes.",

@@ -3,7 +3,10 @@
 
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
-use crate::tools::{Tool, ToolEffects, ToolOutput, ToolUpdate, WRITE_TOOL_MAX_BYTES, resolve_path, enforce_cwd_scope};
+use crate::tools::{
+    enforce_cwd_scope, resolve_path, Tool, ToolEffects, ToolOutput, ToolUpdate,
+    WRITE_TOOL_MAX_BYTES,
+};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -22,14 +25,20 @@ pub struct WriteTool {
 
 impl WriteTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 #[async_trait]
 impl Tool for WriteTool {
-    fn name(&self) -> &str { "write" }
-    fn label(&self) -> &str { "write" }
+    fn name(&self) -> &str {
+        "write"
+    }
+    fn label(&self) -> &str {
+        "write"
+    }
 
     fn description(&self) -> &str {
         "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. \
@@ -93,9 +102,9 @@ impl Tool for WriteTool {
             })?;
         }
 
-        tokio::fs::write(&path, &write_input.content).await.map_err(|e| {
-            Error::tool("write", format!("Failed to write file: {e}"))
-        })?;
+        tokio::fs::write(&path, &write_input.content)
+            .await
+            .map_err(|e| Error::tool("write", format!("Failed to write file: {e}")))?;
 
         let msg = format!(
             "Successfully wrote {} bytes to '{}'.",

@@ -2,14 +2,13 @@
 //!
 //! Run: cargo test --test agent_e2e -- --nocapture
 
+use std::path::Path;
+use std::sync::Arc;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
-use zcode_lib::model::{Message, UserContent, UserMessage};
 use zcode_lib::provider::StreamOptions;
 use zcode_lib::providers::OpenAIProvider;
 use zcode_lib::tools::ToolRegistry;
-use std::path::Path;
-use std::sync::Arc;
 
 const MODEL: &str = "deepseek-v4-flash";
 
@@ -36,10 +35,9 @@ async fn test_agent_basic_chat() -> Result<()> {
         temperature: Some(0.7),
         ..Default::default()
     };
-    stream_opts.headers.insert(
-        "Authorization".into(),
-        format!("Bearer {}", get_api_key()),
-    );
+    stream_opts
+        .headers
+        .insert("Authorization".into(), format!("Bearer {}", get_api_key()));
 
     let config = AgentConfig {
         system_prompt: Some("You are a helpful assistant. Be brief.".into()),
@@ -48,7 +46,6 @@ async fn test_agent_basic_chat() -> Result<()> {
     };
 
     let mut agent = Agent::new(provider, tools, config);
-    let mut events: Vec<String> = Vec::new();
 
     let result = agent
         .run("Say hello in exactly 3 words.", move |ev| {
@@ -59,7 +56,11 @@ async fn test_agent_basic_chat() -> Result<()> {
                 AgentEvent::TurnEnd { .. } => "[TurnEnd]".into(),
                 AgentEvent::MessageUpdate { delta, .. } => delta.clone(),
                 AgentEvent::ToolStart { tool_name, .. } => format!("[Tool: {tool_name}]"),
-                AgentEvent::ToolEnd { tool_name, is_error, .. } => {
+                AgentEvent::ToolEnd {
+                    tool_name,
+                    is_error,
+                    ..
+                } => {
                     format!("[ToolEnd: {tool_name} err={is_error}]")
                 }
                 _ => format!("[{:?}]", std::mem::discriminant(&ev)),
@@ -87,7 +88,10 @@ async fn test_agent_basic_chat() -> Result<()> {
                 .collect::<Vec<_>>()
                 .join("");
             eprintln!("\nFinal response: {text}");
-            eprintln!("Usage: input={} output={} total={}", msg.usage.input, msg.usage.output, msg.usage.total_tokens);
+            eprintln!(
+                "Usage: input={} output={} total={}",
+                msg.usage.input, msg.usage.output, msg.usage.total_tokens
+            );
             eprintln!("PASS: Agent basic chat works");
         }
         Err(e) => eprintln!("Agent error: {e}"),
@@ -102,7 +106,10 @@ async fn test_agent_with_tools() -> Result<()> {
     // Create temp working dir
     let tmp = tempfile::tempdir()?;
     let cwd = tmp.path();
-    std::fs::write(cwd.join("hello.txt"), "Hello, world!\nThis is a test file.\n")?;
+    std::fs::write(
+        cwd.join("hello.txt"),
+        "Hello, world!\nThis is a test file.\n",
+    )?;
 
     let provider = Arc::new(OpenAIProvider::new(
         "deepseek",
@@ -117,10 +124,9 @@ async fn test_agent_with_tools() -> Result<()> {
         max_tokens: Some(200),
         ..Default::default()
     };
-    stream_opts.headers.insert(
-        "Authorization".into(),
-        format!("Bearer {}", get_api_key()),
-    );
+    stream_opts
+        .headers
+        .insert("Authorization".into(), format!("Bearer {}", get_api_key()));
 
     let config = AgentConfig {
         system_prompt: Some(format!(

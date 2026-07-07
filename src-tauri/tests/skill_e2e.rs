@@ -3,14 +3,12 @@
 //! Run: cargo test --test skill_e2e -- --nocapture
 //! Requires: ZCODE_TEST_API_KEY env var
 
+use futures::StreamExt;
 use zcode_lib::error::Result;
 use zcode_lib::model::{Message, UserContent, UserMessage};
 use zcode_lib::provider::{Context, Provider, StreamOptions};
 use zcode_lib::providers::OpenAIProvider;
 use zcode_lib::skills;
-use futures::StreamExt;
-use std::io::Write;
-use std::path::PathBuf;
 
 const MODEL: &str = "deepseek-v4-flash";
 
@@ -45,12 +43,18 @@ When the user asks you to say hello or greet them, you must follow the protocol:
     eprintln!("Diagnostics: {:?}", diags);
     assert_eq!(loaded_skills.len(), 1);
     assert_eq!(loaded_skills[0].name, "test-skill");
-    eprintln!("Skill loaded: {} - {}", loaded_skills[0].name, loaded_skills[0].description);
+    eprintln!(
+        "Skill loaded: {} - {}",
+        loaded_skills[0].name, loaded_skills[0].description
+    );
 
     // 3. Format as XML
     let skills_xml = skills::format_skills_for_prompt(&loaded_skills);
     assert!(!skills_xml.is_empty());
-    eprintln!("Skills XML (first 200 chars): {}", &skills_xml[..200.min(skills_xml.len())]);
+    eprintln!(
+        "Skills XML (first 200 chars): {}",
+        &skills_xml[..200.min(skills_xml.len())]
+    );
 
     // 4. Build system prompt with skills injected
     let system_prompt = format!(
@@ -80,10 +84,8 @@ When the user asks you to say hello or greet them, you must follow the protocol:
         max_tokens: Some(100),
         ..Default::default()
     };
-    opts.headers.insert(
-        "Authorization".into(),
-        format!("Bearer {}", get_api_key()),
-    );
+    opts.headers
+        .insert("Authorization".into(), format!("Bearer {}", get_api_key()));
 
     eprintln!("\n--- Streaming with skill-injected prompt ---");
     let mut stream = provider.stream(&context, &opts).await?;
@@ -97,8 +99,10 @@ When the user asks you to say hello or greet them, you must follow the protocol:
             }
             Ok(zcode_lib::model::StreamEvent::Done { reason, message }) => {
                 eprintln!("\n\n[DONE] reason={reason:?}");
-                eprintln!("Input tokens: {}, Output tokens: {}",
-                    message.usage.input, message.usage.output);
+                eprintln!(
+                    "Input tokens: {}, Output tokens: {}",
+                    message.usage.input, message.usage.output
+                );
             }
             Ok(zcode_lib::model::StreamEvent::Error { error, .. }) => {
                 eprintln!("\n[ERROR] {:?}", error.error_message);

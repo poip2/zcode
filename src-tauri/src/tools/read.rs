@@ -4,8 +4,8 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    Tool, ToolEffects, ToolOutput, ToolUpdate, READ_TOOL_MAX_BYTES, resolve_path, enforce_cwd_scope,
-    truncate_output, truncate_by_lines, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES,
+    enforce_cwd_scope, resolve_path, truncate_by_lines, truncate_output, Tool, ToolEffects,
+    ToolOutput, ToolUpdate, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, READ_TOOL_MAX_BYTES,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -26,14 +26,20 @@ pub struct ReadTool {
 
 impl ReadTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 #[async_trait]
 impl Tool for ReadTool {
-    fn name(&self) -> &str { "read" }
-    fn label(&self) -> &str { "read" }
+    fn name(&self) -> &str {
+        "read"
+    }
+    fn label(&self) -> &str {
+        "read"
+    }
 
     fn description(&self) -> &str {
         "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). \
@@ -88,23 +94,37 @@ impl Tool for ReadTool {
         })?;
 
         if !meta.is_file() {
-            return Err(Error::tool("read", format!("Path '{}' is not a regular file", input.path)));
+            return Err(Error::tool(
+                "read",
+                format!("Path '{}' is not a regular file", input.path),
+            ));
         }
 
         if meta.len() > READ_TOOL_MAX_BYTES {
             return Err(Error::tool(
                 "read",
-                format!("File is too large ({} bytes). Max allowed is {} bytes.", meta.len(), READ_TOOL_MAX_BYTES),
+                format!(
+                    "File is too large ({} bytes). Max allowed is {} bytes.",
+                    meta.len(),
+                    READ_TOOL_MAX_BYTES
+                ),
             ));
         }
 
         // Check for image files
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        let is_image = matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp");
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let is_image = matches!(
+            ext.as_str(),
+            "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp"
+        );
         if is_image {
-            let bytes = tokio::fs::read(&path).await.map_err(|e| {
-                Error::tool("read", format!("Failed to read image: {e}"))
-            })?;
+            let bytes = tokio::fs::read(&path)
+                .await
+                .map_err(|e| Error::tool("read", format!("Failed to read image: {e}")))?;
             let mime = if ext == "jpg" || ext == "jpeg" {
                 "image/jpeg".to_string()
             } else {
@@ -125,9 +145,9 @@ impl Tool for ReadTool {
         }
 
         // Read text content
-        let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            Error::tool("read", format!("Failed to read file: {e}"))
-        })?;
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| Error::tool("read", format!("Failed to read file: {e}")))?;
 
         let lines: Vec<&str> = content.lines().collect();
         let offset = input.offset.unwrap_or(1).saturating_sub(1);

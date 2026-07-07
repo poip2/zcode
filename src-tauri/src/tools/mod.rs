@@ -43,10 +43,14 @@ impl ToolEffects {
         Self { bits: Self::APPEND }
     }
     pub const fn network() -> Self {
-        Self { bits: Self::NETWORK }
+        Self {
+            bits: Self::NETWORK,
+        }
     }
     pub const fn process() -> Self {
-        Self { bits: Self::PROCESS }
+        Self {
+            bits: Self::PROCESS,
+        }
     }
     pub const fn union(self, other: Self) -> Self {
         Self {
@@ -151,6 +155,10 @@ impl ToolRegistry {
         Self { tools }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.tools.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.tools.len()
     }
@@ -168,7 +176,10 @@ impl ToolRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.iter().find(|t| t.name() == name).map(|t| t.as_ref())
+        self.tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(|t| t.as_ref())
     }
 }
 
@@ -192,7 +203,11 @@ pub fn canonicalize_safe(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// Ensure a path is within the CWD scope.
-pub fn enforce_cwd_scope(path: &std::path::Path, cwd: &Path, tool: &str) -> Result<std::path::PathBuf> {
+pub fn enforce_cwd_scope(
+    path: &std::path::Path,
+    cwd: &Path,
+    tool: &str,
+) -> Result<std::path::PathBuf> {
     let canonical = canonicalize_safe(path);
     let cwd_canonical = canonicalize_safe(cwd);
 
@@ -234,7 +249,10 @@ pub fn truncate_output(output: &str, max_bytes: usize) -> String {
         return format!("... [truncated, original {} bytes]", output.len());
     }
     let truncated = &output[..output.floor_char_boundary(boundary)];
-    format!("{truncated}\n... [truncated, original {} bytes]", output.len())
+    format!(
+        "{truncated}\n... [truncated, original {} bytes]",
+        output.len()
+    )
 }
 
 /// Truncate output by lines.

@@ -6,8 +6,8 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    Tool, ToolEffects, ToolOutput, ToolUpdate, DEFAULT_GREP_LIMIT, GREP_MAX_LINE_LENGTH,
-    DEFAULT_MAX_BYTES, resolve_path, enforce_cwd_scope, truncate_output,
+    enforce_cwd_scope, resolve_path, truncate_output, Tool, ToolEffects, ToolOutput, ToolUpdate,
+    DEFAULT_GREP_LIMIT, DEFAULT_MAX_BYTES, GREP_MAX_LINE_LENGTH,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -35,32 +35,37 @@ pub struct GrepTool {
 
 impl GrepTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 fn find_rg_binary() -> Option<&'static str> {
     static BINARY: OnceLock<Option<&'static str>> = OnceLock::new();
     *BINARY.get_or_init(|| {
-        for name in &["rg", "ripgrep"] {
-            if std::process::Command::new(name)
-                .arg("--version")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok()
-            {
-                return Some(name);
-            }
-        }
-        None
+        ["rg", "ripgrep"]
+            .iter()
+            .find(|name| {
+                std::process::Command::new(name)
+                    .arg("--version")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .is_ok()
+            })
+            .copied()
     })
 }
 
 #[async_trait]
 impl Tool for GrepTool {
-    fn name(&self) -> &str { "grep" }
-    fn label(&self) -> &str { "grep" }
+    fn name(&self) -> &str {
+        "grep"
+    }
+    fn label(&self) -> &str {
+        "grep"
+    }
 
     fn description(&self) -> &str {
         "Search file contents for a pattern. Returns matching lines with file paths and line numbers. \
@@ -221,7 +226,9 @@ impl Tool for GrepTool {
         );
 
         Ok(ToolOutput {
-            content: vec![ContentBlock::Text(TextContent::new(format!("{header}{stdout}")))],
+            content: vec![ContentBlock::Text(TextContent::new(format!(
+                "{header}{stdout}"
+            )))],
             details: None,
             is_error: false,
         })
@@ -229,5 +236,9 @@ impl Tool for GrepTool {
 }
 
 fn truncate_for_display(s: &str) -> String {
-    if s.len() <= 80 { s.to_string() } else { format!("{}...", &s[..77]) }
+    if s.len() <= 80 {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..77])
+    }
 }

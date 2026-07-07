@@ -6,8 +6,8 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    Tool, ToolEffects, ToolOutput, ToolUpdate, DEFAULT_FIND_LIMIT, DEFAULT_MAX_BYTES,
-    resolve_path, enforce_cwd_scope, truncate_output,
+    enforce_cwd_scope, resolve_path, truncate_output, Tool, ToolEffects, ToolOutput, ToolUpdate,
+    DEFAULT_FIND_LIMIT, DEFAULT_MAX_BYTES,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -31,32 +31,37 @@ pub struct FindTool {
 
 impl FindTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 fn find_fd_binary() -> Option<&'static str> {
     static BINARY: OnceLock<Option<&'static str>> = OnceLock::new();
     *BINARY.get_or_init(|| {
-        for name in &["fd", "fdfind"] {
-            if std::process::Command::new(name)
-                .arg("--version")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok()
-            {
-                return Some(name);
-            }
-        }
-        None
+        ["fd", "fdfind"]
+            .iter()
+            .find(|name| {
+                std::process::Command::new(name)
+                    .arg("--version")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .is_ok()
+            })
+            .copied()
     })
 }
 
 #[async_trait]
 impl Tool for FindTool {
-    fn name(&self) -> &str { "find" }
-    fn label(&self) -> &str { "find" }
+    fn name(&self) -> &str {
+        "find"
+    }
+    fn label(&self) -> &str {
+        "find"
+    }
 
     fn description(&self) -> &str {
         "Search for files by glob pattern. Returns matching file paths relative to the search \
@@ -117,7 +122,10 @@ impl Tool for FindTool {
         let search_dir = enforce_cwd_scope(&search_dir, &self.cwd, "find")?;
 
         if !search_dir.exists() {
-            return Err(Error::tool("find", format!("Path not found: {}", search_dir.display())));
+            return Err(Error::tool(
+                "find",
+                format!("Path not found: {}", search_dir.display()),
+            ));
         }
 
         let effective_limit = find_input.limit.unwrap_or(DEFAULT_FIND_LIMIT);
@@ -183,8 +191,7 @@ impl Tool for FindTool {
         if truncated {
             result.push_str(&format!(
                 "\n... [truncated, {} total results for '{}']",
-                total,
-                find_input.pattern,
+                total, find_input.pattern,
             ));
         }
 
@@ -197,7 +204,9 @@ impl Tool for FindTool {
         );
 
         Ok(ToolOutput {
-            content: vec![ContentBlock::Text(TextContent::new(format!("{header}{result}")))],
+            content: vec![ContentBlock::Text(TextContent::new(format!(
+                "{header}{result}"
+            )))],
             details: None,
             is_error: false,
         })

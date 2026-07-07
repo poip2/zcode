@@ -4,8 +4,8 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    Tool, ToolEffects, ToolOutput, ToolUpdate, DEFAULT_BASH_TIMEOUT_SECS,
-    truncate_output, truncate_by_lines, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES,
+    truncate_by_lines, truncate_output, Tool, ToolEffects, ToolOutput, ToolUpdate,
+    DEFAULT_BASH_TIMEOUT_SECS, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -29,14 +29,20 @@ pub struct BashTool {
 
 impl BashTool {
     pub fn new(cwd: &Path) -> Self {
-        Self { cwd: cwd.to_path_buf() }
+        Self {
+            cwd: cwd.to_path_buf(),
+        }
     }
 }
 
 #[async_trait]
 impl Tool for BashTool {
-    fn name(&self) -> &str { "bash" }
-    fn label(&self) -> &str { "bash" }
+    fn name(&self) -> &str {
+        "bash"
+    }
+    fn label(&self) -> &str {
+        "bash"
+    }
 
     fn description(&self) -> &str {
         "Execute a bash command in the current working directory. Returns stdout and stderr. \
@@ -96,9 +102,13 @@ impl Tool for BashTool {
                     // Kill on timeout using stored PID
                     if let Some(pid) = pid {
                         let _ = if cfg!(unix) {
-                            std::process::Command::new("kill").args(["-9", &pid.to_string()]).status()
+                            std::process::Command::new("kill")
+                                .args(["-9", &pid.to_string()])
+                                .status()
                         } else {
-                            std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status()
+                            std::process::Command::new("taskkill")
+                                .args(["/PID", &pid.to_string(), "/F"])
+                                .status()
                         };
                     }
                     return Err(Error::tool(
@@ -108,7 +118,9 @@ impl Tool for BashTool {
                 }
             }
         } else {
-            output_future.await.map_err(|e| Error::tool("bash", format!("Command failed: {e}")))?
+            output_future
+                .await
+                .map_err(|e| Error::tool("bash", format!("Command failed: {e}")))?
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();

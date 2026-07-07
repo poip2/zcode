@@ -30,9 +30,7 @@ use std::sync::Arc;
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentEvent {
     /// Agent lifecycle start.
-    AgentStart {
-        session_id: String,
-    },
+    AgentStart { session_id: String },
     /// Agent lifecycle end.
     AgentEnd {
         session_id: String,
@@ -55,10 +53,7 @@ pub enum AgentEvent {
     /// A message was added to history.
     MessageStart { message: Message },
     /// Streaming update to assistant message.
-    MessageUpdate {
-        message: Message,
-        delta: String,
-    },
+    MessageUpdate { message: Message, delta: String },
     /// Message complete.
     MessageEnd { message: Message },
     /// Tool execution started.
@@ -262,87 +257,59 @@ impl Agent {
         let mut has_more_tool_calls = true;
 
         while has_more_tool_calls {
-                let current_turn = turn_index;
-                on_event(AgentEvent::TurnStart {
-                    session_id: session_id.clone(),
-                    turn_index: current_turn,
-                });
+            let current_turn = turn_index;
+            on_event(AgentEvent::TurnStart {
+                session_id: session_id.clone(),
+                turn_index: current_turn,
+            });
 
-                // 1. Stream assistant response
-                self.ensure_tool_defs();
-                let context = self.build_context();
-                let stream_options = self.config.stream_options.clone();
+            // 1. Stream assistant response
+            self.ensure_tool_defs();
+            let context = self.build_context();
+            let stream_options = self.config.stream_options.clone();
 
-                let mut stream = match self.provider.stream(&context, &stream_options).await {
-                    Ok(s) => s,
-                    Err(err) => {
-                        on_event(AgentEvent::AgentEnd {
-                            session_id: session_id.clone(),
-                            messages: new_messages,
-                            error: Some(err.to_string()),
-                        });
-                        return Err(err);
-                    }
-                };
+            let mut stream = match self.provider.stream(&context, &stream_options).await {
+                Ok(s) => s,
+                Err(err) => {
+                    on_event(AgentEvent::AgentEnd {
+                        session_id: session_id.clone(),
+                        messages: new_messages,
+                        error: Some(err.to_string()),
+                    });
+                    return Err(err);
+                }
+            };
 
-                let mut assistant_arc: Option<Arc<AssistantMessage>> = None;
-                let mut error_occurred = false;
+            let mut assistant_arc: Option<Arc<AssistantMessage>> = None;
+            let mut error_occurred = false;
 
-                while let Some(event) = stream.next().await {
-                    match event {
-                        Ok(StreamEvent::TextDelta { delta, .. }) => {
-                            // Accumulate into in-progress assistant message
-                            if let Some(ref msg_arc) = assistant_arc {
-                                let mut msg_clone = (**msg_arc).clone();
-                                if msg_clone.content.is_empty() || !matches!(msg_clone.content.last(), Some(ContentBlock::Text(_))) {
-                                    msg_clone.content.push(ContentBlock::Text(TextContent::new(delta.clone())));
-                                } else if let Some(ContentBlock::Text(tc)) = msg_clone.content.last_mut() {
-                                    tc.text.push_str(&delta);
-                                }
-                                on_event(AgentEvent::MessageUpdate {
-                                    message: Message::Assistant(Arc::new(msg_clone.clone())),
-                                    delta,
-                                });
-                                // Re-create Arc with accumulated state
-                                assistant_arc = Some(Arc::new(msg_clone));
-                            } else {
-                                // First text chunk: create initial assistant message
-                                let msg = AssistantMessage {
-                                    content: vec![ContentBlock::Text(TextContent::new(delta.clone()))],
-                                    api: self.provider.api().to_string(),
-                                    provider: self.provider.name().to_string(),
-                                    model: self.provider.model_id().to_string(),
-                                    usage: Usage::default(),
-                                    stop_reason: StopReason::Stop,
-                                    error_message: None,
-                                    timestamp: chrono::Utc::now().timestamp_millis(),
-                                };
-                                assistant_arc = Some(Arc::new(msg.clone()));
-                                on_event(AgentEvent::MessageUpdate {
-                                    message: Message::Assistant(Arc::new(msg)),
-                                    delta,
-                                });
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(StreamEvent::TextDelta { delta, .. }) => {
+                        // Accumulate into in-progress assistant message
+                        if let Some(ref msg_arc) = assistant_arc {
+                            let mut msg_clone = (**msg_arc).clone();
+                            if msg_clone.content.is_empty()
+                                || !matches!(msg_clone.content.last(), Some(ContentBlock::Text(_)))
+                            {
+                                msg_clone
+                                    .content
+                                    .push(ContentBlock::Text(TextContent::new(delta.clone())));
+                            } else if let Some(ContentBlock::Text(tc)) =
+                                msg_clone.content.last_mut()
+                            {
+                                tc.text.push_str(&delta);
                             }
-                        }
-                        Ok(StreamEvent::Done { reason: _, message }) => {
-                            assistant_arc = Some(Arc::new(message));
-                            // Signal done
-                            if let Some(ref msg) = assistant_arc {
-                                on_event(AgentEvent::MessageEnd {
-                                    message: Message::Assistant(Arc::clone(msg)),
-                                });
-                            }
-                            break;
-                        }
-                        Ok(StreamEvent::Error { error, .. }) => {
-                            assistant_arc = Some(Arc::new(error));
-                            error_occurred = true;
-                            break;
-                        }
-                        Ok(StreamEvent::Start { .. }) => {
-                            // Create empty assistant message
-                            assistant_arc = Some(Arc::new(AssistantMessage {
-                                content: Vec::new(),
+                            on_event(AgentEvent::MessageUpdate {
+                                message: Message::Assistant(Arc::new(msg_clone.clone())),
+                                delta,
+                            });
+                            // Re-create Arc with accumulated state
+                            assistant_arc = Some(Arc::new(msg_clone));
+                        } else {
+                            // First text chunk: create initial assistant message
+                            let msg = AssistantMessage {
+                                content: vec![ContentBlock::Text(TextContent::new(delta.clone()))],
                                 api: self.provider.api().to_string(),
                                 provider: self.provider.name().to_string(),
                                 model: self.provider.model_id().to_string(),
@@ -350,150 +317,184 @@ impl Agent {
                                 stop_reason: StopReason::Stop,
                                 error_message: None,
                                 timestamp: chrono::Utc::now().timestamp_millis(),
-                            }));
-                        }
-                        Err(e) => {
-                            on_event(AgentEvent::AgentEnd {
-                                session_id: session_id.clone(),
-                                messages: new_messages.clone(),
-                                error: Some(e.to_string()),
+                            };
+                            assistant_arc = Some(Arc::new(msg.clone()));
+                            on_event(AgentEvent::MessageUpdate {
+                                message: Message::Assistant(Arc::new(msg)),
+                                delta,
                             });
-                            return Err(e);
                         }
-                        _ => {} // Ignore other events for now
                     }
-                }
-
-                // Get final assistant message
-                let Some(assistant_msg_arc) = assistant_arc else {
-                    let msg = AssistantMessage {
-                        content: vec![],
-                        api: self.provider.api().to_string(),
-                        provider: self.provider.name().to_string(),
-                        model: self.provider.model_id().to_string(),
-                        usage: Usage::default(),
-                        stop_reason: StopReason::Error,
-                        error_message: Some("No response from provider".into()),
-                        timestamp: chrono::Utc::now().timestamp_millis(),
-                    };
-                    on_event(AgentEvent::AgentEnd {
-                        session_id: session_id.clone(),
-                        messages: new_messages,
-                        error: Some("No response from provider".into()),
-                    });
-                    return Ok(msg);
-                };
-
-                let assistant_msg = Arc::unwrap_or_clone(assistant_msg_arc);
-                last_assistant = Some(assistant_msg.clone());
-
-                let event_msg = Message::assistant(assistant_msg.clone());
-                self.messages.push(event_msg.clone());
-                new_messages.push(event_msg.clone());
-
-                if error_occurred {
-                    on_event(AgentEvent::AgentEnd {
-                        session_id: session_id.clone(),
-                        messages: new_messages,
-                        error: assistant_msg.error_message.clone(),
-                    });
-                    return Ok(assistant_msg);
-                }
-
-                // 2. Extract tool calls
-                let tool_calls: Vec<&ToolCall> = assistant_msg
-                    .content
-                    .iter()
-                    .filter_map(|block| match block {
-                        ContentBlock::ToolCall(tc) => Some(tc),
-                        _ => None,
-                    })
-                    .collect();
-
-                has_more_tool_calls = !tool_calls.is_empty();
-                let mut tool_messages: Vec<Message> = Vec::new();
-
-                if has_more_tool_calls {
-                    iterations += 1;
-                    if iterations > self.config.max_tool_iterations {
-                        let err_msg = format!(
-                            "Maximum tool iterations ({}) exceeded",
-                            self.config.max_tool_iterations
-                        );
-                        let mut stop = assistant_msg;
-                        stop.stop_reason = StopReason::Error;
-                        stop.error_message = Some(err_msg.clone());
+                    Ok(StreamEvent::Done { reason: _, message }) => {
+                        assistant_arc = Some(Arc::new(message));
+                        // Signal done
+                        if let Some(ref msg) = assistant_arc {
+                            on_event(AgentEvent::MessageEnd {
+                                message: Message::Assistant(Arc::clone(msg)),
+                            });
+                        }
+                        break;
+                    }
+                    Ok(StreamEvent::Error { error, .. }) => {
+                        assistant_arc = Some(Arc::new(error));
+                        error_occurred = true;
+                        break;
+                    }
+                    Ok(StreamEvent::Start { .. }) => {
+                        // Create empty assistant message
+                        assistant_arc = Some(Arc::new(AssistantMessage {
+                            content: Vec::new(),
+                            api: self.provider.api().to_string(),
+                            provider: self.provider.name().to_string(),
+                            model: self.provider.model_id().to_string(),
+                            usage: Usage::default(),
+                            stop_reason: StopReason::Stop,
+                            error_message: None,
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        }));
+                    }
+                    Err(e) => {
                         on_event(AgentEvent::AgentEnd {
                             session_id: session_id.clone(),
-                            messages: new_messages,
-                            error: Some(err_msg),
+                            messages: new_messages.clone(),
+                            error: Some(e.to_string()),
                         });
-                        return Ok(stop);
+                        return Err(e);
                     }
+                    _ => {} // Ignore other events for now
+                }
+            }
 
-                    // 3. Execute tool calls
-                    for tc in &tool_calls {
-                        on_event(AgentEvent::ToolStart {
-                            tool_call_id: tc.id.clone(),
-                            tool_name: tc.name.clone(),
-                            arguments: tc.arguments.clone(),
-                        });
+            // Get final assistant message
+            let Some(assistant_msg_arc) = assistant_arc else {
+                let msg = AssistantMessage {
+                    content: vec![],
+                    api: self.provider.api().to_string(),
+                    provider: self.provider.name().to_string(),
+                    model: self.provider.model_id().to_string(),
+                    usage: Usage::default(),
+                    stop_reason: StopReason::Error,
+                    error_message: Some("No response from provider".into()),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                };
+                on_event(AgentEvent::AgentEnd {
+                    session_id: session_id.clone(),
+                    messages: new_messages,
+                    error: Some("No response from provider".into()),
+                });
+                return Ok(msg);
+            };
 
-                        let result = match self.tools.get(&tc.name) {
-                            Some(tool) => tool
-                                .execute(&tc.id, tc.arguments.clone(), None)
-                                .await
-                                .unwrap_or_else(|e| ToolOutput {
-                                    content: vec![ContentBlock::Text(TextContent::new(
-                                        format!("Tool error: {e}"),
-                                    ))],
-                                    details: None,
-                                    is_error: true,
-                                }),
-                            None => ToolOutput {
+            let assistant_msg = Arc::unwrap_or_clone(assistant_msg_arc);
+            last_assistant = Some(assistant_msg.clone());
+
+            let event_msg = Message::assistant(assistant_msg.clone());
+            self.messages.push(event_msg.clone());
+            new_messages.push(event_msg.clone());
+
+            if error_occurred {
+                on_event(AgentEvent::AgentEnd {
+                    session_id: session_id.clone(),
+                    messages: new_messages,
+                    error: assistant_msg.error_message.clone(),
+                });
+                return Ok(assistant_msg);
+            }
+
+            // 2. Extract tool calls
+            let tool_calls: Vec<&ToolCall> = assistant_msg
+                .content
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::ToolCall(tc) => Some(tc),
+                    _ => None,
+                })
+                .collect();
+
+            has_more_tool_calls = !tool_calls.is_empty();
+            let mut tool_messages: Vec<Message> = Vec::new();
+
+            if has_more_tool_calls {
+                iterations += 1;
+                if iterations > self.config.max_tool_iterations {
+                    let err_msg = format!(
+                        "Maximum tool iterations ({}) exceeded",
+                        self.config.max_tool_iterations
+                    );
+                    let mut stop = assistant_msg;
+                    stop.stop_reason = StopReason::Error;
+                    stop.error_message = Some(err_msg.clone());
+                    on_event(AgentEvent::AgentEnd {
+                        session_id: session_id.clone(),
+                        messages: new_messages,
+                        error: Some(err_msg),
+                    });
+                    return Ok(stop);
+                }
+
+                // 3. Execute tool calls
+                for tc in &tool_calls {
+                    on_event(AgentEvent::ToolStart {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        arguments: tc.arguments.clone(),
+                    });
+
+                    let result = match self.tools.get(&tc.name) {
+                        Some(tool) => tool
+                            .execute(&tc.id, tc.arguments.clone(), None)
+                            .await
+                            .unwrap_or_else(|e| ToolOutput {
                                 content: vec![ContentBlock::Text(TextContent::new(format!(
-                                    "Unknown tool: {}",
-                                    tc.name
+                                    "Tool error: {e}"
                                 )))],
                                 details: None,
                                 is_error: true,
-                            },
-                        };
+                            }),
+                        None => ToolOutput {
+                            content: vec![ContentBlock::Text(TextContent::new(format!(
+                                "Unknown tool: {}",
+                                tc.name
+                            )))],
+                            details: None,
+                            is_error: true,
+                        },
+                    };
 
-                        let is_error = result.is_error;
-                        on_event(AgentEvent::ToolEnd {
-                            tool_call_id: tc.id.clone(),
-                            tool_name: tc.name.clone(),
-                            result: result.clone(),
-                            is_error,
-                        });
+                    let is_error = result.is_error;
+                    on_event(AgentEvent::ToolEnd {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        result: result.clone(),
+                        is_error,
+                    });
 
-                        let tool_result_msg = Message::tool_result(ToolResultMessage {
-                            tool_call_id: tc.id.clone(),
-                            tool_name: tc.name.clone(),
-                            content: result.content,
-                            details: result.details,
-                            is_error,
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        });
+                    let tool_result_msg = Message::tool_result(ToolResultMessage {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        content: result.content,
+                        details: result.details,
+                        is_error,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    });
 
-                        self.messages.push(tool_result_msg.clone());
-                        tool_messages.push(tool_result_msg);
-                    }
-
-                    // 4. Loop back: provider sees tool results and responds
+                    self.messages.push(tool_result_msg.clone());
+                    tool_messages.push(tool_result_msg);
                 }
 
-                let event_msg = Message::assistant(assistant_msg.clone());
-                on_event(AgentEvent::TurnEnd {
-                    session_id: session_id.clone(),
-                    turn_index: current_turn,
-                    message: event_msg,
-                    tool_results: tool_messages,
-                });
-
-                turn_index = turn_index.saturating_add(1);
+                // 4. Loop back: provider sees tool results and responds
             }
+
+            let event_msg = Message::assistant(assistant_msg.clone());
+            on_event(AgentEvent::TurnEnd {
+                session_id: session_id.clone(),
+                turn_index: current_turn,
+                message: event_msg,
+                tool_results: tool_messages,
+            });
+
+            turn_index = turn_index.saturating_add(1);
+        }
 
         let final_msg = last_assistant.unwrap_or_else(|| AssistantMessage {
             content: vec![],

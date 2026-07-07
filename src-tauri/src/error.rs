@@ -8,10 +8,7 @@ use serde::Serialize;
 #[derive(Debug)]
 pub enum Error {
     /// Provider/API-level errors (HTTP errors, auth failures, rate limits).
-    Provider {
-        provider: String,
-        message: String,
-    },
+    Provider { provider: String, message: String },
     /// Tool execution errors.
     Tool { tool: String, message: String },
     /// Input validation errors.

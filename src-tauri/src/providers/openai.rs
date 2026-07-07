@@ -8,8 +8,8 @@
 
 use crate::error::{Error, Result};
 use crate::model::{
-    AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent,
-    ThinkingContent, ThinkingLevel, ToolCall, Usage, UserContent,
+    AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent, ThinkingContent,
+    ThinkingLevel, ToolCall, Usage, UserContent,
 };
 use crate::provider::{Context, Provider, StreamOptions, ToolDef};
 use crate::sse::SseStream;
@@ -54,10 +54,9 @@ impl OpenAIProvider {
         let has_api_key = api_key.is_some();
         let mut headers = reqwest::header::HeaderMap::new();
         if let Some(ref key) = api_key {
-            let mut auth = reqwest::header::HeaderValue::from_bytes(
-                format!("Bearer {key}").as_bytes(),
-            )
-            .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
+            let mut auth =
+                reqwest::header::HeaderValue::from_bytes(format!("Bearer {key}").as_bytes())
+                    .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
             auth.set_sensitive(true);
             headers.insert(reqwest::header::AUTHORIZATION, auth);
         }
@@ -104,7 +103,10 @@ impl OpenAIProvider {
     }
 
     /// Create an OpenRouter provider.
-    pub fn openrouter(model: impl Into<String>, api_key: Option<impl Into<String>>) -> Result<Self> {
+    pub fn openrouter(
+        model: impl Into<String>,
+        api_key: Option<impl Into<String>>,
+    ) -> Result<Self> {
         Self::new(
             "openrouter",
             model,
@@ -118,8 +120,7 @@ impl OpenAIProvider {
         context: &'a Context<'_>,
         options: &StreamOptions,
     ) -> OpenAIRequest<'a> {
-        let mut messages: Vec<OpenAIMessage<'_>> =
-            Vec::with_capacity(context.messages.len() + 1);
+        let mut messages: Vec<OpenAIMessage<'_>> = Vec::with_capacity(context.messages.len() + 1);
 
         // Add system prompt as first message
         if let Some(system) = context.system_prompt {
@@ -146,18 +147,9 @@ impl OpenAIProvider {
         // Thinking/reasoning for DeepSeek
         let (thinking, reasoning_effort) = if self.provider.eq_ignore_ascii_case("deepseek") {
             match options.thinking_level.unwrap_or_default() {
-                ThinkingLevel::Off => (
-                    Some(OpenAIThinking { kind: "disabled" }),
-                    None,
-                ),
-                ThinkingLevel::XHigh => (
-                    Some(OpenAIThinking { kind: "enabled" }),
-                    Some("max"),
-                ),
-                _ => (
-                    Some(OpenAIThinking { kind: "enabled" }),
-                    None,
-                ),
+                ThinkingLevel::Off => (Some(OpenAIThinking { kind: "disabled" }), None),
+                ThinkingLevel::XHigh => (Some(OpenAIThinking { kind: "enabled" }), Some("max")),
+                _ => (Some(OpenAIThinking { kind: "enabled" }), None),
             }
         } else {
             (None, None)
@@ -228,11 +220,7 @@ impl Provider for OpenAIProvider {
         // Build SSE stream
         let byte_stream = response
             .bytes_stream()
-            .map(|result| {
-                result
-                    .map(|b| b.to_vec())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-            });
+            .map(|result| result.map(|b| b.to_vec()).map_err(std::io::Error::other));
         let event_source = SseStream::new(Box::pin(byte_stream));
 
         let model = self.model.clone();
@@ -258,10 +246,7 @@ impl Provider for OpenAIProvider {
                                 state.done = true;
                                 let reason = state.partial.stop_reason;
                                 let message = std::mem::take(&mut state.partial);
-                                return Some((
-                                    Ok(StreamEvent::Done { reason, message }),
-                                    state,
-                                ));
+                                return Some((Ok(StreamEvent::Done { reason, message }), state));
                             }
 
                             if let Err(e) = state.process_event(&msg.data) {
@@ -277,10 +262,7 @@ impl Provider for OpenAIProvider {
                             state.done = true;
                             let reason = state.partial.stop_reason;
                             let message = std::mem::take(&mut state.partial);
-                            return Some((
-                                Ok(StreamEvent::Done { reason, message }),
-                                state,
-                            ));
+                            return Some((Ok(StreamEvent::Done { reason, message }), state));
                         }
                     }
                 }
@@ -477,12 +459,7 @@ struct StreamState {
 }
 
 impl StreamState {
-    fn new(
-        event_source: SseStream,
-        model: String,
-        api: String,
-        provider: String,
-    ) -> Self {
+    fn new(event_source: SseStream, model: String, api: String, provider: String) -> Self {
         Self {
             event_source,
             partial: AssistantMessage {
@@ -616,9 +593,8 @@ impl StreamState {
                         arguments: serde_json::Value::Null,
                         thought_signature: None,
                     }));
-                    self.pending_events.push_back(StreamEvent::ToolCallStart {
-                        content_index: ci,
-                    });
+                    self.pending_events
+                        .push_back(StreamEvent::ToolCallStart { content_index: ci });
                 }
 
                 let tc = &mut self.tool_calls[idx];
@@ -659,9 +635,7 @@ impl StreamState {
                         serde_json::from_str(&tc.arguments).unwrap_or(serde_json::Value::Null);
 
                     // Update the partial
-                    if let Some(ContentBlock::ToolCall(block)) =
-                        self.partial.content.get_mut(ci)
-                    {
+                    if let Some(ContentBlock::ToolCall(block)) = self.partial.content.get_mut(ci) {
                         block.id = tc.id.clone();
                         block.name = tc.name.clone();
                         block.arguments = arguments.clone();
@@ -709,9 +683,8 @@ impl StreamState {
             self.partial
                 .content
                 .push(ContentBlock::Text(TextContent::new("")));
-            self.pending_events.push_back(StreamEvent::TextStart {
-                content_index: ci,
-            });
+            self.pending_events
+                .push_back(StreamEvent::TextStart { content_index: ci });
             ci
         }
     }
@@ -722,13 +695,14 @@ impl StreamState {
             self.partial.content.len() - 1
         } else {
             let ci = self.partial.content.len();
-            self.partial.content.push(ContentBlock::Thinking(ThinkingContent {
-                thinking: String::new(),
-                thinking_signature: None,
-            }));
-            self.pending_events.push_back(StreamEvent::ThinkingStart {
-                content_index: ci,
-            });
+            self.partial
+                .content
+                .push(ContentBlock::Thinking(ThinkingContent {
+                    thinking: String::new(),
+                    thinking_signature: None,
+                }));
+            self.pending_events
+                .push_back(StreamEvent::ThinkingStart { content_index: ci });
             ci
         }
     }
@@ -778,10 +752,9 @@ fn convert_message_to_openai<'a>(message: &'a Message) -> Vec<OpenAIMessage<'a>>
                 })
                 .collect();
 
-            let has_text = assistant
-                .content
-                .iter()
-                .any(|block| matches!(block, ContentBlock::Text(_)) || matches!(block, ContentBlock::Thinking(_)));
+            let has_text = assistant.content.iter().any(|block| {
+                matches!(block, ContentBlock::Text(_)) || matches!(block, ContentBlock::Thinking(_))
+            });
 
             if has_text || tool_calls.is_empty() {
                 let content = if tool_calls.is_empty() {
@@ -852,16 +825,14 @@ fn convert_user_content<'a>(content: &'a UserContent) -> OpenAIContent<'a> {
             let parts: Vec<OpenAIContentPart<'a>> = blocks
                 .iter()
                 .filter_map(|block| match block {
-                    ContentBlock::Text(tc) => {
-                        Some(OpenAIContentPart::Text { text: Cow::Borrowed(&tc.text) })
-                    }
-                    ContentBlock::Image(img) => {
-                        Some(OpenAIContentPart::ImageUrl {
-                            image_url: OpenAIImageUrl {
-                                url: format!("data:{};base64,{}", img.mime_type, img.data),
-                            },
-                        })
-                    }
+                    ContentBlock::Text(tc) => Some(OpenAIContentPart::Text {
+                        text: Cow::Borrowed(&tc.text),
+                    }),
+                    ContentBlock::Image(img) => Some(OpenAIContentPart::ImageUrl {
+                        image_url: OpenAIImageUrl {
+                            url: format!("data:{};base64,{}", img.mime_type, img.data),
+                        },
+                    }),
                     _ => None,
                 })
                 .collect();

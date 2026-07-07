@@ -6,8 +6,8 @@
 
 use crate::error::{Error, Result};
 use crate::model::{
-    AssistantMessage, ContentBlock, Message, RedactedThinkingContent, StopReason,
-    StreamEvent, TextContent, ThinkingContent, ThinkingLevel, ToolCall, Usage, UserContent,
+    AssistantMessage, ContentBlock, Message, RedactedThinkingContent, StopReason, StreamEvent,
+    TextContent, ThinkingContent, ThinkingLevel, ToolCall, Usage, UserContent,
 };
 use crate::provider::{Context, Provider, StreamOptions, ToolDef};
 use crate::sse::SseStream;
@@ -46,10 +46,9 @@ impl AnthropicProvider {
         let mut headers = reqwest::header::HeaderMap::new();
         if let Some(ref key) = api_key {
             if key.starts_with("sk-ant-oat") {
-                let mut auth = reqwest::header::HeaderValue::from_bytes(
-                    format!("Bearer {key}").as_bytes(),
-                )
-                .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
+                let mut auth =
+                    reqwest::header::HeaderValue::from_bytes(format!("Bearer {key}").as_bytes())
+                        .map_err(|e| Error::validation(format!("invalid API key: {e}")))?;
                 auth.set_sensitive(true);
                 headers.insert(reqwest::header::AUTHORIZATION, auth);
             } else {
@@ -90,7 +89,13 @@ impl AnthropicProvider {
         let tools: Option<Vec<AnthropicTool<'_>>> = if context.tools.is_empty() {
             None
         } else {
-            Some(context.tools.iter().map(convert_tool_to_anthropic).collect())
+            Some(
+                context
+                    .tools
+                    .iter()
+                    .map(convert_tool_to_anthropic)
+                    .collect(),
+            )
         };
 
         // Build thinking config
@@ -184,11 +189,7 @@ impl Provider for AnthropicProvider {
         // Build SSE stream from response bytes
         let byte_stream = response
             .bytes_stream()
-            .map(|result| {
-                result
-                    .map(|b| b.to_vec())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-            });
+            .map(|result| result.map(|b| b.to_vec()).map_err(std::io::Error::other));
         let event_source = SseStream::new(Box::pin(byte_stream));
 
         let model = self.model.clone();
@@ -209,7 +210,10 @@ impl Provider for AnthropicProvider {
                             }
                             match state.process_event(&msg.data) {
                                 Ok(Some(event)) => {
-                                    if matches!(&event, StreamEvent::Done { .. } | StreamEvent::Error { .. }) {
+                                    if matches!(
+                                        &event,
+                                        StreamEvent::Done { .. } | StreamEvent::Error { .. }
+                                    ) {
                                         state.done = true;
                                     }
                                     return Some((Ok(event), state));
@@ -248,8 +252,7 @@ fn apply_request_headers(
     for (key, value) in &options.headers {
         // Only skip auth headers if the client already has default auth
         if has_default_auth
-            && (key.eq_ignore_ascii_case("authorization")
-                || key.eq_ignore_ascii_case("x-api-key"))
+            && (key.eq_ignore_ascii_case("authorization") || key.eq_ignore_ascii_case("x-api-key"))
         {
             continue;
         }
@@ -296,10 +299,21 @@ struct AnthropicMessage<'a> {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum AnthropicContent<'a> {
-    Text { text: &'a str },
-    Thinking { thinking: &'a str, signature: &'a str },
-    Image { source: AnthropicImageSource<'a> },
-    ToolUse { id: &'a str, name: &'a str, input: &'a serde_json::Value },
+    Text {
+        text: &'a str,
+    },
+    Thinking {
+        thinking: &'a str,
+        signature: &'a str,
+    },
+    Image {
+        source: AnthropicImageSource<'a>,
+    },
+    ToolUse {
+        id: &'a str,
+        name: &'a str,
+        input: &'a serde_json::Value,
+    },
     ToolResult {
         tool_use_id: &'a str,
         content: Vec<AnthropicToolResultContent<'a>>,
@@ -401,6 +415,7 @@ enum AnthropicContentBlock {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
 enum AnthropicDelta {
     TextDelta {
         #[serde(default)]
@@ -458,12 +473,7 @@ struct StreamState {
 }
 
 impl StreamState {
-    fn new(
-        event_source: SseStream,
-        model: String,
-        api: String,
-        provider: String,
-    ) -> Self {
+    fn new(event_source: SseStream, model: String, api: String, provider: String) -> Self {
         Self {
             event_source,
             partial: AssistantMessage {
@@ -517,27 +527,21 @@ impl StreamState {
                         self.partial
                             .content
                             .push(ContentBlock::Text(TextContent::new("")));
-                        Ok(Some(StreamEvent::TextStart {
-                            content_index: ci,
-                        }))
+                        Ok(Some(StreamEvent::TextStart { content_index: ci }))
                     }
                     AnthropicContentBlock::Thinking => {
-                        self.partial.content.push(ContentBlock::Thinking(
-                            ThinkingContent {
-                                thinking: String::new(),
-                                thinking_signature: None,
-                            },
-                        ));
-                        Ok(Some(StreamEvent::ThinkingStart {
-                            content_index: ci,
-                        }))
-                    }
-                    AnthropicContentBlock::RedactedThinking { data } => {
                         self.partial
                             .content
-                            .push(ContentBlock::RedactedThinking(
-                                RedactedThinkingContent { data },
-                            ));
+                            .push(ContentBlock::Thinking(ThinkingContent {
+                                thinking: String::new(),
+                                thinking_signature: None,
+                            }));
+                        Ok(Some(StreamEvent::ThinkingStart { content_index: ci }))
+                    }
+                    AnthropicContentBlock::RedactedThinking { data } => {
+                        self.partial.content.push(ContentBlock::RedactedThinking(
+                            RedactedThinkingContent { data },
+                        ));
                         Ok(None)
                     }
                     AnthropicContentBlock::ToolUse { id, name } => {
@@ -551,17 +555,13 @@ impl StreamState {
                                 json: String::new(),
                             },
                         );
-                        self.partial.content.push(ContentBlock::ToolCall(
-                            ToolCall {
-                                id,
-                                name,
-                                arguments: serde_json::Value::Null,
-                                thought_signature: None,
-                            },
-                        ));
-                        Ok(Some(StreamEvent::ToolCallStart {
-                            content_index: ci,
-                        }))
+                        self.partial.content.push(ContentBlock::ToolCall(ToolCall {
+                            id,
+                            name,
+                            arguments: serde_json::Value::Null,
+                            thought_signature: None,
+                        }));
+                        Ok(Some(StreamEvent::ToolCallStart { content_index: ci }))
                     }
                 }
             }
@@ -570,9 +570,7 @@ impl StreamState {
                 match delta {
                     AnthropicDelta::TextDelta { text } => {
                         if let Some(text) = text {
-                            if let Some(ContentBlock::Text(tc)) =
-                                self.partial.content.get_mut(ci)
-                            {
+                            if let Some(ContentBlock::Text(tc)) = self.partial.content.get_mut(ci) {
                                 tc.text.push_str(&text);
                             }
                             return Ok(Some(StreamEvent::TextDelta {
@@ -625,9 +623,7 @@ impl StreamState {
                 if let Some(acc) = self.tool_accums.remove(&index) {
                     let arguments: serde_json::Value =
                         serde_json::from_str(&acc.json).unwrap_or(serde_json::Value::Null);
-                    if let Some(ContentBlock::ToolCall(tc)) =
-                        self.partial.content.get_mut(ci)
-                    {
+                    if let Some(ContentBlock::ToolCall(tc)) = self.partial.content.get_mut(ci) {
                         tc.arguments = arguments.clone();
                     }
                     return Ok(Some(StreamEvent::ToolCallEnd {
@@ -746,7 +742,9 @@ fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
 fn convert_user_content(content: &UserContent) -> Vec<AnthropicContent<'_>> {
     match content {
         UserContent::Text(text) => {
-            vec![AnthropicContent::Text { text: text.as_str() }]
+            vec![AnthropicContent::Text {
+                text: text.as_str(),
+            }]
         }
         UserContent::Blocks(blocks) => blocks
             .iter()

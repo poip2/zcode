@@ -69,12 +69,13 @@ export async function load(): Promise<AppSettings> {
  * still stubbed out, but should be replaced with tauri-plugin-stronghold or a
  * system keyring if the key is ever used for real API calls.
  */
-export async function save(settings: AppSettings): Promise<void> {
+export async function save(settings: AppSettings): Promise<boolean> {
   try {
     const store = await getSettingsStore();
     await store.set("settings", settings);
     await store.save();
+    return true;
   } catch {
-    // Ignore persist errors
+    return false;
   }
 }

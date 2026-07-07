@@ -113,7 +113,7 @@
     }
     persistedSkills = skillsSummary;
 
-    await saveSettings({
+    const ok = await saveSettings({
       aiProvider: {
         baseUrl: draftBaseUrl,
         apiKey: draftApiKey,
@@ -122,7 +122,7 @@
       skills: skillsSummary,
     });
 
-    onClose();
+    if (ok) onClose();
   }
 
   async function handleBrowsePin() {
@@ -218,7 +218,7 @@
               class="settings-btn-secondary"
               onclick={handleBrowsePin}
               data-tauri-drag-region="false"
-            >Change…</button>
+            >{pinnedPath ? "Change…" : "Browse…"}</button>
           </div>
         </section>
       {/if}

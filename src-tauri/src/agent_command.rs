@@ -479,26 +479,34 @@ pub async fn start_agent_turn(
     let sessions = state.sessions.clone();
     let mut map = sessions.lock().await;
 
+    let allowed_tools_for_rebuild: Vec<String> = if allowed_tools.is_empty() {
+        vec!["read", "write", "edit", "bash", "grep", "find", "ls"]
+            .into_iter().map(|s| s.to_string()).collect()
+    } else {
+        allowed_tools.clone()
+    };
+
+    let auto_approve_arc: Arc<AtomicBool>;
+    let pending_approvals_arc: Arc<Mutex<HashMap<String, PendingApproval>>>;
+
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
         sd.auto_approve.store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
+        auto_approve_arc = Arc::clone(&sd.auto_approve);
+        pending_approvals_arc = Arc::clone(&sd.pending_approvals);
         sd.agent.take()
             .ok_or_else(|| "Agent is already running for this session".to_string())?
     } else {
-        let auto_approve = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
-        let pending_approvals = Arc::new(Mutex::new(HashMap::new()));
+        auto_approve_arc = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
+        pending_approvals_arc = Arc::new(Mutex::new(HashMap::new()));
 
         // Build guarded tool registry
-        let tool_names: Vec<&str> = if allowed_tools.is_empty() {
-            vec!["read", "write", "edit", "bash", "grep", "find", "ls"]
-        } else {
-            allowed_tools.iter().map(|s| s.as_str()).collect()
-        };
+        let tool_names: Vec<&str> = allowed_tools_for_rebuild.iter().map(|s| s.as_str()).collect();
 
         let tool_registry = build_guarded_registry(
             &tool_names,
             &work_dir,
-            Arc::clone(&pending_approvals),
-            Arc::clone(&auto_approve),
+            Arc::clone(&pending_approvals_arc),
+            Arc::clone(&auto_approve_arc),
             app.clone(),
             &session_id,
         );
@@ -507,13 +515,22 @@ pub async fn start_agent_turn(
 
         map.insert(session_id.clone(), SessionData {
             agent: None,
-            pending_approvals,
-            auto_approve,
+            pending_approvals: Arc::clone(&pending_approvals_arc),
+            auto_approve: Arc::clone(&auto_approve_arc),
         });
 
         agent
     };
     drop(map);
+
+    // Capture rebuild parameters in case the agent task panics
+    let rebuild_provider = Arc::clone(&provider);
+    let rebuild_config = config.clone();
+    let rebuild_work_dir = work_dir.clone();
+    let rebuild_app = app.clone();
+    let rebuild_session_id = session_id.clone();
+    let rebuild_auto_approve = Arc::clone(&auto_approve_arc);
+    let rebuild_pending_approvals = Arc::clone(&pending_approvals_arc);
 
     let event_prefix = format!("agent://{}", session_id);
     let event_prefix_post = event_prefix.clone();
@@ -523,84 +540,117 @@ pub async fn start_agent_turn(
     let app_post = app.clone();
 
     tokio::spawn(async move {
-        let result = agent
-            .run(user_message, move |event| {
-                let a = app_t.clone();
-                let pfx = &event_prefix;
+        // Run agent in a sub-task so we can catch JoinError from panics.
+        // The sub-task returns (result, agent) so we can always restore the
+        // agent to the session afterwards.
+        let run_task = tokio::spawn(async move {
+            let result = agent
+                .run(user_message, move |event| {
+                    let a = app_t.clone();
+                    let pfx = &event_prefix;
 
-                match event {
-                    AgentEvent::MessageUpdate { delta, .. } => {
-                        let _ = a.emit(
-                            &format!("{pfx}/token"),
-                            AgentFrontendEvent::Token { delta },
-                        );
-                    }
-                    AgentEvent::ToolStart {
-                        tool_call_id,
-                        tool_name,
-                        arguments,
-                    } => {
-                        let _ = a.emit(
-                            &format!("{pfx}/tool-call"),
-                            AgentFrontendEvent::ToolCall {
-                                call_id: tool_call_id,
-                                tool_name,
-                                arguments,
-                            },
-                        );
-                    }
-                    AgentEvent::ToolEnd {
-                        tool_call_id,
-                        tool_name,
-                        result,
-                        is_error,
-                    } => {
-                        let summary = tool_result_summary(&result.content);
-                        let _ = a.emit(
-                            &format!("{pfx}/tool-result"),
-                            AgentFrontendEvent::ToolResult {
-                                call_id: tool_call_id,
-                                tool_name,
-                                is_error,
-                                summary,
-                            },
-                        );
-                    }
-                    AgentEvent::AgentEnd { error, .. } => {
-                        if let Some(msg) = error {
+                    match event {
+                        AgentEvent::MessageUpdate { delta, .. } => {
                             let _ = a.emit(
-                                &format!("{pfx}/error"),
-                                AgentFrontendEvent::Error { message: msg },
+                                &format!("{pfx}/token"),
+                                AgentFrontendEvent::Token { delta },
                             );
                         }
+                        AgentEvent::ToolStart {
+                            tool_call_id,
+                            tool_name,
+                            arguments,
+                        } => {
+                            let _ = a.emit(
+                                &format!("{pfx}/tool-call"),
+                                AgentFrontendEvent::ToolCall {
+                                    call_id: tool_call_id,
+                                    tool_name,
+                                    arguments,
+                                },
+                            );
+                        }
+                        AgentEvent::ToolEnd {
+                            tool_call_id,
+                            tool_name,
+                            result,
+                            is_error,
+                        } => {
+                            let summary = tool_result_summary(&result.content);
+                            let _ = a.emit(
+                                &format!("{pfx}/tool-result"),
+                                AgentFrontendEvent::ToolResult {
+                                    call_id: tool_call_id,
+                                    tool_name,
+                                    is_error,
+                                    summary,
+                                },
+                            );
+                        }
+                        AgentEvent::AgentEnd { error, .. } => {
+                            if let Some(msg) = error {
+                                let _ = a.emit(
+                                    &format!("{pfx}/error"),
+                                    AgentFrontendEvent::Error { message: msg },
+                                );
+                            }
+                        }
+                        AgentEvent::AgentStart { .. }
+                        | AgentEvent::TurnStart { .. }
+                        | AgentEvent::TurnEnd { .. }
+                        | AgentEvent::MessageStart { .. }
+                        | AgentEvent::MessageEnd { .. } => {}
                     }
-                    AgentEvent::AgentStart { .. }
-                    | AgentEvent::TurnStart { .. }
-                    | AgentEvent::TurnEnd { .. }
-                    | AgentEvent::MessageStart { .. }
-                    | AgentEvent::MessageEnd { .. } => {}
-                }
-            })
-            .await;
+                })
+                .await;
+            (result, agent)
+        });
 
-        match &result {
-            Ok(msg) => {
-                let _ = app_post.emit(
-                    &format!("{}/turn-end", event_prefix_post),
-                    AgentFrontendEvent::TurnEnd {
-                        stop_reason: format!("{:?}", msg.stop_reason),
-                        input_tokens: msg.usage.input,
-                        output_tokens: msg.usage.output,
-                    },
-                );
+        match run_task.await {
+            Ok((result, agent)) => {
+                match &result {
+                    Ok(msg) => {
+                        let _ = app_post.emit(
+                            &format!("{}/turn-end", event_prefix_post),
+                            AgentFrontendEvent::TurnEnd {
+                                stop_reason: format!("{:?}", msg.stop_reason),
+                                input_tokens: msg.usage.input,
+                                output_tokens: msg.usage.output,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        let _ = app_post.emit(
+                            &format!("{}/error", event_prefix_post),
+                            AgentFrontendEvent::Error {
+                                message: e.to_string(),
+                            },
+                        );
+                        let _ = app_post.emit(
+                            &format!("{}/turn-end", event_prefix_post),
+                            AgentFrontendEvent::TurnEnd {
+                                stop_reason: "Error".to_string(),
+                                input_tokens: 0,
+                                output_tokens: 0,
+                            },
+                        );
+                    }
+                }
+
+                let mut map = sessions.lock().await;
+                if let Some(sd) = map.get_mut(&session_id_t) {
+                    sd.agent = Some(agent);
+                }
             }
-            Err(e) => {
-                let _ = app_post.emit(
-                    &format!("{}/error", event_prefix_post),
-                    AgentFrontendEvent::Error {
-                        message: e.to_string(),
-                    },
-                );
+            Err(join_err) => {
+                if join_err.is_panic() {
+                    let _ = app_post.emit(
+                        &format!("{}/error", event_prefix_post),
+                        AgentFrontendEvent::Error {
+                            message: "Agent task panicked".to_string(),
+                        },
+                    );
+                }
                 let _ = app_post.emit(
                     &format!("{}/turn-end", event_prefix_post),
                     AgentFrontendEvent::TurnEnd {
@@ -609,12 +659,25 @@ pub async fn start_agent_turn(
                         output_tokens: 0,
                     },
                 );
-            }
-        }
 
-        let mut map = sessions.lock().await;
-        if let Some(sd) = map.get_mut(&session_id_t) {
-            sd.agent = Some(agent);
+                // Rebuild agent from captured parameters
+                let tool_names_refs: Vec<&str> =
+                    allowed_tools_for_rebuild.iter().map(|s| s.as_str()).collect();
+                let tool_registry = build_guarded_registry(
+                    &tool_names_refs,
+                    &rebuild_work_dir,
+                    rebuild_pending_approvals,
+                    rebuild_auto_approve,
+                    rebuild_app,
+                    &rebuild_session_id,
+                );
+                let new_agent = Agent::new(rebuild_provider, tool_registry, rebuild_config);
+
+                let mut map = sessions.lock().await;
+                if let Some(sd) = map.get_mut(&session_id_t) {
+                    sd.agent = Some(new_agent);
+                }
+            }
         }
     });
 

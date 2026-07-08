@@ -97,12 +97,13 @@
     scrollToBottom();
   });
 
-  function getActiveSkills(): string[] {
+  function getActiveSkills(settings?: SkillsSettings): string[] {
+    const s = settings ?? skillsSettings;
     const active: string[] = [];
-    if (skillsSettings.summarize) active.push("Summarize document");
-    if (skillsSettings.fixGrammar) active.push("Fix grammar");
-    if (skillsSettings.generateToc) active.push("Generate table of contents");
-    if (skillsSettings.explainCode) active.push("Explain code block");
+    if (s.summarize) active.push("Summarize document");
+    if (s.fixGrammar) active.push("Fix grammar");
+    if (s.generateToc) active.push("Generate table of contents");
+    if (s.explainCode) active.push("Explain code block");
     return active;
   }
 
@@ -137,7 +138,7 @@
     await session.send(text, {
       baseUrl: freshSettings.aiProvider.baseUrl,
       model: freshSettings.aiProvider.model,
-      activeSkills: getActiveSkills(),
+      activeSkills: getActiveSkills(freshSettings.skills),
       cwd: pinnedPath ?? undefined,
       currentFile: doc.filePath ?? undefined,
       autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,

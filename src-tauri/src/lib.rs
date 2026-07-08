@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_command;
 mod commands;
 pub mod error;
 pub mod model;
@@ -28,6 +29,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .manage(agent_command::SessionManager::new())
         .invoke_handler(tauri::generate_handler![
             commands::read_markdown_file,
             commands::write_markdown_file,
@@ -39,6 +41,8 @@ pub fn run() {
             commands::create_folder,
             commands::save_api_key,
             commands::call_ai_provider,
+            agent_command::start_agent_turn,
+            agent_command::approve_tool_call,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

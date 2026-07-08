@@ -117,11 +117,14 @@
       maskedToStore = undefined;
     }
 
-    // Save to store first (baseUrl + model + maskedApiKey)
+    // Save to store (baseUrl + model + maskedApiKey + autoApproveWrites).
+    // Preserve autoApproveWrites from persisted state (it's toggled
+    // in the Agent panel, not in the settings dialog).
     const newAi: AIProviderSettings = {
       baseUrl: draftBaseUrl,
       model: draftModel,
       maskedApiKey: maskedToStore,
+      autoApproveWrites: persistedAi.autoApproveWrites,
     };
 
     const skillsSummary: SkillsSettings = {

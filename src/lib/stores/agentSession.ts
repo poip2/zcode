@@ -255,11 +255,10 @@ function createSession(sessionId: string) {
   async function confirmTool(callId: string, approved: boolean) {
     try {
       await approveToolCall(sessionId, callId, approved);
+      state.update((s) => ({ ...s, toolConfirmation: null }));
     } catch (err) {
       console.error("Failed to send tool approval:", err);
     }
-    // Clear confirmation immediately for responsive UI
-    state.update((s) => ({ ...s, toolConfirmation: null }));
   }
 
   function stop() {

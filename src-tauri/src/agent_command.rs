@@ -254,16 +254,8 @@ fn build_confirmation_summary(tool_name: &str, input: &serde_json::Value) -> Str
                 .get("newText")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let old_preview = if old_text.len() > 80 {
-                format!("{}...", &old_text[..80])
-            } else {
-                old_text.to_string()
-            };
-            let new_preview = if new_text.len() > 80 {
-                format!("{}...", &new_text[..80])
-            } else {
-                new_text.to_string()
-            };
+            let old_preview = safe_truncate(old_text, 80);
+            let new_preview = safe_truncate(new_text, 80);
             format!("Edit `{}`:\n- {} \n+ {}", path, old_preview.replace('\n', "\n- "), new_preview.replace('\n', "\n+ "))
         }
         "bash" => {

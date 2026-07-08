@@ -15,6 +15,8 @@
   import TitleBar from "$lib/components/TitleBar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import SettingsDialog from "$lib/components/SettingsDialog.svelte";
+  import AgentPanel from "$lib/components/AgentPanel.svelte";
+  import AgentFab from "$lib/components/AgentFab.svelte";
 
   const SMALL_WINDOW_THRESHOLD = 640;
 
@@ -28,6 +30,7 @@
   let sidebarVisible = $state(true);
   let userCollapsed = $state(false);
   let settingsOpen = $state(false);
+  let agentPanelOpen = $state(false);
 
   onMount(() => {
     initRenderer();
@@ -258,7 +261,14 @@
   </div>
 
   <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
+
 </div>
+
+<!-- Floating AI Agent (outside layout flow) -->
+<AgentFab open={agentPanelOpen} onclick={() => (agentPanelOpen = !agentPanelOpen)} />
+{#if agentPanelOpen}
+  <AgentPanel onClose={() => (agentPanelOpen = false)} />
+{/if}
 
 <style>
   .app-root {

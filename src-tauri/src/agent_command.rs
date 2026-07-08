@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
 // ============================================================================
 // Frontend-facing event types (lightweight, serializable)
@@ -38,8 +38,12 @@ use tokio::sync::{Mutex, oneshot};
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentFrontendEvent {
-    Token { delta: String },
-    Thinking { delta: String },
+    Token {
+        delta: String,
+    },
+    Thinking {
+        delta: String,
+    },
     ToolCall {
         call_id: String,
         tool_name: String,
@@ -94,6 +98,12 @@ type SessionMap = Arc<Mutex<HashMap<String, SessionData>>>;
 /// Tauri managed state wrapper.
 pub struct SessionManager {
     pub(crate) sessions: SessionMap,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionManager {
@@ -182,24 +192,14 @@ impl Tool for GuardedTool {
         let (tx, rx) = oneshot::channel();
         {
             let mut map = self.pending_approvals.lock().await;
-            map.insert(
-                call_id.clone(),
-                PendingApproval {
-                    response_tx: tx,
-                },
-            );
+            map.insert(call_id.clone(), PendingApproval { response_tx: tx });
         }
 
         // Wait for user decision (with 5-minute timeout as safety)
-        let approved = match tokio::time::timeout(
-            std::time::Duration::from_secs(300),
-            rx,
-        )
-        .await
-        {
-            Ok(Ok(true)) => true,
-            _ => false,
-        };
+        let approved = matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(300), rx).await,
+            Ok(Ok(true))
+        );
 
         // Clean up the pending entry
         {
@@ -229,10 +229,7 @@ fn build_confirmation_summary(tool_name: &str, input: &serde_json::Value) -> Str
                 .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown file");
-            let content = input
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("");
             let preview: String = content
                 .lines()
                 .take(3)
@@ -246,17 +243,16 @@ fn build_confirmation_summary(tool_name: &str, input: &serde_json::Value) -> Str
                 .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown file");
-            let old_text = input
-                .get("oldText")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let new_text = input
-                .get("newText")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let old_text = input.get("oldText").and_then(|v| v.as_str()).unwrap_or("");
+            let new_text = input.get("newText").and_then(|v| v.as_str()).unwrap_or("");
             let old_preview = safe_truncate(old_text, 80);
             let new_preview = safe_truncate(new_text, 80);
-            format!("Edit `{}`:\n- {} \n+ {}", path, old_preview.replace('\n', "\n- "), new_preview.replace('\n', "\n+ "))
+            format!(
+                "Edit `{}`:\n- {} \n+ {}",
+                path,
+                old_preview.replace('\n', "\n- "),
+                new_preview.replace('\n', "\n+ ")
+            )
         }
         "bash" => {
             let cmd = input
@@ -301,7 +297,10 @@ fn build_guarded_registry(
     app: AppHandle,
     session_id: &str,
 ) -> ToolRegistry {
-    use crate::tools::{bash::BashTool, edit::EditTool, find::FindTool, grep::GrepTool, ls::LsTool, read::ReadTool, write::WriteTool};
+    use crate::tools::{
+        bash::BashTool, edit::EditTool, find::FindTool, grep::GrepTool, ls::LsTool, read::ReadTool,
+        write::WriteTool,
+    };
 
     let mut tools: Vec<Box<dyn Tool>> = Vec::new();
     for name in tool_names {
@@ -385,7 +384,10 @@ fn safe_truncate(s: &str, max_bytes: usize) -> String {
         let end = if s.is_char_boundary(max_bytes) {
             max_bytes
         } else {
-            (0..max_bytes).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
+            (0..max_bytes)
+                .rev()
+                .find(|&i| s.is_char_boundary(i))
+                .unwrap_or(0)
         };
         format!("{}...", &s[..end])
     }
@@ -419,6 +421,7 @@ fn tool_result_summary(content: &[ContentBlock]) -> String {
 // ============================================================================
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_agent_turn(
     app: AppHandle,
     state: tauri::State<'_, SessionManager>,
@@ -481,7 +484,9 @@ pub async fn start_agent_turn(
 
     let allowed_tools_for_rebuild: Vec<String> = if allowed_tools.is_empty() {
         vec!["read", "write", "edit", "bash", "grep", "find", "ls"]
-            .into_iter().map(|s| s.to_string()).collect()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect()
     } else {
         allowed_tools.clone()
     };
@@ -490,17 +495,22 @@ pub async fn start_agent_turn(
     let pending_approvals_arc: Arc<Mutex<HashMap<String, PendingApproval>>>;
 
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
-        sd.auto_approve.store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
+        sd.auto_approve
+            .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
         auto_approve_arc = Arc::clone(&sd.auto_approve);
         pending_approvals_arc = Arc::clone(&sd.pending_approvals);
-        sd.agent.take()
+        sd.agent
+            .take()
             .ok_or_else(|| "Agent is already running for this session".to_string())?
     } else {
         auto_approve_arc = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
         pending_approvals_arc = Arc::new(Mutex::new(HashMap::new()));
 
         // Build guarded tool registry
-        let tool_names: Vec<&str> = allowed_tools_for_rebuild.iter().map(|s| s.as_str()).collect();
+        let tool_names: Vec<&str> = allowed_tools_for_rebuild
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
 
         let tool_registry = build_guarded_registry(
             &tool_names,
@@ -513,11 +523,14 @@ pub async fn start_agent_turn(
 
         let agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
 
-        map.insert(session_id.clone(), SessionData {
-            agent: None,
-            pending_approvals: Arc::clone(&pending_approvals_arc),
-            auto_approve: Arc::clone(&auto_approve_arc),
-        });
+        map.insert(
+            session_id.clone(),
+            SessionData {
+                agent: None,
+                pending_approvals: Arc::clone(&pending_approvals_arc),
+                auto_approve: Arc::clone(&auto_approve_arc),
+            },
+        );
 
         agent
     };
@@ -551,10 +564,8 @@ pub async fn start_agent_turn(
 
                     match event {
                         AgentEvent::MessageUpdate { delta, .. } => {
-                            let _ = a.emit(
-                                &format!("{pfx}/token"),
-                                AgentFrontendEvent::Token { delta },
-                            );
+                            let _ = a
+                                .emit(&format!("{pfx}/token"), AgentFrontendEvent::Token { delta });
                         }
                         AgentEvent::ToolStart {
                             tool_call_id,
@@ -661,8 +672,10 @@ pub async fn start_agent_turn(
                 );
 
                 // Rebuild agent from captured parameters
-                let tool_names_refs: Vec<&str> =
-                    allowed_tools_for_rebuild.iter().map(|s| s.as_str()).collect();
+                let tool_names_refs: Vec<&str> = allowed_tools_for_rebuild
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect();
                 let tool_registry = build_guarded_registry(
                     &tool_names_refs,
                     &rebuild_work_dir,

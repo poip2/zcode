@@ -80,10 +80,15 @@ function createSession(sessionId: string) {
     }>(`${prefix}/tool-call`, (event) => {
       const { callId, toolName } = event.payload;
 
+      const dangerousTools = ["write", "edit", "bash"];
+      const initialContent = dangerousTools.includes(toolName)
+        ? `⏳ Awaiting approval for \`${toolName}\`…`
+        : `📖 Reading with \`${toolName}\`…`;
+
       const toolMsg: ChatMessage = {
         id: `tool-${callId}`,
         role: "tool",
-        content: `📖 Reading with \`${toolName}\`…`,
+        content: initialContent,
         toolName,
         isToolError: false,
         timestamp: Date.now(),

@@ -82,9 +82,10 @@ pub(crate) struct PendingApproval {
 
 /// Per-session data.
 pub(crate) struct SessionData {
-    pub(crate) agent: Agent,
+    pub(crate) agent: Option<Agent>,
     /// Map of call_id → oneshot sender for pending dangerous tool approvals.
     pub(crate) pending_approvals: Arc<Mutex<HashMap<String, PendingApproval>>>,
+    pub(crate) auto_approve: Arc<AtomicBool>,
 }
 
 /// Global session map, shared between commands and background tasks.
@@ -385,6 +386,19 @@ fn build_system_prompt(
 // Helper: extract text summary from tool result
 // ============================================================================
 
+fn safe_truncate(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        s.to_string()
+    } else {
+        let end = if s.is_char_boundary(max_bytes) {
+            max_bytes
+        } else {
+            (0..max_bytes).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
+        };
+        format!("{}...", &s[..end])
+    }
+}
+
 fn tool_result_summary(content: &[ContentBlock]) -> String {
     for block in content {
         if let ContentBlock::Text(tc) = block {
@@ -395,12 +409,12 @@ fn tool_result_summary(content: &[ContentBlock]) -> String {
                     continue;
                 }
                 if trimmed.len() > 120 {
-                    return format!("{}...", &trimmed[..120]);
+                    return safe_truncate(trimmed, 120);
                 }
                 return trimmed.to_string();
             }
             if text.len() > 120 {
-                return format!("{}...", &text[..120]);
+                return safe_truncate(text, 120);
             }
             return text.to_string();
         }
@@ -472,11 +486,11 @@ pub async fn start_agent_turn(
     // Get or create session
     let sessions = state.sessions.clone();
     let mut map = sessions.lock().await;
-    let entry = map.remove(&session_id);
-    drop(map);
 
-    let (mut agent, pending_approvals, _auto_approve) = if let Some(sd) = entry {
-        (sd.agent, sd.pending_approvals, Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false))))
+    let mut agent = if let Some(sd) = map.get_mut(&session_id) {
+        sd.auto_approve.store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
+        sd.agent.take()
+            .ok_or_else(|| "Agent is already running for this session".to_string())?
     } else {
         let auto_approve = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
         let pending_approvals = Arc::new(Mutex::new(HashMap::new()));
@@ -498,8 +512,16 @@ pub async fn start_agent_turn(
         );
 
         let agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
-        (agent, pending_approvals, auto_approve)
+
+        map.insert(session_id.clone(), SessionData {
+            agent: None,
+            pending_approvals,
+            auto_approve,
+        });
+
+        agent
     };
+    drop(map);
 
     let event_prefix = format!("agent://{}", session_id);
     let event_prefix_post = event_prefix.clone();
@@ -526,19 +548,14 @@ pub async fn start_agent_turn(
                         tool_name,
                         arguments,
                     } => {
-                        // For read-only tools, emit a lightweight notice.
-                        // Dangerous tools emit their own confirmation events
-                        // from the GuardedTool wrapper.
-                        if !matches!(tool_name.as_str(), "write" | "edit" | "bash") {
-                            let _ = a.emit(
-                                &format!("{pfx}/tool-call"),
-                                AgentFrontendEvent::ToolCall {
-                                    call_id: tool_call_id,
-                                    tool_name,
-                                    arguments,
-                                },
-                            );
-                        }
+                        let _ = a.emit(
+                            &format!("{pfx}/tool-call"),
+                            AgentFrontendEvent::ToolCall {
+                                call_id: tool_call_id,
+                                tool_name,
+                                arguments,
+                            },
+                        );
                     }
                     AgentEvent::ToolEnd {
                         tool_call_id,
@@ -604,13 +621,9 @@ pub async fn start_agent_turn(
         }
 
         let mut map = sessions.lock().await;
-        map.insert(
-            session_id_t,
-            SessionData {
-                agent,
-                pending_approvals,
-            },
-        );
+        if let Some(sd) = map.get_mut(&session_id_t) {
+            sd.agent = Some(agent);
+        }
     });
 
     Ok(())

@@ -238,8 +238,11 @@ impl Agent {
         let mut last_assistant: Option<AssistantMessage> = None;
 
         // AgentStart
-        eprintln!("[zcode] agent::run_loop: starting, session={session_id}, provider={}, history_len={}",
-            self.provider.name(), self.messages.len());
+        eprintln!(
+            "[zcode] agent::run_loop: starting, session={session_id}, provider={}, history_len={}",
+            self.provider.name(),
+            self.messages.len()
+        );
         on_event(AgentEvent::AgentStart {
             session_id: session_id.clone(),
         });
@@ -333,8 +336,11 @@ impl Agent {
                         }
                     }
                     Ok(StreamEvent::Done { reason: _, message }) => {
-                        eprintln!("[zcode] agent::run_loop: Done, content_blocks={}, output_tokens={}",
-                            message.content.len(), message.usage.output);
+                        eprintln!(
+                            "[zcode] agent::run_loop: Done, content_blocks={}, output_tokens={}",
+                            message.content.len(),
+                            message.usage.output
+                        );
                         assistant_arc = Some(Arc::new(message));
                         // Signal done
                         if let Some(ref msg) = assistant_arc {
@@ -345,7 +351,10 @@ impl Agent {
                         break;
                     }
                     Ok(StreamEvent::Error { error, .. }) => {
-                        eprintln!("[zcode] agent::run_loop: StreamEvent::Error {:?}", error.error_message);
+                        eprintln!(
+                            "[zcode] agent::run_loop: StreamEvent::Error {:?}",
+                            error.error_message
+                        );
                         assistant_arc = Some(Arc::new(error));
                         error_occurred = true;
                         break;

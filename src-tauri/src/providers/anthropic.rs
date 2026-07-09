@@ -166,7 +166,10 @@ impl Provider for AnthropicProvider {
 
         let response = request.send().await?;
         let status = response.status();
-        eprintln!("[zcode] anthropic::stream: HTTP {status}, url={}", self.base_url);
+        eprintln!(
+            "[zcode] anthropic::stream: HTTP {status}, url={}",
+            self.base_url
+        );
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(Error::provider(
@@ -509,7 +512,10 @@ impl StreamState {
     fn process_event(&mut self, data: &str) -> Result<Option<StreamEvent>> {
         if !self.started_processing {
             self.started_processing = true;
-            eprintln!("[zcode] anthropic::stream: first SSE event processing, data_len={}", data.len());
+            eprintln!(
+                "[zcode] anthropic::stream: first SSE event processing, data_len={}",
+                data.len()
+            );
         }
         let event: AnthropicStreamEvent = serde_json::from_str(data)
             .map_err(|e| Error::api(format!("JSON parse error: {e}\nData: {data}")))?;

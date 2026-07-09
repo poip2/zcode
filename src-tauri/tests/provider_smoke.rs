@@ -107,8 +107,15 @@ async fn test_openai_deepseek() -> Result<()> {
     }
 
     // Assertions
-    assert!(stream_error.is_none(), "Stream error: {}", stream_error.unwrap_or_default());
-    assert!(!response_text.is_empty(), "Response text is empty — model returned no content");
+    assert!(
+        stream_error.is_none(),
+        "Stream error: {}",
+        stream_error.unwrap_or_default()
+    );
+    assert!(
+        !response_text.is_empty(),
+        "Response text is empty — model returned no content"
+    );
     assert!(
         done_stop_reason != Some(zcode_lib::model::StopReason::Error),
         "Done event indicates an error"
@@ -129,11 +136,7 @@ async fn test_anthropic_deepseek() -> Result<()> {
         format!("{base_url}/v1/messages")
     };
 
-    let provider = AnthropicProvider::new(
-        &model,
-        None::<String>,
-        Some(&base_url),
-    )?;
+    let provider = AnthropicProvider::new(&model, None::<String>, Some(&base_url))?;
 
     let messages = vec![Message::User(UserMessage {
         content: UserContent::Text("Say hello in exactly 3 words. No thinking needed.".to_string()),
@@ -180,8 +183,15 @@ async fn test_anthropic_deepseek() -> Result<()> {
     }
 
     // Assertions
-    assert!(stream_error.is_none(), "Stream error: {}", stream_error.unwrap_or_default());
-    assert!(!response_text.is_empty(), "Response text is empty — model returned no content");
+    assert!(
+        stream_error.is_none(),
+        "Stream error: {}",
+        stream_error.unwrap_or_default()
+    );
+    assert!(
+        !response_text.is_empty(),
+        "Response text is empty — model returned no content"
+    );
     assert!(
         done_stop_reason != Some(zcode_lib::model::StopReason::Error),
         "Done event indicates an error"

@@ -468,7 +468,10 @@ pub async fn start_agent_turn(
     eprintln!("[zcode] start_agent_turn: reading API key from keychain...");
     let api_key = match settings::get_api_key() {
         Ok(Some(key)) => {
-            eprintln!("[zcode] start_agent_turn: API key found (len={})", key.len());
+            eprintln!(
+                "[zcode] start_agent_turn: API key found (len={})",
+                key.len()
+            );
             key
         }
         Ok(None) => {
@@ -489,17 +492,25 @@ pub async fn start_agent_turn(
 
     // Build system prompt
     let system_prompt = build_system_prompt(&work_dir, &active_skills, current_file.as_deref());
-    eprintln!("[zcode] start_agent_turn: system_prompt len={}, cwd={}", system_prompt.len(), work_dir.display());
+    eprintln!(
+        "[zcode] start_agent_turn: system_prompt len={}, cwd={}",
+        system_prompt.len(),
+        work_dir.display()
+    );
 
     // Build provider
     eprintln!("[zcode] start_agent_turn: building provider (name={name})...");
-    let provider = crate::providers::build_provider(&name, &model, &api_key, &base_url)
-        .map_err(|e| {
+    let provider =
+        crate::providers::build_provider(&name, &model, &api_key, &base_url).map_err(|e| {
             eprintln!("[zcode] start_agent_turn: ERROR building provider: {e}");
             e.to_string()
         })?;
-    eprintln!("[zcode] start_agent_turn: provider built: name={}, api={}, model_id={}",
-        provider.name(), provider.api(), provider.model_id());
+    eprintln!(
+        "[zcode] start_agent_turn: provider built: name={}, api={}, model_id={}",
+        provider.name(),
+        provider.api(),
+        provider.model_id()
+    );
 
     // Agent config
     let config = AgentConfig {
@@ -677,8 +688,10 @@ pub async fn start_agent_turn(
             Ok((result, agent)) => {
                 match &result {
                     Ok(msg) => {
-                        eprintln!("[zcode] agent_task: SUCCESS, stop_reason={:?}, tokens in={} out={}",
-                            msg.stop_reason, msg.usage.input, msg.usage.output);
+                        eprintln!(
+                            "[zcode] agent_task: SUCCESS, stop_reason={:?}, tokens in={} out={}",
+                            msg.stop_reason, msg.usage.input, msg.usage.output
+                        );
                         let _ = app_post.emit(
                             &format!("{}/turn-end", event_prefix_post),
                             AgentFrontendEvent::TurnEnd {

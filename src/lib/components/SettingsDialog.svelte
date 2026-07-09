@@ -270,14 +270,14 @@
       {#if activeTab === "ai"}
         <section class="settings-section">
           <div class="settings-section-title">AI Provider</div>
-          <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint. Your API key is stored in the system keychain.</p>
+          <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain. Standard path suffixes (like <code>/v1/chat/completions</code> or <code>/v1/messages</code>) are appended automatically if omitted.</p>
 
           <label class="settings-label" for="settings-base-url">Base URL</label>
           <input
             id="settings-base-url"
             class="settings-input mono"
             type="text"
-            placeholder="https://api.openai.com/v1"
+            placeholder="https://api.openai.com/v1/chat/completions"
             bind:value={draftBaseUrl}
           />
 

@@ -238,6 +238,11 @@ impl Agent {
         let mut last_assistant: Option<AssistantMessage> = None;
 
         // AgentStart
+        eprintln!(
+            "[zcode] agent::run_loop: starting, session={session_id}, provider={}, history_len={}",
+            self.provider.name(),
+            self.messages.len()
+        );
         on_event(AgentEvent::AgentStart {
             session_id: session_id.clone(),
         });
@@ -269,8 +274,12 @@ impl Agent {
             let stream_options = self.config.stream_options.clone();
 
             let mut stream = match self.provider.stream(&context, &stream_options).await {
-                Ok(s) => s,
+                Ok(s) => {
+                    eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() started OK");
+                    s
+                }
                 Err(err) => {
+                    eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() FAILED: {err}");
                     on_event(AgentEvent::AgentEnd {
                         session_id: session_id.clone(),
                         messages: new_messages,
@@ -308,6 +317,7 @@ impl Agent {
                             assistant_arc = Some(Arc::new(msg_clone));
                         } else {
                             // First text chunk: create initial assistant message
+                            eprintln!("[zcode] agent::run_loop: first text delta '{delta}'");
                             let msg = AssistantMessage {
                                 content: vec![ContentBlock::Text(TextContent::new(delta.clone()))],
                                 api: self.provider.api().to_string(),
@@ -326,6 +336,11 @@ impl Agent {
                         }
                     }
                     Ok(StreamEvent::Done { reason: _, message }) => {
+                        eprintln!(
+                            "[zcode] agent::run_loop: Done, content_blocks={}, output_tokens={}",
+                            message.content.len(),
+                            message.usage.output
+                        );
                         assistant_arc = Some(Arc::new(message));
                         // Signal done
                         if let Some(ref msg) = assistant_arc {
@@ -336,11 +351,16 @@ impl Agent {
                         break;
                     }
                     Ok(StreamEvent::Error { error, .. }) => {
+                        eprintln!(
+                            "[zcode] agent::run_loop: StreamEvent::Error {:?}",
+                            error.error_message
+                        );
                         assistant_arc = Some(Arc::new(error));
                         error_occurred = true;
                         break;
                     }
                     Ok(StreamEvent::Start { .. }) => {
+                        eprintln!("[zcode] agent::run_loop: StreamEvent::Start");
                         // Create empty assistant message
                         assistant_arc = Some(Arc::new(AssistantMessage {
                             content: Vec::new(),
@@ -354,6 +374,7 @@ impl Agent {
                         }));
                     }
                     Err(e) => {
+                        eprintln!("[zcode] agent::run_loop: stream error: {e}");
                         on_event(AgentEvent::AgentEnd {
                             session_id: session_id.clone(),
                             messages: new_messages.clone(),

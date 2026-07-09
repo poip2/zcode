@@ -209,6 +209,10 @@ impl Provider for OpenAIProvider {
 
         let response: reqwest::Response = request.send().await?;
         let status = response.status();
+        eprintln!(
+            "[zcode] openai::stream: HTTP {status}, url={}",
+            self.base_url
+        );
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(Error::provider(
@@ -222,6 +226,7 @@ impl Provider for OpenAIProvider {
             .bytes_stream()
             .map(|result| result.map(|b| b.to_vec()).map_err(std::io::Error::other));
         let event_source = SseStream::new(Box::pin(byte_stream));
+        eprintln!("[zcode] openai::stream: SSE stream built");
 
         let model = self.model.clone();
         let api = self.api().to_string();
@@ -455,6 +460,7 @@ struct StreamState {
     tool_calls: Vec<ToolCallState>,
     pending_events: VecDeque<StreamEvent>,
     started: bool,
+    started_processing: bool,
     done: bool,
 }
 
@@ -475,6 +481,7 @@ impl StreamState {
             tool_calls: Vec::new(),
             pending_events: VecDeque::new(),
             started: false,
+            started_processing: false,
             done: false,
         }
     }
@@ -489,6 +496,13 @@ impl StreamState {
     }
 
     fn process_event(&mut self, data: &str) -> Result<()> {
+        if !self.started_processing {
+            self.started_processing = true;
+            eprintln!(
+                "[zcode] openai::stream: first SSE event processing, data_len={}",
+                data.len()
+            );
+        }
         let chunk: OpenAIStreamChunk = serde_json::from_str(data)
             .map_err(|e| Error::api(format!("JSON parse error: {e}\nData: {data}")))?;
 

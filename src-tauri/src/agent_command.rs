@@ -17,7 +17,6 @@ use crate::agent::{Agent, AgentConfig, AgentEvent};
 use crate::error::Result as AgentResult;
 use crate::model::{ContentBlock, TextContent};
 use crate::provider::StreamOptions;
-use crate::providers::OpenAIProvider;
 use crate::settings;
 use crate::skills::{self, Skill};
 use crate::tools::{self, Tool, ToolEffects, ToolOutput, ToolRegistry};
@@ -45,20 +44,27 @@ pub enum AgentFrontendEvent {
         delta: String,
     },
     ToolCall {
+        #[serde(rename = "callId")]
         call_id: String,
+        #[serde(rename = "toolName")]
         tool_name: String,
         arguments: serde_json::Value,
     },
     ToolResult {
+        #[serde(rename = "callId")]
         call_id: String,
+        #[serde(rename = "toolName")]
         tool_name: String,
+        #[serde(rename = "isError")]
         is_error: bool,
         summary: String,
     },
     /// A dangerous tool needs user confirmation before execution.
     /// The agent pauses until approve_tool_call is invoked.
     ToolConfirmation {
+        #[serde(rename = "callId")]
         call_id: String,
+        #[serde(rename = "toolName")]
         tool_name: String,
         /// Human-readable summary of what will happen
         summary: String,
@@ -66,8 +72,11 @@ pub enum AgentFrontendEvent {
         details: serde_json::Value,
     },
     TurnEnd {
+        #[serde(rename = "stopReason")]
         stop_reason: String,
+        #[serde(rename = "inputTokens")]
         input_tokens: u64,
+        #[serde(rename = "outputTokens")]
         output_tokens: u64,
     },
     Error {
@@ -436,13 +445,19 @@ pub async fn start_agent_turn(
     cwd: Option<String>,
     auto_approve_writes: Option<bool>,
 ) -> Result<(), String> {
+    eprintln!("[zcode] start_agent_turn: session={session_id}, base_url={base_url}, model={model}, msg_len={}", user_message.len());
+    eprintln!("[zcode] start_agent_turn: tools={allowed_tools:?}, skills={active_skills:?}, auto_approve={auto_approve_writes:?}");
+
     if user_message.trim().is_empty() {
+        eprintln!("[zcode] start_agent_turn: ERROR empty user message");
         return Err("User message cannot be empty".to_string());
     }
     if base_url.is_empty() {
+        eprintln!("[zcode] start_agent_turn: ERROR empty base_url");
         return Err("No Base URL configured".to_string());
     }
     if model.is_empty() {
+        eprintln!("[zcode] start_agent_turn: ERROR empty model");
         return Err("No model configured".to_string());
     }
 
@@ -450,9 +465,24 @@ pub async fn start_agent_turn(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "openai".to_string());
 
-    let api_key = settings::get_api_key()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "No API key configured".to_string())?;
+    eprintln!("[zcode] start_agent_turn: reading API key from keychain...");
+    let api_key = match settings::get_api_key() {
+        Ok(Some(key)) => {
+            eprintln!(
+                "[zcode] start_agent_turn: API key found (len={})",
+                key.len()
+            );
+            key
+        }
+        Ok(None) => {
+            eprintln!("[zcode] start_agent_turn: ERROR no API key in keychain");
+            return Err("No API key configured".to_string());
+        }
+        Err(e) => {
+            eprintln!("[zcode] start_agent_turn: ERROR reading keychain: {e}");
+            return Err(e);
+        }
+    };
 
     let work_dir = if let Some(ref d) = cwd {
         PathBuf::from(d)
@@ -462,11 +492,25 @@ pub async fn start_agent_turn(
 
     // Build system prompt
     let system_prompt = build_system_prompt(&work_dir, &active_skills, current_file.as_deref());
+    eprintln!(
+        "[zcode] start_agent_turn: system_prompt len={}, cwd={}",
+        system_prompt.len(),
+        work_dir.display()
+    );
 
     // Build provider
-    let provider = OpenAIProvider::new(&name, &model, Some(&api_key), Some(&base_url))
-        .map_err(|e| e.to_string())?;
-    let provider: Arc<dyn crate::provider::Provider> = Arc::new(provider);
+    eprintln!("[zcode] start_agent_turn: building provider (name={name})...");
+    let provider =
+        crate::providers::build_provider(&name, &model, &api_key, &base_url).map_err(|e| {
+            eprintln!("[zcode] start_agent_turn: ERROR building provider: {e}");
+            e.to_string()
+        })?;
+    eprintln!(
+        "[zcode] start_agent_turn: provider built: name={}, api={}, model_id={}",
+        provider.name(),
+        provider.api(),
+        provider.model_id()
+    );
 
     // Agent config
     let config = AgentConfig {
@@ -552,7 +596,10 @@ pub async fn start_agent_turn(
     let app_t = app.clone();
     let app_post = app.clone();
 
+    eprintln!("[zcode] start_agent_turn: spawning agent task, event_prefix={event_prefix}");
+
     tokio::spawn(async move {
+        eprintln!("[zcode] agent_task: started, prefix={event_prefix}");
         // Run agent in a sub-task so we can catch JoinError from panics.
         // The sub-task returns (result, agent) so we can always restore the
         // agent to the session afterwards.
@@ -564,6 +611,7 @@ pub async fn start_agent_turn(
 
                     match event {
                         AgentEvent::MessageUpdate { delta, .. } => {
+                            eprintln!("[zcode] agent_task: emitting token '{delta}'");
                             let _ = a
                                 .emit(&format!("{pfx}/token"), AgentFrontendEvent::Token { delta });
                         }
@@ -572,13 +620,17 @@ pub async fn start_agent_turn(
                             tool_name,
                             arguments,
                         } => {
+                            let fe = AgentFrontendEvent::ToolCall {
+                                call_id: tool_call_id.clone(),
+                                tool_name: tool_name.clone(),
+                                arguments: arguments.clone(),
+                            };
+                            eprintln!("[zcode] agent_task: emitting tool-call {}, JSON={}",
+                                tool_name,
+                                serde_json::to_string(&fe).unwrap_or_default());
                             let _ = a.emit(
                                 &format!("{pfx}/tool-call"),
-                                AgentFrontendEvent::ToolCall {
-                                    call_id: tool_call_id,
-                                    tool_name,
-                                    arguments,
-                                },
+                                fe,
                             );
                         }
                         AgentEvent::ToolEnd {
@@ -588,17 +640,22 @@ pub async fn start_agent_turn(
                             is_error,
                         } => {
                             let summary = tool_result_summary(&result.content);
+                            let fe = AgentFrontendEvent::ToolResult {
+                                call_id: tool_call_id.clone(),
+                                tool_name: tool_name.clone(),
+                                is_error,
+                                summary: summary.clone(),
+                            };
+                            eprintln!("[zcode] agent_task: emitting tool-result {}, is_error={is_error}, JSON={}",
+                                tool_name,
+                                serde_json::to_string(&fe).unwrap_or_default());
                             let _ = a.emit(
                                 &format!("{pfx}/tool-result"),
-                                AgentFrontendEvent::ToolResult {
-                                    call_id: tool_call_id,
-                                    tool_name,
-                                    is_error,
-                                    summary,
-                                },
+                                fe,
                             );
                         }
                         AgentEvent::AgentEnd { error, .. } => {
+                            eprintln!("[zcode] agent_task: AgentEnd error={error:?}");
                             if let Some(msg) = error {
                                 let _ = a.emit(
                                     &format!("{pfx}/error"),
@@ -606,11 +663,21 @@ pub async fn start_agent_turn(
                                 );
                             }
                         }
-                        AgentEvent::AgentStart { .. }
-                        | AgentEvent::TurnStart { .. }
-                        | AgentEvent::TurnEnd { .. }
-                        | AgentEvent::MessageStart { .. }
-                        | AgentEvent::MessageEnd { .. } => {}
+                        AgentEvent::AgentStart { .. } => {
+                            eprintln!("[zcode] agent_task: AgentStart");
+                        }
+                        AgentEvent::TurnStart { turn_index, .. } => {
+                            eprintln!("[zcode] agent_task: TurnStart #{turn_index}");
+                        }
+                        AgentEvent::TurnEnd { .. } => {
+                            eprintln!("[zcode] agent_task: TurnEnd");
+                        }
+                        AgentEvent::MessageStart { .. } => {
+                            eprintln!("[zcode] agent_task: MessageStart");
+                        }
+                        AgentEvent::MessageEnd { .. } => {
+                            eprintln!("[zcode] agent_task: MessageEnd");
+                        }
                     }
                 })
                 .await;
@@ -621,6 +688,10 @@ pub async fn start_agent_turn(
             Ok((result, agent)) => {
                 match &result {
                     Ok(msg) => {
+                        eprintln!(
+                            "[zcode] agent_task: SUCCESS, stop_reason={:?}, tokens in={} out={}",
+                            msg.stop_reason, msg.usage.input, msg.usage.output
+                        );
                         let _ = app_post.emit(
                             &format!("{}/turn-end", event_prefix_post),
                             AgentFrontendEvent::TurnEnd {
@@ -631,6 +702,7 @@ pub async fn start_agent_turn(
                         );
                     }
                     Err(e) => {
+                        eprintln!("[zcode] agent_task: ERROR from agent: {e}");
                         let _ = app_post.emit(
                             &format!("{}/error", event_prefix_post),
                             AgentFrontendEvent::Error {
@@ -654,6 +726,7 @@ pub async fn start_agent_turn(
                 }
             }
             Err(join_err) => {
+                eprintln!("[zcode] agent_task: PANIC/join error: {join_err:?}");
                 if join_err.is_panic() {
                     let _ = app_post.emit(
                         &format!("{}/error", event_prefix_post),

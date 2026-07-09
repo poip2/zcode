@@ -78,6 +78,7 @@ function createSession(sessionId: string) {
       toolName: string;
       arguments: Record<string, unknown>;
     }>(`${prefix}/tool-call`, (event) => {
+      console.log("[tool-call payload]", JSON.stringify(event.payload));
       const { callId, toolName } = event.payload;
 
       const dangerousTools = ["write", "edit", "bash"];
@@ -106,6 +107,7 @@ function createSession(sessionId: string) {
       isError: boolean;
       summary: string;
     }>(`${prefix}/tool-result`, (event) => {
+      console.log("[tool-result payload]", JSON.stringify(event.payload));
       const { callId, toolName, isError, summary } = event.payload;
       state.update((s) => {
         const msgs = s.messages.map((m) => {
@@ -172,6 +174,7 @@ function createSession(sessionId: string) {
 
     // Phase 3: tool confirmation events
     const u6 = await listen<ToolConfirmation>(`${prefix}/tool-confirmation`, (event) => {
+      console.log("[tool-confirmation payload]", JSON.stringify(event.payload));
       state.update((s) => ({
         ...s,
         toolConfirmation: event.payload,

@@ -166,6 +166,7 @@ impl Provider for AnthropicProvider {
 
         let response = request.send().await?;
         let status = response.status();
+        eprintln!("[zcode] anthropic::stream: HTTP {status}, url={}", self.base_url);
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(Error::provider(
@@ -179,7 +180,8 @@ impl Provider for AnthropicProvider {
             .headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
         if !ct.contains("text/event-stream") {
             return Err(Error::api(format!(
                 "Unexpected content-type: {ct}, expected text/event-stream"
@@ -191,6 +193,7 @@ impl Provider for AnthropicProvider {
             .bytes_stream()
             .map(|result| result.map(|b| b.to_vec()).map_err(std::io::Error::other));
         let event_source = SseStream::new(Box::pin(byte_stream));
+        eprintln!("[zcode] anthropic::stream: SSE stream built, content-type={ct}");
 
         let model = self.model.clone();
         let api = self.api().to_string();
@@ -469,6 +472,7 @@ struct StreamState {
     event_source: SseStream,
     partial: AssistantMessage,
     tool_accums: HashMap<u32, ToolAccum>,
+    started_processing: bool,
     done: bool,
 }
 
@@ -487,6 +491,7 @@ impl StreamState {
                 timestamp: chrono::Utc::now().timestamp_millis(),
             },
             tool_accums: HashMap::new(),
+            started_processing: false,
             done: false,
         }
     }
@@ -502,6 +507,10 @@ impl StreamState {
     }
 
     fn process_event(&mut self, data: &str) -> Result<Option<StreamEvent>> {
+        if !self.started_processing {
+            self.started_processing = true;
+            eprintln!("[zcode] anthropic::stream: first SSE event processing, data_len={}", data.len());
+        }
         let event: AnthropicStreamEvent = serde_json::from_str(data)
             .map_err(|e| Error::api(format!("JSON parse error: {e}\nData: {data}")))?;
 

@@ -1,6 +1,5 @@
 use crate::model::{Message, UserContent, UserMessage};
-use crate::provider::{Context, Provider, StreamOptions};
-use crate::providers::OpenAIProvider;
+use crate::provider::{Context, StreamOptions};
 use crate::settings;
 use futures::StreamExt;
 use serde::Serialize;
@@ -299,11 +298,24 @@ pub async fn call_ai_provider(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "openai".to_string());
 
-    let api_key = settings::get_api_key()?.ok_or_else(|| {
-        "No API key configured. Please set it in Settings > AI Provider.".to_string()
-    })?;
+    eprintln!("[zcode] call_ai_provider: base_url={base_url}, model={model}, prompt_len={}", prompt.len());
 
-    let provider = OpenAIProvider::new(&name, &model, Some(&api_key), Some(&base_url))
+    let api_key = match settings::get_api_key() {
+        Ok(Some(key)) => {
+            eprintln!("[zcode] call_ai_provider: API key found (len={})", key.len());
+            key
+        }
+        Ok(None) => {
+            eprintln!("[zcode] call_ai_provider: ERROR no API key");
+            return Err("No API key configured. Please set it in Settings > AI Provider.".to_string());
+        }
+        Err(e) => {
+            eprintln!("[zcode] call_ai_provider: ERROR reading keychain: {e}");
+            return Err(e.to_string());
+        }
+    };
+
+    let provider = crate::providers::build_provider(&name, &model, &api_key, &base_url)
         .map_err(|e| e.to_string())?;
 
     let user_msg = Message::User(UserMessage {
@@ -322,8 +334,12 @@ pub async fn call_ai_provider(
     let mut stream = provider
         .stream(&context, &options)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            eprintln!("[zcode] call_ai_provider: stream() FAILED: {e}");
+            e.to_string()
+        })?;
 
+    eprintln!("[zcode] call_ai_provider: stream started, reading events...");
     let mut result_text = String::new();
     while let Some(event) = stream.next().await {
         match event {
@@ -331,21 +347,28 @@ pub async fn call_ai_provider(
                 result_text.push_str(&delta);
             }
             Ok(crate::model::StreamEvent::Error { error, .. }) => {
+                eprintln!("[zcode] call_ai_provider: StreamEvent::Error {:?}", error.error_message);
                 if let Some(msg) = &error.error_message {
                     return Err(msg.clone());
                 }
                 return Err("Unknown AI provider error".to_string());
             }
             Ok(crate::model::StreamEvent::Done { message, .. }) => {
+                eprintln!("[zcode] call_ai_provider: Done, text_len={}", result_text.len());
                 // The provider may surface errors inside the Done event
                 if let Some(msg) = &message.error_message {
                     return Err(msg.clone());
                 }
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => {
+                eprintln!("[zcode] call_ai_provider: stream Err: {e}");
+                return Err(e.to_string());
+            }
             _ => {}
         }
     }
+
+    eprintln!("[zcode] call_ai_provider: stream ended, result_len={}", result_text.len());
 
     if result_text.is_empty() {
         return Err("AI provider returned an empty response.".to_string());

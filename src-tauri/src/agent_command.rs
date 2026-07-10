@@ -416,10 +416,9 @@ fn load_skill_state(user_config_dir: &Path) -> SkillState {
 
 fn save_skill_state(user_config_dir: &Path, state: &SkillState) -> std::io::Result<()> {
     std::fs::create_dir_all(user_config_dir)?;
-    std::fs::write(
-        skill_state_path(user_config_dir),
-        serde_json::to_string_pretty(state).unwrap(),
-    )
+    let json = serde_json::to_string_pretty(state)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    std::fs::write(skill_state_path(user_config_dir), json)
 }
 
 /// A skill combined with its enabled/disabled state.

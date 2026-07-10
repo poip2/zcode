@@ -722,18 +722,26 @@ fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
         if let Message::ToolResult(tr) = msg {
             // If the previous message in the output is already a user message,
             // append this tool_result into it (collapse consecutive results).
-            if let Some(AnthropicMessage { role: "user", content }) = result.last_mut() {
-                for block in &tr.content {
-                    content.push(AnthropicContent::ToolResult {
-                        tool_use_id: &tr.tool_call_id,
-                        content: vec![AnthropicToolResultContent::Text {
-                            text: match block {
-                                ContentBlock::Text(t) => t.text.as_str(),
-                                _ => "[non-text content]",
-                            },
-                        }],
-                        is_error: if tr.is_error { Some(true) } else { None },
-                    });
+            let is_tool_result_user = result.last().map_or(false, |m| {
+                m.role == "user"
+                    && m.content
+                        .iter()
+                        .any(|c| matches!(c, AnthropicContent::ToolResult { .. }))
+            });
+            if is_tool_result_user {
+                if let Some(AnthropicMessage { content, .. }) = result.last_mut() {
+                    for block in &tr.content {
+                        content.push(AnthropicContent::ToolResult {
+                            tool_use_id: &tr.tool_call_id,
+                            content: vec![AnthropicToolResultContent::Text {
+                                text: match block {
+                                    ContentBlock::Text(t) => t.text.as_str(),
+                                    _ => "[non-text content]",
+                                },
+                            }],
+                            is_error: if tr.is_error { Some(true) } else { None },
+                        });
+                    }
                 }
             } else {
                 result.push(convert_message_to_anthropic(msg));

@@ -42,13 +42,14 @@
   let saveError = $state(false);
   let dialogEl: HTMLDialogElement | undefined = $state();
   let unsubPinned: () => void;
+  let unsubDoc: () => void;
 
   onMount(async () => {
     unsubPinned = pinnedFolder.subscribe((p) => {
       pinnedPath = p;
     });
     pinnedFolder.load();
-    docStore.subscribe((d) => {
+    unsubDoc = docStore.subscribe((d) => {
       docFilePath = d.filePath;
     });
 
@@ -58,6 +59,7 @@
 
   onDestroy(() => {
     unsubPinned?.();
+    unsubDoc?.();
   });
 
   // Populate drafts from persisted state on each open

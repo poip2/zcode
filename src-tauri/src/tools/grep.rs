@@ -6,9 +6,8 @@
 use crate::error::{Error, Result};
 use crate::model::{ContentBlock, TextContent};
 use crate::tools::{
-    enforce_cwd_scope, resolve_path, truncate_at_char_boundary, truncate_output, Tool,
-    ToolEffects, ToolOutput, ToolUpdate, DEFAULT_GREP_LIMIT, DEFAULT_MAX_BYTES,
-    GREP_MAX_LINE_LENGTH,
+    enforce_cwd_scope, resolve_path, truncate_at_char_boundary, truncate_output, Tool, ToolEffects,
+    ToolOutput, ToolUpdate, DEFAULT_GREP_LIMIT, DEFAULT_MAX_BYTES, GREP_MAX_LINE_LENGTH,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -209,7 +208,10 @@ impl Tool for GrepTool {
             .lines()
             .map(|line| {
                 if line.len() > GREP_MAX_LINE_LENGTH {
-                    format!("{}... [truncated]", truncate_at_char_boundary(line, GREP_MAX_LINE_LENGTH))
+                    format!(
+                        "{}... [truncated]",
+                        truncate_at_char_boundary(line, GREP_MAX_LINE_LENGTH)
+                    )
                 } else {
                     line.to_string()
                 }

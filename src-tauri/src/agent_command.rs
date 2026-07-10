@@ -344,6 +344,7 @@ fn build_confirmation_details(tool_name: &str, input: &serde_json::Value) -> ser
 // Helper: build guarded tool registry
 // ============================================================================
 
+#[allow(clippy::too_many_arguments)]
 fn build_guarded_registry(
     tool_names: &[&str],
     cwd: &std::path::Path,

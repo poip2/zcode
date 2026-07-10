@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { getAgentSession, type ChatMessage, type ToolConfirmation } from "$lib/stores/agentSession";
-  import { load as loadSettings, save as saveSettings, type AIProviderSettings, type SkillsSettings } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
   import { getBaseDir } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
+  import { skillsStore } from "$lib/stores/skills.svelte";
 
   let {
     sessionId = "default",
@@ -30,12 +31,6 @@
 
   let inputText = $state("");
   let aiSettings = $state<AIProviderSettings>({ baseUrl: "", model: "" });
-  let skillsSettings = $state<SkillsSettings>({
-    summarize: false,
-    fixGrammar: false,
-    generateToc: false,
-    explainCode: false,
-  });
   let pinnedPath = $state<string | null>(null);
 
   let inputEl: HTMLTextAreaElement | undefined = $state();
@@ -51,7 +46,6 @@
 
     const saved = await loadSettings();
     aiSettings = saved.aiProvider;
-    skillsSettings = saved.skills;
     autoApproveWrites = saved.aiProvider.autoApproveWrites ?? false;
 
     unsubMessages = session.state.subscribe((s) => {
@@ -98,16 +92,6 @@
     scrollToBottom();
   });
 
-  function getActiveSkills(settings?: SkillsSettings): string[] {
-    const s = settings ?? skillsSettings;
-    const active: string[] = [];
-    if (s.summarize) active.push("Summarize document");
-    if (s.fixGrammar) active.push("Fix grammar");
-    if (s.generateToc) active.push("Generate table of contents");
-    if (s.explainCode) active.push("Explain code block");
-    return active;
-  }
-
   function handleApproveTool(callId: string) {
     session.confirmTool(callId, true);
   }
@@ -144,7 +128,6 @@
     await session.send(text, {
       baseUrl: freshSettings.aiProvider.baseUrl,
       model: freshSettings.aiProvider.model,
-      activeSkills: getActiveSkills(freshSettings.skills),
       cwd: derivedCwd,
       currentFile: doc.filePath ?? undefined,
       autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
@@ -212,10 +195,10 @@
   </div>
 
   <!-- Active skills bar -->
-  {#if getActiveSkills().length > 0}
+  {#if skillsStore.enabled.length > 0}
     <div class="skills-bar">
-      {#each getActiveSkills() as skill}
-        <span class="skill-tag">{skill}</span>
+      {#each skillsStore.enabled as skill}
+        <span class="skill-tag">{skill.name}</span>
       {/each}
     </div>
   {/if}

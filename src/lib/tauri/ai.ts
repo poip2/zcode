@@ -42,7 +42,6 @@ export interface StartAgentTurnArgs {
   sessionId: string;
   userMessage: string;
   allowedTools: string[];
-  activeSkills: string[];
   baseUrl: string;
   model: string;
   providerName?: string;
@@ -56,7 +55,6 @@ export async function startAgentTurn(args: StartAgentTurnArgs): Promise<void> {
     sessionId: args.sessionId,
     userMessage: args.userMessage,
     allowedTools: args.allowedTools,
-    activeSkills: args.activeSkills,
     baseUrl: args.baseUrl,
     model: args.model,
     providerName: args.providerName ?? null,

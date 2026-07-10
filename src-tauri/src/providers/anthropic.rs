@@ -80,11 +80,7 @@ impl AnthropicProvider {
         context: &'a Context<'_>,
         options: &StreamOptions,
     ) -> AnthropicRequest<'a> {
-        let messages: Vec<AnthropicMessage<'_>> = context
-            .messages
-            .iter()
-            .map(convert_message_to_anthropic)
-            .collect();
+        let messages: Vec<AnthropicMessage<'_>> = build_anthropic_messages(context.messages);
 
         let tools: Option<Vec<AnthropicTool<'_>>> = if context.tools.is_empty() {
             None
@@ -715,6 +711,48 @@ impl StreamState {
 // ============================================================================
 // Message Conversion
 // ============================================================================
+
+/// Build Anthropic messages, collapsing consecutive ToolResult messages into a
+/// single user message. Anthropic requires all tool_result blocks to appear in
+/// the same user message immediately after an assistant message with tool_use.
+fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
+    let mut result: Vec<AnthropicMessage<'_>> = Vec::new();
+
+    for msg in messages {
+        if let Message::ToolResult(tr) = msg {
+            // If the previous message in the output is already a user message,
+            // append this tool_result into it (collapse consecutive results).
+            let is_tool_result_user = result.last().is_some_and(|m| {
+                m.role == "user"
+                    && m.content
+                        .iter()
+                        .any(|c| matches!(c, AnthropicContent::ToolResult { .. }))
+            });
+            if is_tool_result_user {
+                if let Some(AnthropicMessage { content, .. }) = result.last_mut() {
+                    for block in &tr.content {
+                        content.push(AnthropicContent::ToolResult {
+                            tool_use_id: &tr.tool_call_id,
+                            content: vec![AnthropicToolResultContent::Text {
+                                text: match block {
+                                    ContentBlock::Text(t) => t.text.as_str(),
+                                    _ => "[non-text content]",
+                                },
+                            }],
+                            is_error: if tr.is_error { Some(true) } else { None },
+                        });
+                    }
+                }
+            } else {
+                result.push(convert_message_to_anthropic(msg));
+            }
+        } else {
+            result.push(convert_message_to_anthropic(msg));
+        }
+    }
+
+    result
+}
 
 fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
     match message {

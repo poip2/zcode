@@ -21,14 +21,14 @@ use crate::error::Result as AgentResult;
 use crate::model::{ContentBlock, TextContent};
 use crate::provider::StreamOptions;
 use crate::settings;
-use crate::skills::{self, Skill};
+use crate::skills;
 use crate::tools::{self, Tool, ToolEffects, ToolOutput, ToolRegistry};
 use async_trait::async_trait;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
 
@@ -52,6 +52,9 @@ pub enum AgentFrontendEvent {
         #[serde(rename = "toolName")]
         tool_name: String,
         arguments: serde_json::Value,
+        /// Set when this is a read of a SKILL.md file (skill invocation).
+        #[serde(rename = "skillName", skip_serializing_if = "Option::is_none")]
+        skill_name: Option<String>,
     },
     ToolResult {
         #[serde(rename = "callId")]
@@ -61,6 +64,9 @@ pub enum AgentFrontendEvent {
         #[serde(rename = "isError")]
         is_error: bool,
         summary: String,
+        /// Set when this result is from a skill invocation.
+        #[serde(rename = "skillName", skip_serializing_if = "Option::is_none")]
+        skill_name: Option<String>,
     },
     /// A dangerous tool needs user confirmation before execution.
     /// The agent pauses until approve_tool_call is invoked.
@@ -389,11 +395,85 @@ fn build_guarded_registry(
 // ============================================================================
 // Helper: build system prompt with skills
 // ============================================================================
+// Skill state persistence (~/.config/zcode/skill-state.json)
+// ============================================================================
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct SkillState {
+    disabled: Vec<String>,
+}
+
+fn skill_state_path(user_config_dir: &Path) -> PathBuf {
+    user_config_dir.join("skill-state.json")
+}
+
+fn load_skill_state(user_config_dir: &Path) -> SkillState {
+    std::fs::read_to_string(skill_state_path(user_config_dir))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_skill_state(user_config_dir: &Path, state: &SkillState) -> std::io::Result<()> {
+    std::fs::create_dir_all(user_config_dir)?;
+    let json =
+        serde_json::to_string_pretty(state).map_err(|e| std::io::Error::other(e.to_string()))?;
+    std::fs::write(skill_state_path(user_config_dir), json)
+}
+
+/// A skill combined with its enabled/disabled state.
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillWithState {
+    #[serde(flatten)]
+    pub skill: skills::Skill,
+    pub active: bool,
+}
+
+/// List all discovered skills with their enabled/disabled state.
+#[tauri::command]
+pub async fn list_skills(cwd: String) -> Result<Vec<SkillWithState>, String> {
+    let cwd = PathBuf::from(cwd);
+    let user_dir = dirs::config_dir()
+        .map(|d| d.join("zcode"))
+        .ok_or("No config directory found")?;
+    let (found, diags) = skills::load_skills(&cwd, Some(&user_dir), &[]);
+    for d in &diags {
+        eprintln!("[zcode] skill diag: {d}");
+    }
+    let state = load_skill_state(&user_dir);
+    Ok(found
+        .into_iter()
+        .map(|s| {
+            let active = !state.disabled.contains(&s.name);
+            SkillWithState { skill: s, active }
+        })
+        .collect())
+}
+
+/// Enable or disable a skill by name (persists to skill-state.json).
+static SKILL_STATE_LOCK: LazyLock<StdMutex<()>> = LazyLock::new(|| StdMutex::new(()));
+
+#[tauri::command]
+pub async fn set_skill_active(name: String, active: bool) -> Result<(), String> {
+    let _guard = SKILL_STATE_LOCK.lock().map_err(|e| e.to_string())?;
+    let user_dir = dirs::config_dir()
+        .map(|d| d.join("zcode"))
+        .ok_or("No config directory found")?;
+    let mut state = load_skill_state(&user_dir);
+    if active {
+        state.disabled.retain(|n| n != &name);
+    } else if !state.disabled.contains(&name) {
+        state.disabled.push(name);
+    }
+    save_skill_state(&user_dir, &state).map_err(|e| e.to_string())
+}
+
+// ============================================================================
 
 fn build_system_prompt(
-    cwd: &std::path::Path,
-    active_skills: &[String],
+    cwd: &Path,
     current_file: Option<&str>,
+    user_config_dir: Option<&Path>,
 ) -> String {
     let mut prompt = String::new();
 
@@ -415,23 +495,47 @@ fn build_system_prompt(
     }
     prompt.push('\n');
 
-    let (all_skills, _diags) = skills::load_skills(cwd, None, &[]);
-    let filtered: Vec<Skill> =
-        if active_skills.is_empty() || active_skills.iter().any(|s| s == "__all__") {
-            all_skills
-        } else {
+    // Load skills from project dir + user config dir, filter by persisted state
+    let (all_skills, _diags) = skills::load_skills(cwd, user_config_dir, &[]);
+    let enabled: Vec<_> = match user_config_dir {
+        Some(dir) => {
+            let state = load_skill_state(dir);
             all_skills
                 .into_iter()
-                .filter(|s| active_skills.contains(&s.name))
+                .filter(|s| !state.disabled.contains(&s.name))
                 .collect()
-        };
+        }
+        None => all_skills,
+    };
 
-    if !filtered.is_empty() {
-        prompt.push_str(&skills::format_skills_for_prompt(&filtered));
+    if !enabled.is_empty() {
+        eprintln!(
+            "[zcode] build_system_prompt: injecting {} enabled skill(s): {:?}",
+            enabled.len(),
+            enabled.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+        prompt.push_str(&skills::format_skills_for_prompt(&enabled));
     }
 
     prompt.push_str("\n\nAlways respond in the same language as the user's message.\n");
     prompt
+}
+
+// ============================================================================
+// Helper: detect skill invocation from read tool calls
+// ============================================================================
+
+/// Check if a read tool call is targeting a SKILL.md file and extract the skill name.
+fn detect_skill_invocation(tool_name: &str, arguments: &serde_json::Value) -> Option<String> {
+    if tool_name != "read" {
+        return None;
+    }
+    let path_str = arguments.get("path")?.as_str()?;
+    let path = std::path::Path::new(path_str);
+    if path.file_name()?.to_str()? != "SKILL.md" {
+        return None;
+    }
+    path.parent()?.file_name()?.to_str().map(|s| s.to_string())
 }
 
 // ============================================================================
@@ -481,7 +585,6 @@ pub async fn start_agent_turn(
     session_id: String,
     user_message: String,
     allowed_tools: Vec<String>,
-    active_skills: Vec<String>,
     base_url: String,
     model: String,
     provider_name: Option<String>,
@@ -490,7 +593,9 @@ pub async fn start_agent_turn(
     auto_approve_writes: Option<bool>,
 ) -> Result<(), String> {
     eprintln!("[zcode] start_agent_turn: session={session_id}, base_url={base_url}, model={model}, msg_len={}", user_message.len());
-    eprintln!("[zcode] start_agent_turn: tools={allowed_tools:?}, skills={active_skills:?}, auto_approve={auto_approve_writes:?}");
+    eprintln!(
+        "[zcode] start_agent_turn: tools={allowed_tools:?}, auto_approve={auto_approve_writes:?}"
+    );
 
     if user_message.trim().is_empty() {
         eprintln!("[zcode] start_agent_turn: ERROR empty user message");
@@ -535,7 +640,12 @@ pub async fn start_agent_turn(
     };
 
     // Build system prompt
-    let system_prompt = build_system_prompt(&work_dir, &active_skills, current_file.as_deref());
+    let user_config_dir = dirs::config_dir().map(|d| d.join("zcode"));
+    let system_prompt = build_system_prompt(
+        &work_dir,
+        current_file.as_deref(),
+        user_config_dir.as_deref(),
+    );
     eprintln!(
         "[zcode] start_agent_turn: system_prompt len={}, cwd={}",
         system_prompt.len(),
@@ -668,8 +778,15 @@ pub async fn start_agent_turn(
         // Run agent in a sub-task so we can catch JoinError from panics.
         // The sub-task returns (result, agent) so we can always restore the
         // agent to the session afterwards.
-        let run_task = tokio::spawn(async move {
-            let result = agent
+        // Track skill names per tool call ID for ToolResult propagation
+        let skill_names = Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
+            String,
+            Option<String>,
+        >::new()));
+        let run_task = tokio::spawn({
+            let skill_names = Arc::clone(&skill_names);
+            async move {
+                let result = agent
                 .run(user_message, move |event| {
                     let a = app_t.clone();
                     let pfx = &event_prefix;
@@ -685,10 +802,15 @@ pub async fn start_agent_turn(
                             tool_name,
                             arguments,
                         } => {
+                            let skill_name = detect_skill_invocation(&tool_name, &arguments);
+                            if let Ok(mut map) = skill_names.lock() {
+                                map.insert(tool_call_id.clone(), skill_name.clone());
+                            }
                             let fe = AgentFrontendEvent::ToolCall {
                                 call_id: tool_call_id.clone(),
                                 tool_name: tool_name.clone(),
                                 arguments: arguments.clone(),
+                                skill_name,
                             };
                             eprintln!("[zcode] agent_task: emitting tool-call {}, JSON={}",
                                 tool_name,
@@ -705,11 +827,15 @@ pub async fn start_agent_turn(
                             is_error,
                         } => {
                             let summary = tool_result_summary(&result.content);
+                            let skill_name = skill_names.lock().ok()
+                                .and_then(|map| map.get(&tool_call_id).cloned())
+                                .flatten();
                             let fe = AgentFrontendEvent::ToolResult {
                                 call_id: tool_call_id.clone(),
                                 tool_name: tool_name.clone(),
                                 is_error,
                                 summary: summary.clone(),
+                                skill_name,
                             };
                             eprintln!("[zcode] agent_task: emitting tool-result {}, is_error={is_error}, JSON={}",
                                 tool_name,
@@ -746,7 +872,8 @@ pub async fn start_agent_turn(
                     }
                 })
                 .await;
-            (result, agent)
+                (result, agent)
+            }
         });
 
         match run_task.await {

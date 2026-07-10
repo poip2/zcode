@@ -154,6 +154,13 @@ impl Provider for AnthropicProvider {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let request_body = self.build_request(context, options);
 
+        #[cfg(debug_assertions)]
+        {
+            if let Ok(body_json) = serde_json::to_string_pretty(&request_body) {
+                eprintln!("[zcode] anthropic::stream: request body:\n{body_json}");
+            }
+        }
+
         let request = self
             .client
             .post(&self.base_url)
@@ -739,7 +746,7 @@ fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
                             _ => "[non-text content]",
                         },
                     }],
-                    is_error: Some(result.is_error),
+                    is_error: if result.is_error { Some(true) } else { None },
                 })
                 .collect();
             AnthropicMessage {

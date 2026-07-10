@@ -4,6 +4,7 @@
   import { load as loadSettings, save as saveSettings, type AIProviderSettings, type SkillsSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
+  import { getBaseDir } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
 
   let {
@@ -135,11 +136,16 @@
     const freshSettings = await loadSettings();
     const doc = $docStore;
 
+    // Derive cwd: current file's parent dir takes priority, fallback to pinned folder
+    const derivedCwd = doc.filePath
+      ? getBaseDir(doc.filePath)
+      : (pinnedPath ?? undefined);
+
     await session.send(text, {
       baseUrl: freshSettings.aiProvider.baseUrl,
       model: freshSettings.aiProvider.model,
       activeSkills: getActiveSkills(freshSettings.skills),
-      cwd: pinnedPath ?? undefined,
+      cwd: derivedCwd,
       currentFile: doc.filePath ?? undefined,
       autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
     });

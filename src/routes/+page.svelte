@@ -8,7 +8,9 @@
     openFileDialog,
     getBaseDir,
     allowAssets,
+    reloadCurrentFile,
   } from "$lib/tauri/files";
+  import { startFileWatcher, stopFileWatcher } from "$lib/tauri/watcher";
   import { recents } from "$lib/stores/recents";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
@@ -31,6 +33,7 @@
   let userCollapsed = $state(false);
   let settingsOpen = $state(false);
   let agentPanelOpen = $state(false);
+  let lastWatchedPath = $state<string | null>(null);
 
   onMount(() => {
     initRenderer();
@@ -67,6 +70,7 @@
       window.removeEventListener("dragover", handleDragOver);
       window.removeEventListener("drop", handleDrop);
       window.removeEventListener("resize", handleResize);
+      stopFileWatcher();
     };
   });
 
@@ -114,7 +118,9 @@
       }
       isEditing = false;
     } else {
-      editContent = doc.content;
+      if (!dirty) {
+        editContent = doc.content;
+      }
       isEditing = true;
     }
   }
@@ -125,20 +131,12 @@
 
     try {
       await saveFile(doc.filePath, editContent);
-      const baseDir = getBaseDir(doc.filePath);
-      const result = renderFull(editContent, baseDir);
-      await allowAssets(result.assetPaths);
 
-      docStore.set({
-        filePath: doc.filePath,
-        fileName: doc.fileName,
-        content: editContent,
-        renderedHtml: result.html,
-        frontmatter: result.frontmatter,
-        wordCount: result.wordCount,
-        loading: false,
-        error: null,
-      });
+      if ($docStore.filePath !== doc.filePath) {
+        return;
+      }
+
+      await reloadCurrentFile(doc.filePath, true);
 
       dirty = false;
       isEditing = false;
@@ -188,6 +186,23 @@
     dirty = newValue !== $docStore.content;
   }
 
+  // Watch file path changes to manage the watcher lifecycle
+  $effect(() => {
+    const path = $docStore.filePath;
+    if (path && path !== lastWatchedPath) {
+      lastWatchedPath = path;
+      startFileWatcher(path);
+    }
+  });
+
+  // When file content changes externally (via watcher), sync editor if not editing
+  $effect(() => {
+    const newContent = $docStore.content;
+    if (isEditing && !dirty && editContent !== newContent) {
+      editContent = newContent;
+    }
+  });
+
   let doc = $derived($docStore);
 </script>
 
@@ -216,9 +231,9 @@
             <button class="retry-btn" onclick={handleOpenDialog}>Open a file</button>
           </div>
         </div>
-      {:else if doc.renderedHtml && isEditing}
+      {:else if doc.filePath && isEditing}
         <Editor value={editContent} onChange={handleEditChange} />
-      {:else if doc.renderedHtml}
+      {:else if doc.filePath}
         <div class="content-main">
           <MarkdownRenderer html={doc.renderedHtml} />
         </div>

@@ -2,9 +2,11 @@
   import { onMount, onDestroy } from "svelte";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { folderTree } from "$lib/stores/folderTree";
-  import { openFolderDialog, listDirTree } from "$lib/tauri/files";
+  import { document as docStore } from "$lib/stores/document";
+  import { openFolderDialog, listDirTree, getBaseDir } from "$lib/tauri/files";
   import { saveApiKey, maskApiKey } from "$lib/tauri/ai";
-  import { load as loadSettings, save as saveSettings, type SkillsSettings, type AIProviderSettings } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
+  import { skillsStore } from "$lib/stores/skills.svelte";
 
   let {
     open = false,
@@ -16,16 +18,17 @@
 
   // ── Persisted state (loaded once on mount, updated on Save) ──
   let persistedAi: AIProviderSettings = $state({ baseUrl: "", model: "" });
-  let persistedSkills: SkillsSettings = $state({
-    summarize: true,
-    fixGrammar: true,
-    generateToc: false,
-    explainCode: false,
-  });
 
   // ── Tab state ──
   let activeTab = $state<"folder" | "ai" | "skills">("folder");
   let pinnedPath = $state<string | null>(null);
+  let docFilePath = $state<string | null>(null);
+
+  function deriveCwd(): string {
+    if (docFilePath) return getBaseDir(docFilePath);
+    if (pinnedPath) return pinnedPath;
+    return ".";
+  }
 
   // ── AI draft state (populated from store on open, written back on Save) ──
   let draftBaseUrl = $state("");
@@ -36,14 +39,6 @@
   let apiKeyDirty = $state(false);     // true after user types in the key field
   let aiWarning = $state<string | null>(null);
 
-  // ── Skills draft ──
-  let draftSkills = $state([
-    { name: "Summarize document", desc: "Generate a short summary of the open file", key: "summarize" as const, enabled: true },
-    { name: "Fix grammar", desc: "Rewrite the selection with corrected grammar", key: "fixGrammar" as const, enabled: true },
-    { name: "Generate table of contents", desc: "Insert a TOC from the document's headings", key: "generateToc" as const, enabled: false },
-    { name: "Explain code block", desc: "Add an explanation above the selected code fence", key: "explainCode" as const, enabled: false },
-  ]);
-
   let saveError = $state(false);
   let dialogEl: HTMLDialogElement | undefined = $state();
   let unsubPinned: () => void;
@@ -53,10 +48,12 @@
       pinnedPath = p;
     });
     pinnedFolder.load();
+    docStore.subscribe((d) => {
+      docFilePath = d.filePath;
+    });
 
     const s = await loadSettings();
     persistedAi = { ...s.aiProvider };
-    persistedSkills = { ...s.skills };
   });
 
   onDestroy(() => {
@@ -75,12 +72,8 @@
       apiKeyDirty = false;
       aiWarning = null;
 
-      draftSkills = [
-        { name: "Summarize document", desc: "Generate a short summary of the open file", key: "summarize" as const, enabled: persistedSkills.summarize },
-        { name: "Fix grammar", desc: "Rewrite the selection with corrected grammar", key: "fixGrammar" as const, enabled: persistedSkills.fixGrammar },
-        { name: "Generate table of contents", desc: "Insert a TOC from the document's headings", key: "generateToc" as const, enabled: persistedSkills.generateToc },
-        { name: "Explain code block", desc: "Add an explanation above the selected code fence", key: "explainCode" as const, enabled: persistedSkills.explainCode },
-      ];
+      // Reload skill list from backend when dialog opens
+      skillsStore.reload(deriveCwd());
 
       if (!dialogEl.open) dialogEl.showModal();
     } else {
@@ -127,17 +120,7 @@
       autoApproveWrites: persistedAi.autoApproveWrites,
     };
 
-    const skillsSummary: SkillsSettings = {
-      summarize: false,
-      fixGrammar: false,
-      generateToc: false,
-      explainCode: false,
-    };
-    for (const s of draftSkills) {
-      skillsSummary[s.key] = s.enabled;
-    }
-
-    const ok = await saveSettings({ aiProvider: newAi, skills: skillsSummary });
+    const ok = await saveSettings({ aiProvider: newAi });
     if (!ok) {
       saveError = true;
       return;
@@ -145,8 +128,6 @@
 
     // Update persisted state
     persistedAi = newAi;
-    persistedSkills = skillsSummary;
-
     // Now handle the real key via keychain (best-effort)
     if (apiKeyDirty) {
       if (draftApiKey.trim()) {
@@ -189,11 +170,6 @@
     }
   }
 
-  function toggleSkill(index: number) {
-    draftSkills = draftSkills.map((s, i) =>
-      i === index ? { ...s, enabled: !s.enabled } : s
-    );
-  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -354,26 +330,38 @@
       {#if activeTab === "skills"}
         <section class="settings-section">
           <div class="settings-section-title">Skills</div>
-          <p class="settings-section-desc">AI-assisted actions available from the command palette.</p>
+          <p class="settings-section-desc">
+            Skill files are automatically discovered from <code>.zcode/skills/&lt;name&gt;/SKILL.md</code>
+            and <code>~/.config/zcode/skills/&lt;name&gt;/SKILL.md</code>.
+            Toggle a skill on or off below. Changes take effect on the next conversation turn.
+          </p>
 
-          {#each draftSkills as skill, i (skill.key)}
-            <div class="skill-row">
-              <div class="skill-info">
-                <span class="skill-name">{skill.name}</span>
-                <span class="skill-desc">{skill.desc}</span>
+          {#if skillsStore.all.length === 0}
+            <p class="skills-empty">
+              No skills discovered. Place a <code>SKILL.md</code> file in one of the directories above
+              and reopen this dialog.
+            </p>
+          {:else}
+            {#each skillsStore.all as skill (skill.name)}
+              <div class="skill-row">
+                <div class="skill-info">
+                  <span class="skill-name">{skill.name}</span>
+                  <span class="skill-source" class:source-builtin={skill.source === "builtin"} class:source-project={skill.source === "project"} class:source-user={skill.source === "user"}>
+                    {skill.source}
+                  </span>
+                  <p class="skill-desc">{skill.description}</p>
+                </div>
+                <label class="switch">
+                  <input
+                    type="checkbox"
+                    checked={skill.active}
+                    onchange={(e) => skillsStore.toggle(skill.name, e.currentTarget.checked, deriveCwd())}
+                  />
+                  <span class="switch-slider"></span>
+                </label>
               </div>
-              <label class="switch">
-                <input
-                  type="checkbox"
-                  checked={skill.enabled}
-                  onchange={() => toggleSkill(i)}
-                />
-                <span class="switch-slider"></span>
-              </label>
-            </div>
-          {/each}
-
-          <button class="settings-btn-secondary settings-add-skill">+ Add custom skill</button>
+            {/each}
+          {/if}
         </section>
       {/if}
     </div>
@@ -657,11 +645,6 @@
     opacity: 0.88;
   }
 
-  .settings-add-skill {
-    margin-top: 8px;
-    width: 100%;
-  }
-
   /* ── Skills ── */
   .skill-row {
     display: flex;
@@ -688,9 +671,41 @@
     color: var(--zc-text-primary, #1F1E1C);
   }
 
+  .skill-source {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 5px;
+    border-radius: 3px;
+    align-self: flex-start;
+    margin-top: 1px;
+  }
+
+  .skill-source.source-builtin {
+    background: #fff8f0;
+    color: #b87333;
+  }
+
+  .skill-source.source-project {
+    background: #f0fef0;
+    color: #2d6a2d;
+  }
+
+  .skill-source.source-user {
+    background: #f0f4ff;
+    color: #4a6fa5;
+  }
+
   .skill-desc {
     font-size: 11.5px;
     color: var(--zc-text-tertiary, #A8A49D);
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .skills-empty {
+    font-size: 12px;
+    color: var(--zc-text-tertiary, #A8A49D);
+    line-height: 1.5;
   }
 
   /* ── Toggle switch ── */

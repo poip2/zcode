@@ -32,6 +32,7 @@ pub fn run() {
         })
         .manage(agent_command::SessionManager::new())
         .manage(watcher::WatcherState::default())
+        .manage(watcher::SkillWatcherState::default())
         .invoke_handler(tauri::generate_handler![
             commands::read_markdown_file,
             commands::write_markdown_file,
@@ -45,8 +46,12 @@ pub fn run() {
             commands::call_ai_provider,
             agent_command::start_agent_turn,
             agent_command::approve_tool_call,
+            agent_command::list_skills,
+            agent_command::set_skill_active,
             watcher::start_watching,
             watcher::stop_watching,
+            watcher::start_skills_watching,
+            watcher::stop_skills_watching,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

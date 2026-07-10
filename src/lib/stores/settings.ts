@@ -18,28 +18,14 @@ export interface AIProviderSettings {
   autoApproveWrites?: boolean;
 }
 
-export interface SkillsSettings {
-  summarize: boolean;
-  fixGrammar: boolean;
-  generateToc: boolean;
-  explainCode: boolean;
-}
-
 export interface AppSettings {
   aiProvider: AIProviderSettings;
-  skills: SkillsSettings;
 }
 
 const DEFAULTS: AppSettings = {
   aiProvider: {
     baseUrl: "",
     model: "",
-  },
-  skills: {
-    summarize: true,
-    fixGrammar: true,
-    generateToc: false,
-    explainCode: false,
   },
 };
 
@@ -62,13 +48,12 @@ export async function load(): Promise<AppSettings> {
       // maskedApiKey is safe to store — it's the de-identified version only.
       return {
         aiProvider: { ...DEFAULTS.aiProvider, ...(saved.aiProvider ?? {}) },
-        skills: { ...DEFAULTS.skills, ...(saved.skills ?? {}) },
       };
     }
   } catch {
     // Ignore load errors — return defaults
   }
-  return { aiProvider: { ...DEFAULTS.aiProvider }, skills: { ...DEFAULTS.skills } };
+  return { aiProvider: { ...DEFAULTS.aiProvider } };
 }
 
 /**

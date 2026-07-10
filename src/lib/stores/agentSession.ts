@@ -77,20 +77,26 @@ function createSession(sessionId: string) {
       callId: string;
       toolName: string;
       arguments: Record<string, unknown>;
+      skillName?: string;
     }>(`${prefix}/tool-call`, (event) => {
       console.log("[tool-call payload]", JSON.stringify(event.payload));
-      const { callId, toolName } = event.payload;
+      const { callId, toolName, skillName } = event.payload;
 
       const dangerousTools = ["write", "edit", "bash"];
-      const initialContent = dangerousTools.includes(toolName)
-        ? `⏳ Awaiting approval for \`${toolName}\`…`
-        : `📖 Reading with \`${toolName}\`…`;
+      let initialContent: string;
+      if (skillName) {
+        initialContent = `📋 Reading skill: \`${skillName}\`…`;
+      } else if (dangerousTools.includes(toolName)) {
+        initialContent = `⏳ Awaiting approval for \`${toolName}\`…`;
+      } else {
+        initialContent = `📖 Reading with \`${toolName}\`…`;
+      }
 
       const toolMsg: ChatMessage = {
         id: `tool-${callId}`,
         role: "tool",
         content: initialContent,
-        toolName,
+        toolName: skillName ?? toolName,
         isToolError: false,
         timestamp: Date.now(),
       };
@@ -106,19 +112,26 @@ function createSession(sessionId: string) {
       toolName: string;
       isError: boolean;
       summary: string;
+      skillName?: string;
     }>(`${prefix}/tool-result`, (event) => {
       console.log("[tool-result payload]", JSON.stringify(event.payload));
-      const { callId, toolName, isError, summary } = event.payload;
+      const { callId, toolName, isError, summary, skillName } = event.payload;
       state.update((s) => {
         const msgs = s.messages.map((m) => {
           if (m.id === `tool-${callId}`) {
+            let newContent: string;
+            if (skillName) {
+              newContent = `📋 \`${skillName}\`: ${summary}`;
+            } else if (isError) {
+              newContent = `❌ \`${toolName}\` failed: ${summary}`;
+            } else if (m.content.startsWith("📖")) {
+              newContent = `📖 \`${toolName}\`: ${summary}`;
+            } else {
+              newContent = `✅ \`${toolName}\`: ${summary}`;
+            }
             return {
               ...m,
-              content: isError
-                ? `❌ \`${toolName}\` failed: ${summary}`
-                : m.content.startsWith("📖")
-                  ? `📖 \`${toolName}\`: ${summary}`
-                  : `✅ \`${toolName}\`: ${summary}`,
+              content: newContent,
               isToolError: isError,
             };
           }
@@ -192,7 +205,6 @@ function createSession(sessionId: string) {
       providerName?: string;
       currentFile?: string;
       cwd?: string;
-      activeSkills: string[];
       autoApproveWrites?: boolean;
     },
   ) {
@@ -226,7 +238,6 @@ function createSession(sessionId: string) {
       sessionId,
       userMessage,
       allowedTools: ["read", "write", "edit", "bash", "grep", "find", "ls"],
-      activeSkills: settings.activeSkills,
       baseUrl: settings.baseUrl,
       model: settings.model,
       providerName: settings.providerName,

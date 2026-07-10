@@ -91,6 +91,19 @@ pub enum AgentFrontendEvent {
     Error {
         message: String,
     },
+    /// Context compaction started (inline, blocks the current turn).
+    CompactionStarted {
+        reason: String,
+        #[serde(rename = "tokensBefore")]
+        tokens_before: u64,
+    },
+    /// Context compaction finished.
+    CompactionFinished {
+        #[serde(rename = "tokensAfter")]
+        tokens_after: u64,
+        #[serde(rename = "summaryLen")]
+        summary_len: usize,
+    },
 }
 
 // ============================================================================
@@ -591,6 +604,7 @@ pub async fn start_agent_turn(
     current_file: Option<String>,
     cwd: Option<String>,
     auto_approve_writes: Option<bool>,
+    context_window_tokens: Option<u32>,
 ) -> Result<(), String> {
     eprintln!("[zcode] start_agent_turn: session={session_id}, base_url={base_url}, model={model}, msg_len={}", user_message.len());
     eprintln!(
@@ -712,6 +726,15 @@ pub async fn start_agent_turn(
             .take()
             .ok_or_else(|| "Agent is already running for this session".to_string())?;
         reused.set_system_prompt(Some(system_prompt));
+
+        // Update compaction window if caller provided one
+        if let Some(window) = context_window_tokens {
+            reused.set_compaction_settings(Some(crate::compaction::CompactionSettings {
+                context_window_tokens: window,
+                ..Default::default()
+            }));
+        }
+
         reused
     } else {
         auto_approve_arc = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
@@ -736,7 +759,16 @@ pub async fn start_agent_turn(
             Arc::clone(&cwd_arc),
         );
 
-        let agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
+        let mut agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
+
+        // Configure compaction: use explicit window if provided, else guess from model name
+        let window = context_window_tokens
+            .unwrap_or_else(|| crate::compaction::CompactionSettings::guess_from_model(&model));
+        let cs = crate::compaction::CompactionSettings {
+            context_window_tokens: window,
+            ..Default::default()
+        };
+        agent.set_compaction_settings(Some(cs));
 
         map.insert(
             session_id.clone(),
@@ -868,6 +900,37 @@ pub async fn start_agent_turn(
                         }
                         AgentEvent::MessageEnd { .. } => {
                             eprintln!("[zcode] agent_task: MessageEnd");
+                        }
+                        AgentEvent::CompactionStarted { reason, tokens_before } => {
+                            let _ = a.emit(
+                                &format!("{pfx}/compaction-started"),
+                                AgentFrontendEvent::CompactionStarted {
+                                    reason,
+                                    tokens_before,
+                                },
+                            );
+                        }
+                        AgentEvent::CompactionFinished {
+                            tokens_after,
+                            summary_len,
+                        } => {
+                            let _ = a.emit(
+                                &format!("{pfx}/compaction-finished"),
+                                AgentFrontendEvent::CompactionFinished {
+                                    tokens_after,
+                                    summary_len,
+                                },
+                            );
+                        }
+                        AgentEvent::StuckLoop { tool_name, count } => {
+                            let _ = a.emit(
+                                &format!("{pfx}/error"),
+                                AgentFrontendEvent::Error {
+                                    message: format!(
+                                        "Stuck loop: '{tool_name}' called {count}x with same args"
+                                    ),
+                                },
+                            );
                         }
                     }
                 })

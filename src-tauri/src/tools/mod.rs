@@ -227,8 +227,8 @@ pub fn enforce_cwd_scope(
 // Truncation constants
 // ============================================================================
 
-pub const DEFAULT_MAX_LINES: usize = 2000;
-pub const DEFAULT_MAX_BYTES: usize = 1_000_000;
+pub const DEFAULT_MAX_LINES: usize = 500;
+pub const DEFAULT_MAX_BYTES: usize = 50_000;
 pub const GREP_MAX_LINE_LENGTH: usize = 500;
 pub const DEFAULT_GREP_LIMIT: usize = 100;
 pub const DEFAULT_FIND_LIMIT: usize = 1000;
@@ -239,33 +239,54 @@ pub const WRITE_TOOL_MAX_BYTES: usize = 100 * 1024 * 1024;
 pub const IMAGE_MAX_BYTES: usize = 4_718_592;
 pub const DEFAULT_BASH_TIMEOUT_SECS: u64 = 120;
 
-/// Truncate output to max_bytes with a truncation notice.
+/// Lines to keep from the head when truncating with head+tail strategy.
+const HEAD_LINES: usize = 100;
+/// Lines to keep from the tail when truncating with head+tail strategy.
+const TAIL_LINES: usize = 400; // DEFAULT_MAX_LINES - HEAD_LINES
+
+/// Truncate output to max_bytes by keeping head + tail, with a truncation notice in between.
+/// This ensures error messages at the end of long output (build logs, test failures) are visible.
 pub fn truncate_output(output: &str, max_bytes: usize) -> String {
     if output.len() <= max_bytes {
         return output.to_string();
     }
-    let boundary = max_bytes.saturating_sub(80);
-    if boundary == 0 {
-        return format!("... [truncated, original {} bytes]", output.len());
-    }
-    let truncated = &output[..output.floor_char_boundary(boundary)];
+
+    let head_budget = max_bytes / 5; // 20% for head
+    let tail_budget = max_bytes - head_budget;
+
+    let head_boundary = output.floor_char_boundary(head_budget.min(output.len()));
+    let head = &output[..head_boundary];
+
+    let tail_start = output.len().saturating_sub(tail_budget);
+    let tail = &output[output.floor_char_boundary(tail_start)..];
+
+    let omitted = output.len() - head.len() - tail.len();
     format!(
-        "{truncated}\n... [truncated, original {} bytes]",
-        output.len()
+        "{head}\n... [已省略 {} 字节] ...\n{tail}",
+        omitted
     )
 }
 
-/// Truncate output by lines.
+/// Truncate output by lines: keep HEAD_LINES from the beginning, TAIL_LINES from the end.
+/// This preserves both context (head) and error messages (tail).
 pub fn truncate_by_lines(output: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() <= max_lines {
         return output.to_string();
     }
-    let kept: Vec<&str> = lines.iter().take(max_lines).copied().collect();
+
+    let actual_head = HEAD_LINES.min(lines.len());
+    let actual_tail = TAIL_LINES.min(lines.len() - actual_head);
+
+    let head: Vec<&str> = lines[..actual_head].to_vec();
+    let tail: Vec<&str> = lines[lines.len() - actual_tail..].to_vec();
+    let omitted = lines.len() - actual_head - actual_tail;
+
     format!(
-        "{}\n... [truncated, {} lines total]",
-        kept.join("\n"),
-        lines.len()
+        "{}\n... [已省略 {} 行] ...\n{}",
+        head.join("\n"),
+        omitted,
+        tail.join("\n")
     )
 }
 

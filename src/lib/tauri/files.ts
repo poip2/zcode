@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { get } from "svelte/store";
 import { document } from "../stores/document";
 import { type DirNode } from "../stores/folderTree";
 import { recents } from "../stores/recents";
 import { renderFull } from "../renderer/pipeline";
+import { markSaved } from "./watcher";
 
 export async function readMarkdownFile(path: string): Promise<string> {
   return invoke<string>("read_markdown_file", { path });
@@ -58,6 +60,7 @@ export async function loadFile(path: string): Promise<void> {
 
     getCurrentWindow().setTitle(`${fileName} — zcode`).catch(() => {});
     await recents.addRecent(absolutePath);
+    invoke("start_watching", { path: absolutePath }).catch(() => {});
   } catch (err) {
     document.set({
       filePath: absolutePath,
@@ -91,6 +94,43 @@ export async function openFileDialog(): Promise<string | null> {
     console.error("File dialog error:", err);
   }
   return null;
+}
+
+export async function reloadCurrentFile(path: string): Promise<void> {
+  try {
+    const absolutePath = await resolvePath(path);
+    const content = await readMarkdownFile(absolutePath);
+
+    // Skip update if the content hasn't actually changed.
+    // This prevents unnecessary DOM destruction from {@html} in MarkdownRenderer,
+    // which would cause the preview to visibly flash/close on every reload.
+    const current = get(document);
+    if (current.content === content && current.filePath === absolutePath) {
+      return;
+    }
+
+    const baseDir = getBaseDir(absolutePath);
+    const result = renderFull(content, baseDir);
+    const fileName = absolutePath.split("/").pop() ?? absolutePath;
+
+    await allowAssets(result.assetPaths);
+
+    // Mark as our own save so the watcher doesn't re-trigger a reload loop
+    markSaved(absolutePath);
+
+    document.set({
+      filePath: absolutePath,
+      fileName,
+      content,
+      renderedHtml: result.html,
+      frontmatter: result.frontmatter,
+      wordCount: result.wordCount,
+      loading: false,
+      error: null,
+    });
+  } catch (err) {
+    console.error("Failed to reload file:", err);
+  }
 }
 
 export async function allowAssets(paths: string[]): Promise<void> {

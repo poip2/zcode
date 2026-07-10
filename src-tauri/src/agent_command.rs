@@ -99,6 +99,10 @@ pub(crate) struct SessionData {
     /// Map of call_id → oneshot sender for pending dangerous tool approvals.
     pub(crate) pending_approvals: Arc<Mutex<HashMap<String, PendingApproval>>>,
     pub(crate) auto_approve: Arc<AtomicBool>,
+    /// Current file open in the editor (updated each turn).
+    pub(crate) current_file: Arc<std::sync::Mutex<Option<String>>>,
+    /// Working directory (updated each turn).
+    pub(crate) cwd: Arc<std::sync::Mutex<PathBuf>>,
 }
 
 /// Global session map, shared between commands and background tasks.
@@ -138,12 +142,47 @@ struct GuardedTool {
     app: AppHandle,
     /// Session ID for scoped events.
     session_id: String,
+    /// The file currently open in the editor (shared, updated each turn).
+    /// Write/edit targeting this file skip the confirmation dialog.
+    current_file: Arc<std::sync::Mutex<Option<String>>>,
+    /// Working directory (shared, updated each turn).
+    cwd: Arc<std::sync::Mutex<PathBuf>>,
 }
 
 impl GuardedTool {
     fn is_dangerous(&self) -> bool {
         let name = self.inner.name();
         name == "write" || name == "edit" || name == "bash"
+    }
+
+    /// Returns true when the tool's target path matches the currently-open file.
+    /// Only applies to write/edit (not bash). Relative paths are resolved against `cwd`.
+    fn targets_current_file(&self, input: &serde_json::Value) -> bool {
+        let name = self.inner.name();
+        if name != "write" && name != "edit" {
+            return false;
+        }
+        let current = self.current_file.lock().unwrap();
+        let Some(ref current) = *current else {
+            return false;
+        };
+        let Some(target) = input.get("path").and_then(|v| v.as_str()) else {
+            return false;
+        };
+
+        let cwd = self.cwd.lock().unwrap();
+        let absolute = if std::path::Path::new(target).is_absolute() {
+            std::path::PathBuf::from(target)
+        } else {
+            cwd.join(target)
+        };
+        drop(cwd);
+
+        let cur = std::path::Path::new(current);
+        match (cur.canonicalize(), absolute.canonicalize()) {
+            (Ok(c), Ok(t)) => c == t,
+            _ => cur == absolute.as_path(),
+        }
     }
 }
 
@@ -175,8 +214,12 @@ impl Tool for GuardedTool {
         input: serde_json::Value,
         on_update: Option<Box<dyn Fn(tools::ToolUpdate) + Send + Sync>>,
     ) -> AgentResult<ToolOutput> {
-        // Auto-approve if flag is on, or tool is read-only
-        if self.auto_approve.load(Ordering::Relaxed) || !self.is_dangerous() {
+        // Auto-approve if: global flag is on, tool is read-only,
+        // OR the target file is the currently-open file.
+        if self.auto_approve.load(Ordering::Relaxed)
+            || !self.is_dangerous()
+            || self.targets_current_file(&input)
+        {
             return self.inner.execute(tool_call_id, input, on_update).await;
         }
 
@@ -305,6 +348,8 @@ fn build_guarded_registry(
     auto_approve: Arc<AtomicBool>,
     app: AppHandle,
     session_id: &str,
+    shared_current_file: Arc<std::sync::Mutex<Option<String>>>,
+    shared_cwd: Arc<std::sync::Mutex<PathBuf>>,
 ) -> ToolRegistry {
     use crate::tools::{
         bash::BashTool, edit::EditTool, find::FindTool, grep::GrepTool, ls::LsTool, read::ReadTool,
@@ -329,6 +374,8 @@ fn build_guarded_registry(
             auto_approve: Arc::clone(&auto_approve),
             app: app.clone(),
             session_id: session_id.to_string(),
+            current_file: Arc::clone(&shared_current_file),
+            cwd: Arc::clone(&shared_cwd),
         });
         tools.push(guarded);
     }
@@ -357,8 +404,9 @@ fn build_system_prompt(
 
     if let Some(path) = current_file {
         prompt.push_str(&format!(
-            "The user currently has this file open: {}\n",
-            path
+            "The user currently has this file open: {path}\n\
+             You may freely edit this file without waiting for approval.\n\
+             Editing any OTHER file requires explicit user confirmation.\n"
         ));
     }
     prompt.push('\n');
@@ -512,9 +560,9 @@ pub async fn start_agent_turn(
         provider.model_id()
     );
 
-    // Agent config
+    // Agent config (clone system_prompt so we can also use it when reusing an agent)
     let config = AgentConfig {
-        system_prompt: Some(system_prompt),
+        system_prompt: Some(system_prompt.clone()),
         max_tool_iterations: 50,
         stream_options: StreamOptions {
             session_id: Some(session_id.clone()),
@@ -537,18 +585,33 @@ pub async fn start_agent_turn(
 
     let auto_approve_arc: Arc<AtomicBool>;
     let pending_approvals_arc: Arc<Mutex<HashMap<String, PendingApproval>>>;
+    let current_file_arc: Arc<std::sync::Mutex<Option<String>>>;
+    let cwd_arc: Arc<std::sync::Mutex<PathBuf>>;
 
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
         sd.auto_approve
             .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
         auto_approve_arc = Arc::clone(&sd.auto_approve);
         pending_approvals_arc = Arc::clone(&sd.pending_approvals);
-        sd.agent
+        current_file_arc = Arc::clone(&sd.current_file);
+        cwd_arc = Arc::clone(&sd.cwd);
+
+        // Update shared state for the new turn
+        *current_file_arc.lock().unwrap() = current_file.clone();
+        *cwd_arc.lock().unwrap() = work_dir.clone();
+
+        // Update system prompt so the LLM sees the latest current_file
+        let mut reused = sd
+            .agent
             .take()
-            .ok_or_else(|| "Agent is already running for this session".to_string())?
+            .ok_or_else(|| "Agent is already running for this session".to_string())?;
+        reused.set_system_prompt(Some(system_prompt));
+        reused
     } else {
         auto_approve_arc = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
         pending_approvals_arc = Arc::new(Mutex::new(HashMap::new()));
+        current_file_arc = Arc::new(std::sync::Mutex::new(current_file.clone()));
+        cwd_arc = Arc::new(std::sync::Mutex::new(work_dir.clone()));
 
         // Build guarded tool registry
         let tool_names: Vec<&str> = allowed_tools_for_rebuild
@@ -563,6 +626,8 @@ pub async fn start_agent_turn(
             Arc::clone(&auto_approve_arc),
             app.clone(),
             &session_id,
+            Arc::clone(&current_file_arc),
+            Arc::clone(&cwd_arc),
         );
 
         let agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
@@ -573,6 +638,8 @@ pub async fn start_agent_turn(
                 agent: None,
                 pending_approvals: Arc::clone(&pending_approvals_arc),
                 auto_approve: Arc::clone(&auto_approve_arc),
+                current_file: Arc::clone(&current_file_arc),
+                cwd: Arc::clone(&cwd_arc),
             },
         );
 
@@ -588,6 +655,8 @@ pub async fn start_agent_turn(
     let rebuild_session_id = session_id.clone();
     let rebuild_auto_approve = Arc::clone(&auto_approve_arc);
     let rebuild_pending_approvals = Arc::clone(&pending_approvals_arc);
+    let rebuild_current_file = Arc::clone(&current_file_arc);
+    let rebuild_cwd = Arc::clone(&cwd_arc);
 
     let event_prefix = format!("agent://{}", session_id);
     let event_prefix_post = event_prefix.clone();
@@ -756,6 +825,8 @@ pub async fn start_agent_turn(
                     rebuild_auto_approve,
                     rebuild_app,
                     &rebuild_session_id,
+                    rebuild_current_file,
+                    rebuild_cwd,
                 );
                 let new_agent = Agent::new(rebuild_provider, tool_registry, rebuild_config);
 

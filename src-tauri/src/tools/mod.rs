@@ -268,3 +268,14 @@ pub fn truncate_by_lines(output: &str, max_lines: usize) -> String {
         lines.len()
     )
 }
+
+/// Safely truncate a string to `max_bytes`, ensuring the cut
+/// lands on a UTF-8 character boundary. Returns a `&str` slice
+/// that is at most `max_bytes` bytes long.
+pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let end = s.floor_char_boundary(max_bytes);
+    &s[..end]
+}

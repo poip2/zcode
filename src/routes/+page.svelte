@@ -6,9 +6,11 @@
     loadFile,
     saveFile,
     openFileDialog,
+    reloadCurrentFile,
     getBaseDir,
     allowAssets,
   } from "$lib/tauri/files";
+  import { startFileWatcher, stopFileWatcher, markSaved } from "$lib/tauri/watcher";
   import { recents } from "$lib/stores/recents";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
@@ -31,6 +33,7 @@
   let userCollapsed = $state(false);
   let settingsOpen = $state(false);
   let agentPanelOpen = $state(false);
+  let lastWatchedPath = $state<string | null>(null);
 
   onMount(() => {
     initRenderer();
@@ -67,6 +70,7 @@
       window.removeEventListener("dragover", handleDragOver);
       window.removeEventListener("drop", handleDrop);
       window.removeEventListener("resize", handleResize);
+      stopFileWatcher();
     };
   });
 
@@ -142,6 +146,7 @@
 
       dirty = false;
       isEditing = false;
+      markSaved(doc.filePath);
       flashStatus("Saved");
     } catch (err) {
       console.error("Save failed:", err);
@@ -188,6 +193,23 @@
     dirty = newValue !== $docStore.content;
   }
 
+  // Watch file path changes to manage the watcher lifecycle
+  $effect(() => {
+    const path = $docStore.filePath;
+    if (path && path !== lastWatchedPath) {
+      lastWatchedPath = path;
+      startFileWatcher(path);
+    }
+  });
+
+  // When file content changes externally (via watcher), sync editor if not editing
+  $effect(() => {
+    const newContent = $docStore.content;
+    if (isEditing && !dirty && editContent !== newContent) {
+      editContent = newContent;
+    }
+  });
+
   let doc = $derived($docStore);
 </script>
 
@@ -216,9 +238,9 @@
             <button class="retry-btn" onclick={handleOpenDialog}>Open a file</button>
           </div>
         </div>
-      {:else if doc.renderedHtml && isEditing}
+      {:else if doc.filePath && isEditing}
         <Editor value={editContent} onChange={handleEditChange} />
-      {:else if doc.renderedHtml}
+      {:else if doc.filePath}
         <div class="content-main">
           <MarkdownRenderer html={doc.renderedHtml} />
         </div>

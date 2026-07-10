@@ -9,6 +9,7 @@ pub mod settings;
 pub mod skills;
 pub mod sse;
 pub mod tools;
+pub mod watcher;
 
 use tauri::Manager;
 
@@ -30,6 +31,7 @@ pub fn run() {
             Ok(())
         })
         .manage(agent_command::SessionManager::new())
+        .manage(watcher::WatcherState::default())
         .invoke_handler(tauri::generate_handler![
             commands::read_markdown_file,
             commands::write_markdown_file,
@@ -43,6 +45,8 @@ pub fn run() {
             commands::call_ai_provider,
             agent_command::start_agent_turn,
             agent_command::approve_tool_call,
+            watcher::start_watching,
+            watcher::stop_watching,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

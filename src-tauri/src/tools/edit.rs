@@ -212,6 +212,6 @@ fn truncate_for_error(s: &str) -> String {
     if s.len() <= 50 {
         s.to_string()
     } else {
-        format!("{}...", &s[..47])
+        format!("{}...", crate::tools::truncate_at_char_boundary(s, 47))
     }
 }

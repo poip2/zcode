@@ -8,8 +8,9 @@
     openFileDialog,
     getBaseDir,
     allowAssets,
+    reloadCurrentFile,
   } from "$lib/tauri/files";
-  import { startFileWatcher, stopFileWatcher, markSaved } from "$lib/tauri/watcher";
+  import { startFileWatcher, stopFileWatcher } from "$lib/tauri/watcher";
   import { recents } from "$lib/stores/recents";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
@@ -128,24 +129,15 @@
 
     try {
       await saveFile(doc.filePath, editContent);
-      const baseDir = getBaseDir(doc.filePath);
-      const result = renderFull(editContent, baseDir);
-      await allowAssets(result.assetPaths);
 
-      docStore.set({
-        filePath: doc.filePath,
-        fileName: doc.fileName,
-        content: editContent,
-        renderedHtml: result.html,
-        frontmatter: result.frontmatter,
-        wordCount: result.wordCount,
-        loading: false,
-        error: null,
-      });
+      if ($docStore.filePath !== doc.filePath) {
+        return;
+      }
+
+      await reloadCurrentFile(doc.filePath, true);
 
       dirty = false;
       isEditing = false;
-      markSaved(doc.filePath);
       flashStatus("Saved");
     } catch (err) {
       console.error("Save failed:", err);

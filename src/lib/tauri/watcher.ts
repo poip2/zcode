@@ -45,5 +45,11 @@ export function stopFileWatcher(): void {
  * Prevents the watcher from immediately re-loading our own writes.
  */
 export function markSaved(filePath: string): void {
-  lastSavedAt.set(filePath, Date.now());
+  const now = Date.now();
+  lastSavedAt.set(filePath, now);
+  for (const [key, t] of lastSavedAt) {
+    if (now - t > OWN_SAVE_SUPPRESSION_MS) {
+      lastSavedAt.delete(key);
+    }
+  }
 }

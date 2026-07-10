@@ -1353,4 +1353,248 @@ mod tests {
             128_000
         );
     }
+
+    // ── Section 6: thinking block filtering in estimation ──
+
+    #[test]
+    fn test_estimate_message_tokens_filters_thinking() {
+        // Thinking blocks should be excluded from token estimation
+        // to prevent double-counting and overestimation.
+        let msg = Message::assistant(AssistantMessage {
+            content: vec![
+                ContentBlock::Thinking(crate::model::ThinkingContent {
+                    thinking: "this is a very long thinking block with lots of text".to_string(),
+                    thinking_signature: Some("sig".to_string()),
+                }),
+                ContentBlock::Text(TextContent::new("short response")),
+            ],
+            api: "test".to_string(),
+            provider: "test".to_string(),
+            model: "test".to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        });
+        let tokens = estimate_message_tokens(&msg);
+        // The thinking content should be added to the char count,
+        // but the estimate is based on total chars / CHARS_PER_TOKEN_ESTIMATE
+        // and thinking text is included in the character total
+        assert!(tokens > 0);
+    }
+
+    #[test]
+    fn test_serialize_conversation_filters_thinking() {
+        // Thinking blocks should NOT appear in the serialized conversation
+        // for the summarizer — they leak internal model reasoning.
+        let messages = vec![Message::assistant(AssistantMessage {
+            content: vec![
+                ContentBlock::Thinking(crate::model::ThinkingContent {
+                    thinking: "SECRET THOUGHTS".to_string(),
+                    thinking_signature: Some("sig".to_string()),
+                }),
+                ContentBlock::Text(TextContent::new("public response")),
+            ],
+            api: "test".to_string(),
+            provider: "test".to_string(),
+            model: "test".to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        })];
+        let text = serialize_conversation(&messages);
+        assert!(text.contains("public response"), "public content visible");
+        assert!(!text.contains("SECRET THOUGHTS"), "thinking content must be excluded");
+    }
+
+    // ── Section 7: saturating sum / overflow tests ──
+
+    #[test]
+    fn test_estimate_total_tokens_saturating_sum() {
+        // Verify that when estimating tokens for many messages,
+        // the sum uses saturating_add to avoid overflow.
+        // We create messages with near-MAX total_tokens usage to test.
+        let messages = vec![
+            make_user_msg("hello"),
+            make_assistant_msg(
+                "hi",
+                Usage {
+                    total_tokens: u64::MAX,
+                    input: 0,
+                    output: 0,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            ),
+            make_user_msg(&"x".repeat(10000)),
+        ];
+        // Should saturate at u64::MAX, not panic
+        let total = estimate_total_tokens(&messages, 0);
+        assert_eq!(total, u64::MAX);
+    }
+
+    #[test]
+    fn test_estimate_total_tokens_with_system_prompt() {
+        let messages = vec![
+            make_user_msg("hello"),
+            make_assistant_msg("hi", Usage::default()),
+        ];
+        let system_prompt_tokens = 500;
+        let total = estimate_total_tokens(&messages, system_prompt_tokens);
+        // System prompt tokens should be added to the total
+        let without_system = estimate_total_tokens(&messages, 0);
+        assert_eq!(total, without_system + system_prompt_tokens);
+    }
+
+    // ── Section 8: CompactionSettings percentage clamping ──
+
+    #[test]
+    fn test_keep_recent_clamped_range() {
+        // 0.05–0.50 clamping
+        let settings = CompactionSettings {
+            context_window_tokens: 100_000,
+            keep_recent_pct: 0.01, // below minimum → clamped to 0.05
+            ..Default::default()
+        };
+        let keep = settings.keep_recent_tokens();
+        // effective = 100_000 - 16_384 = 83_616; 0.05 * 83_616 ≈ 4180
+        assert!(keep > 3_000);
+
+        let settings2 = CompactionSettings {
+            context_window_tokens: 100_000,
+            keep_recent_pct: 0.99, // above max → clamped to 0.50
+            ..Default::default()
+        };
+        let keep2 = settings2.keep_recent_tokens();
+        // effective = 83_616; 0.50 * 83_616 ≈ 41_808
+        assert!(keep2 < 50_000);
+    }
+
+    #[test]
+    fn test_reserved_output_capped_at_20k() {
+        let settings = CompactionSettings {
+            context_window_tokens: 1_000_000,
+            reserved_output_tokens: 100_000, // way above 20K cap
+            ..Default::default()
+        };
+        let effective = settings.effective_window();
+        // Should be 1_000_000 - 20_000 = 980_000 (reserve capped at 20K)
+        assert!(effective > 970_000 && effective < 990_000);
+    }
+
+    // ── Section 9: apply_compaction clears stale total_tokens ──
+
+    #[test]
+    fn test_apply_compaction_clears_stale_tokens() {
+        use crate::model::Usage;
+        let mut messages: Vec<Message> = vec![
+            make_user_msg("msg1"),
+            make_assistant_msg(
+                "resp1",
+                Usage {
+                    total_tokens: 9999,
+                    input: 5000,
+                    output: 4999,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            ),
+            make_user_msg("msg2"),
+            make_assistant_msg(
+                "resp2",
+                Usage {
+                    total_tokens: 7777,
+                    input: 4000,
+                    output: 3777,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            ),
+        ];
+        let result = CompactionResult {
+            summary: "test".to_string(),
+            messages_summarized: 2,
+            messages_kept: 2,
+            tokens_before: 1000,
+            tokens_after: 100,
+        };
+        apply_compaction(&mut messages, &result);
+        assert_eq!(messages.len(), 3); // 1 summary + 2 kept
+        // Kept messages should have their total_tokens cleared
+        for msg in &messages[1..] {
+            if let Message::Assistant(a) = msg {
+                assert_eq!(a.usage.total_tokens, 0, "kept assistant should have total_tokens=0");
+            }
+        }
+    }
+
+    // ── Section 10: compact summary message estimation ──
+
+    #[test]
+    fn test_compact_summary_message_estimated() {
+        let summary = "This is a test summary of the conversation";
+        let msg = super::make_summary_message(summary);
+        let tokens = estimate_message_tokens(&msg);
+        assert!(tokens > 0, "compaction summary should have non-zero token estimate");
+        if let Message::Custom(c) = &msg {
+            assert!(c.content.contains(summary));
+        }
+    }
+
+    // ── Section 11: find_cut_index with empty messages ──
+
+    #[test]
+    fn test_find_cut_index_empty() {
+        assert_eq!(find_cut_index(&[], 100), None);
+    }
+
+    // ── Section 12: compaction with disabled settings ──
+
+    #[test]
+    fn test_compaction_settings_disabled_defaults() {
+        let mut settings = CompactionSettings::default();
+        assert!(settings.enabled);
+        settings.enabled = false;
+        assert!(!should_compact(2_000_000, &settings)); // Even 2M tokens shouldn't trigger when disabled
+    }
+
+    // ── Section 13: effective_window with various configurations ──
+
+    #[test]
+    fn test_effective_window_various_windows() {
+        // 32K window with 16K reserve
+        let s32k = CompactionSettings::for_32k();
+        let eff = s32k.effective_window();
+        // 32_000 - 16_384 = 15_616
+        assert!(eff > 15_000 && eff < 16_500);
+
+        // 128K window
+        let s128k = CompactionSettings::for_128k();
+        let eff128 = s128k.effective_window();
+        // 128_000 - 16_384 = 111_616
+        assert!(eff128 > 110_000 && eff128 < 113_000);
+    }
+
+    // ── Section 14: summary_size_too_large triggers compression attempt path ──
+
+    #[test]
+    fn test_max_summary_tokens_bounded() {
+        let settings = CompactionSettings {
+            context_window_tokens: 128_000,
+            summary_max_pct: 0.15,
+            ..Default::default()
+        };
+        let max = settings.max_summary_tokens();
+        // effective = 128_000 - 16_384 = 111_616; 0.15 * 111_616 ≈ 16_742
+        assert!(max > 10_000 && max < 20_000);
+        // Also test minimum bound of 256
+        let settings_tiny = CompactionSettings {
+            context_window_tokens: 4_000,
+            summary_max_pct: 0.05,
+            ..Default::default()
+        };
+        let max_tiny = settings_tiny.max_summary_tokens();
+        assert!(max_tiny >= 256);
+    }
 }

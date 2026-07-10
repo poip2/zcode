@@ -305,3 +305,67 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
     let end = s.floor_char_boundary(max_bytes);
     &s[..end]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_output_no_truncation() {
+        let input = "short string";
+        let result = truncate_output(input, 100);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_truncate_output_head_tail_strategy() {
+        // Create a string where the tail contains the error messages.
+        // Budget must be large enough for tail_budget to capture the error text.
+        let body = "A".repeat(300);
+        let tail = "ERROR: something went wrong\nExit code: 1";
+        let input = format!("{body}\n{tail}");
+        let result = truncate_output(&input, 200);
+        // Should contain both head and tail
+        assert!(result.contains("AAAA"), "should contain head");
+        assert!(result.contains("ERROR"), "should contain tail with error message");
+        assert!(result.contains("bytes omitted"), "should have truncation notice");
+    }
+
+    #[test]
+    fn test_truncate_output_head_tail_visible() {
+        // Verify both head (context) and tail (errors) are preserved
+        let head = "Build started...\nCompiling src/main.rs...";
+        let middle = "=".repeat(500);
+        let tail = "error[E0001]: failed to compile\n --> src/main.rs:1:1";
+        let input = format!("{head}\n{middle}\n{tail}");
+        let result = truncate_output(&input, 200);
+        assert!(result.contains("Build started"), "head should be visible");
+        assert!(result.contains("error[E0001]"), "tail error should be visible");
+    }
+
+    #[test]
+    fn test_truncate_by_lines_head_tail() {
+        let lines: Vec<String> = (1..=100).map(|i| format!("line {i}")).collect();
+        let input = lines.join("\n");
+        let result = truncate_by_lines(&input, 10);
+        assert!(result.contains("line 1"), "head: first lines should be present");
+        assert!(result.contains("line 100"), "tail: last lines should be present");
+        assert!(result.contains("lines omitted"), "should show truncation notice");
+    }
+
+    #[test]
+    fn test_truncate_by_lines_no_truncation() {
+        let input = "line1\nline2\nline3";
+        let result = truncate_by_lines(input, 10);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_truncate_output_tiny_budget() {
+        let input = "A".repeat(500);
+        let result = truncate_output(&input, 10);
+        // Should not panic; saturating_sub handles tiny budgets
+        assert!(!result.is_empty());
+        assert!(result.len() <= 100); // Allow for truncation notice
+    }
+}

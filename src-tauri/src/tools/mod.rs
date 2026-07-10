@@ -253,8 +253,10 @@ pub fn truncate_output(output: &str, max_bytes: usize) -> String {
         return output.to_string();
     }
 
-    let head_budget = (max_bytes / HEAD_FRACTION).saturating_sub(TRUNCATION_NOTICE_OVERHEAD / 2);
-    let tail_budget = max_bytes - (max_bytes / HEAD_FRACTION) - (TRUNCATION_NOTICE_OVERHEAD / 2);
+    let half = max_bytes / HEAD_FRACTION;
+    let notice_half = TRUNCATION_NOTICE_OVERHEAD / 2;
+    let head_budget = half.saturating_sub(notice_half);
+    let tail_budget = max_bytes.saturating_sub(half).saturating_sub(notice_half);
 
     let head_boundary = output.floor_char_boundary(head_budget.min(output.len()));
     let head = &output[..head_boundary];

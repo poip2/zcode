@@ -88,7 +88,8 @@ The messages above are NEW conversation messages to incorporate into the \
 existing summary provided in <previous-summary> tags.\n\
 \n\
 Update the existing structured summary with new information. RULES:\n\
-- PRESERVE all existing information from the previous summary\n\
+- CONDENSE older items: merge related items, downgrade resolved items to \
+one line each, and drop anything no longer relevant\n\
 - ADD new progress, decisions, and context from the new messages\n\
 - UPDATE the Progress section: move items from \"In Progress\" to \"Done\" \
 when completed\n\
@@ -170,6 +171,11 @@ pub struct CompactionSettings {
     /// auto-compaction is disabled for the remainder of the session to
     /// avoid an infinite compaction loop.
     pub max_consecutive_compactions: usize,
+
+    /// Maximum fraction of the effective window the summary may occupy (0.0-1.0).
+    /// If the generated summary exceeds this limit, a compression pass is attempted.
+    /// Default 0.15 (15%).
+    pub summary_max_pct: f32,
 }
 
 impl Default for CompactionSettings {
@@ -182,6 +188,7 @@ impl Default for CompactionSettings {
             reserved_output_tokens: 16_384,
             compaction_cooldown_turns: 5,
             max_consecutive_compactions: 3,
+            summary_max_pct: 0.15,
         }
     }
 }
@@ -226,6 +233,15 @@ impl CompactionSettings {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let keep = (effective as f64 * pct) as u64;
         keep.max(1)
+    }
+
+    /// Maximum summary size in tokens (fraction of effective window).
+    pub fn max_summary_tokens(&self) -> u64 {
+        let effective = self.effective_window();
+        let pct = self.summary_max_pct.clamp(0.05, 0.20) as f64;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let max = (effective as f64 * pct) as u64;
+        max.max(256)
     }
 
     /// Try to guess the context window from a model name string.
@@ -301,6 +317,11 @@ fn estimate_block_tokens(block: &ContentBlock) -> usize {
     }
 }
 
+/// Heuristically estimate token count for a plain text string.
+pub fn estimate_text_tokens(text: &str) -> u64 {
+    u64::try_from(text.len().div_ceil(CHARS_PER_TOKEN_ESTIMATE)).unwrap_or(u64::MAX)
+}
+
 /// Heuristically estimate the token count for a single message.
 ///
 /// Uses `chars / CHARS_PER_TOKEN_ESTIMATE` as a conservative over-estimate
@@ -340,7 +361,7 @@ pub fn estimate_message_tokens(msg: &Message) -> u64 {
 ///
 /// Uses provider-reported usage from the last assistant message when available,
 /// falling back to per-message character heuristics.
-pub fn estimate_total_tokens(messages: &[Message]) -> u64 {
+pub fn estimate_total_tokens(messages: &[Message], system_prompt_tokens: u64) -> u64 {
     // Check if the last message has usage info (provider-reported, most accurate)
     let mut last_usage: Option<&Usage> = None;
     let mut last_usage_idx: Option<usize> = None;
@@ -359,19 +380,21 @@ pub fn estimate_total_tokens(messages: &[Message]) -> u64 {
 
     // Use provider-reported total_tokens as the anchor if available.
     // Add heuristic estimates for any messages after that point.
-    if let (Some(usage), Some(usage_idx)) = (last_usage, last_usage_idx) {
+    let msg_tokens = if let (Some(usage), Some(usage_idx)) = (last_usage, last_usage_idx) {
         let trailing: u64 = messages[usage_idx + 1..]
             .iter()
             .map(estimate_message_tokens)
             .fold(0u64, u64::saturating_add);
-        return usage.total_tokens.saturating_add(trailing);
-    }
+        usage.total_tokens.saturating_add(trailing)
+    } else {
+        // Fallback: sum all messages heuristically
+        messages
+            .iter()
+            .map(estimate_message_tokens)
+            .fold(0u64, u64::saturating_add)
+    };
 
-    // Fallback: sum all messages heuristically
-    messages
-        .iter()
-        .map(estimate_message_tokens)
-        .fold(0u64, u64::saturating_add)
+    msg_tokens.saturating_add(system_prompt_tokens)
 }
 
 // ============================================================================
@@ -557,7 +580,7 @@ fn append_assistant_message(out: &mut String, assistant: &AssistantMessage) {
     let visible_blocks: Vec<&ContentBlock> = assistant
         .content
         .iter()
-        .filter(|b| !matches!(b, ContentBlock::Image(_)))
+        .filter(|b| !matches!(b, ContentBlock::Image(_) | ContentBlock::Thinking(_) | ContentBlock::RedactedThinking(_)))
         .collect();
 
     // Text + thinking
@@ -570,14 +593,6 @@ fn append_assistant_message(out: &mut String, assistant: &AssistantMessage) {
                     out.push('\n');
                 }
                 out.push_str(&tc.text);
-                has_text = true;
-            }
-            ContentBlock::Thinking(tc) => {
-                if has_text {
-                    out.push('\n');
-                }
-                out.push_str("[thinking]: ");
-                out.push_str(&tc.thinking);
                 has_text = true;
             }
             ContentBlock::ToolCall(_) => {
@@ -735,6 +750,37 @@ async fn complete_for_summary(
     Ok(message)
 }
 
+/// Prompt for condensing a summary that exceeds the maximum allowed size.
+const SUMMARY_COMPRESSION_PROMPT: &str = "\
+The following is a conversation summary that must be condensed to fit within \
+a strict token budget. Merge related items, downgrade completed or resolved \
+items to single-line entries, and remove anything no longer relevant. Preserve \
+exact file paths, function names, and error messages. Maintain the same \
+structured format sections (Goal, Constraints & Preferences, Progress, Key \
+Decisions, Next Steps, Critical Context). Output ONLY the condensed version.";
+
+/// Compress an oversized summary via a single LLM pass.
+async fn compress_summary(
+    summary: &str,
+    provider: Arc<dyn Provider>,
+    max_tokens: u32,
+) -> Result<String> {
+    let prompt = format!(
+        "<summary-to-condense>\n{summary}\n</summary-to-condense>\n\n{SUMMARY_COMPRESSION_PROMPT}"
+    );
+
+    let assistant =
+        complete_for_summary(provider, SUMMARIZATION_SYSTEM_PROMPT, prompt, max_tokens).await?;
+
+    let text = collect_text_blocks(&assistant.content);
+
+    if text.trim().is_empty() {
+        return Ok(summary.to_string());
+    }
+
+    Ok(text)
+}
+
 /// Generate a structured summary from the conversation messages.
 ///
 /// If `previous_summary` is provided, the summarizer will update that summary
@@ -832,7 +878,7 @@ pub async fn maybe_compact(
     let total_tokens = if let Some(tokens) = precomputed_tokens {
         tokens
     } else {
-        estimate_total_tokens(messages)
+        estimate_total_tokens(messages, 0)
     };
     if !should_compact(total_tokens, settings) {
         return Ok(None);
@@ -859,13 +905,34 @@ pub async fn maybe_compact(
         messages.len() - cut_idx
     );
 
-    let summary = generate_summary(
+    let mut summary = generate_summary(
         to_summarize,
         previous_summary,
         Arc::clone(&provider),
         settings.reserved_output_tokens,
     )
     .await?;
+
+    let max_summary_chars = (settings.max_summary_tokens() as usize).saturating_mul(CHARS_PER_TOKEN_ESTIMATE);
+    if summary.len() > max_summary_chars {
+        eprintln!(
+            "[zcode] compaction: summary exceeds max size ({} > {max_summary_chars}), compressing",
+            summary.len()
+        );
+        #[allow(clippy::cast_sign_loss)]
+        let compress_max_tokens = ((f64::from(settings.reserved_output_tokens) * 0.4) as u32).max(256);
+        match compress_summary(&summary, Arc::clone(&provider), compress_max_tokens).await {
+            Ok(compressed) if compressed.len() < summary.len() => {
+                summary = compressed;
+            }
+            Ok(_) => {
+                eprintln!("[zcode] compaction: compression produced no reduction, using original");
+            }
+            Err(e) => {
+                eprintln!("[zcode] compaction: summary compression failed: {e}, using original");
+            }
+        }
+    }
 
     let kept = &messages[cut_idx..];
     let tokens_after = estimate_message_tokens(&make_summary_message(&summary))
@@ -983,7 +1050,7 @@ mod tests {
             ),
             make_user_msg("how are you?"),
         ];
-        let total = estimate_total_tokens(&messages);
+        let total = estimate_total_tokens(&messages, 0);
         // Should use provider-reported 50 + heuristic for trailing msg
         assert!(total >= 50);
     }

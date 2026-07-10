@@ -149,11 +149,15 @@ pub struct Agent {
 
     /// Consecutive compactions that failed to bring tokens below threshold.
     consecutive_compaction_failures: u32,
+
+    /// Cached system prompt token count. Re-computed when the system prompt changes.
+    cached_system_prompt_tokens: u64,
 }
 
 impl Agent {
     /// Create a new agent.
     pub fn new(provider: Arc<dyn Provider>, tools: ToolRegistry, config: AgentConfig) -> Self {
+        let system_prompt_tokens = Self::compute_system_prompt_tokens(config.system_prompt.as_deref());
         Self {
             provider,
             tools,
@@ -165,6 +169,7 @@ impl Agent {
             recent_tool_calls: Vec::new(),
             last_compaction_turn: None,
             consecutive_compaction_failures: 0,
+            cached_system_prompt_tokens: system_prompt_tokens,
         }
     }
 
@@ -197,7 +202,15 @@ impl Agent {
     }
 
     pub fn set_system_prompt(&mut self, prompt: Option<String>) {
+        self.cached_system_prompt_tokens = Self::compute_system_prompt_tokens(prompt.as_deref());
         self.config.system_prompt = prompt;
+    }
+
+    fn compute_system_prompt_tokens(system_prompt: Option<&str>) -> u64 {
+        match system_prompt {
+            Some(p) if !p.is_empty() => compaction::estimate_text_tokens(p),
+            _ => 0,
+        }
     }
 
     /// Configure auto-compaction. Pass `None` to disable.
@@ -335,7 +348,7 @@ impl Agent {
                         last = self.last_compaction_turn
                     );
                 } else {
-                    let estimated = compaction::estimate_total_tokens(&self.messages);
+                    let estimated = compaction::estimate_total_tokens(&self.messages, self.cached_system_prompt_tokens);
                     if compaction::should_compact(estimated, settings) {
                         on_event(AgentEvent::CompactionStarted {
                             reason: format!(

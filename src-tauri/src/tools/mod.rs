@@ -260,7 +260,7 @@ pub fn truncate_output(output: &str, max_bytes: usize) -> String {
 
     let omitted = output.len() - head.len() - tail.len();
     format!(
-        "{head}\n... [truncated, original {} bytes] ...\n{tail}",
+        "{head}\n... [truncated, {} bytes omitted] ...\n{tail}",
         omitted
     )
 }
@@ -282,7 +282,7 @@ pub fn truncate_by_lines(output: &str, max_lines: usize) -> String {
     let omitted = lines.len() - head_count - tail_count;
 
     format!(
-        "{}\n... [truncated, {} lines total] ...\n{}",
+        "{}\n... [truncated, {} lines omitted] ...\n{}",
         head.join("\n"),
         omitted,
         tail.join("\n")

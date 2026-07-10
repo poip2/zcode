@@ -308,10 +308,7 @@ pub fn estimate_message_tokens(msg: &Message) -> u64 {
             for block in &assistant.content {
                 chars = chars.saturating_add(estimate_block_tokens(block));
             }
-            // Provider-reported usage is more accurate — prefer it when available
-            if assistant.usage.total_tokens > 0 {
-                return assistant.usage.total_tokens;
-            }
+
         }
         Message::ToolResult(tr) => {
             for block in &tr.content {
@@ -494,7 +491,7 @@ pub fn content_blocks_to_summary_text(blocks: &[ContentBlock]) -> String {
         .iter()
         .filter_map(|b| match b {
             ContentBlock::Text(t) => Some(t.text.clone()),
-            ContentBlock::Thinking(t) => Some(format!("[thinking]: {}", t.thinking)),
+            ContentBlock::Thinking(_) => None,
             ContentBlock::Image(_) => None, // skip images
             ContentBlock::ToolCall(tc) => Some(format!(
                 "[tool_call: {}({})]",
@@ -809,6 +806,7 @@ pub async fn maybe_compact(
     previous_summary: Option<&str>,
     provider: Arc<dyn Provider>,
     settings: &CompactionSettings,
+    precomputed_tokens: Option<u64>,
 ) -> Result<Option<CompactionResult>> {
     if messages.is_empty() {
         return Ok(None);
@@ -818,7 +816,11 @@ pub async fn maybe_compact(
         return Ok(None);
     }
 
-    let total_tokens = estimate_total_tokens(messages);
+    let total_tokens = if let Some(tokens) = precomputed_tokens {
+        tokens
+    } else {
+        estimate_total_tokens(messages)
+    };
     if !should_compact(total_tokens, settings) {
         return Ok(None);
     }
@@ -1005,21 +1007,17 @@ mod tests {
 
     #[test]
     fn test_find_cut_index_finds_boundary() {
-        // Create enough messages to exceed keep_recent_tokens
+        // Create enough messages to exceed keep_recent_tokens via content heuristics
         let mut messages = Vec::new();
         for i in 0..100 {
             messages.push(make_user_msg(&format!("message {i}")));
             messages.push(make_assistant_msg(
                 &format!("response {i}"),
-                Usage {
-                    total_tokens: 100,
-                    ..Default::default()
-                },
+                Usage::default(),
             ));
         }
-        // 200 messages, each assistant says 100 total tokens
-        // keep_recent = 5000 → should cut well before the end
-        let cut = find_cut_index(&messages, 5_000);
+        // ~200 messages at ~4 tokens each ≈ 800 tokens; keep_recent=400 triggers a cut
+        let cut = find_cut_index(&messages, 400);
         assert!(cut.is_some());
         let idx = cut.unwrap();
         // Cut must be at a valid boundary: User message or text-only Assistant
@@ -1034,20 +1032,15 @@ mod tests {
 
     #[test]
     fn test_find_cut_index_at_beginning() {
+        // keep_recent = 10 tokens (~30 chars). The long first message pushes
+        // accumulated tokens over the budget when walking backward from the end,
+        // so the cut lands at the text-only assistant at index 1.
         let messages = vec![
-            make_user_msg("test"),
-            make_assistant_msg(
-                "ok",
-                Usage {
-                    total_tokens: 10_000,
-                    ..Default::default()
-                },
-            ),
-            make_user_msg("hello"),
+            make_user_msg(&"x".repeat(60)),
+            make_assistant_msg("a somewhat long response here", Usage::default()),
+            make_user_msg("ok"),
         ];
-        // keep_recent = 100 → the assistant at index 1 (text-only, no tools)
-        // is a valid boundary. Index 0 (User "test") gets summarized.
-        let cut = find_cut_index(&messages, 100);
+        let cut = find_cut_index(&messages, 10);
         assert_eq!(cut, Some(1));
     }
 
@@ -1120,7 +1113,7 @@ mod tests {
             make_user_msg("thanks"),
         ];
         // keep_recent = 50 → should cut at "thanks" (index 4) or "do something" (index 0)
-        let cut = find_cut_index(&messages, 50);
+        let cut = find_cut_index(&messages, 10);
         assert!(cut.is_some());
         let idx = cut.unwrap();
         // Must NOT be at the tool_call (index 1) or tool_result (index 2)

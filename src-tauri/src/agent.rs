@@ -324,6 +324,7 @@ impl Agent {
                         self.previous_summary.as_deref(),
                         provider,
                         settings,
+                        Some(estimated),
                     )
                     .await
                     {
@@ -532,6 +533,8 @@ impl Agent {
                     let key = (tc.name.clone(), tc.arguments.clone());
                     self.recent_tool_calls.push(key);
                     let window = 3usize;
+                    let excess = self.recent_tool_calls.len().saturating_sub(window);
+                    self.recent_tool_calls.drain(..excess);
                     if self.recent_tool_calls.len() >= window {
                         let tail = &self.recent_tool_calls
                             [self.recent_tool_calls.len() - window..];

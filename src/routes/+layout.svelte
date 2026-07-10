@@ -43,6 +43,10 @@
   // Restart skills watcher when cwd changes
   $effect(() => {
     const cwd = currentCwd;
+    if (cwd === ".") {
+      stopSkillsWatcher().catch(() => {});
+      return;
+    }
     startSkillsWatcher(cwd).catch((err) =>
       console.error("[skills] watcher start failed:", err),
     );

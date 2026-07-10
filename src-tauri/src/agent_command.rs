@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
 
@@ -451,8 +451,11 @@ pub async fn list_skills(cwd: String) -> Result<Vec<SkillWithState>, String> {
 }
 
 /// Enable or disable a skill by name (persists to skill-state.json).
+static SKILL_STATE_LOCK: LazyLock<StdMutex<()>> = LazyLock::new(|| StdMutex::new(()));
+
 #[tauri::command]
 pub async fn set_skill_active(name: String, active: bool) -> Result<(), String> {
+    let _guard = SKILL_STATE_LOCK.lock().map_err(|e| e.to_string())?;
     let user_dir = dirs::config_dir()
         .map(|d| d.join("zcode"))
         .ok_or("No config directory found")?;
@@ -527,19 +530,12 @@ fn detect_skill_invocation(tool_name: &str, arguments: &serde_json::Value) -> Op
     if tool_name != "read" {
         return None;
     }
-    let path = arguments.get("path")?.as_str()?;
-    if !path.contains("SKILL.md") && !path.contains("skills/") {
+    let path_str = arguments.get("path")?.as_str()?;
+    let path = std::path::Path::new(path_str);
+    if path.file_name()?.to_str()? != "SKILL.md" {
         return None;
     }
-    // Extract skill name: the directory containing SKILL.md
-    // Patterns: .../skills/<name>/SKILL.md or .../<name>/SKILL.md
-    let parts: Vec<&str> = path.split('/').collect();
-    for i in (1..parts.len()).rev() {
-        if parts[i] == "SKILL.md" && i > 0 {
-            return Some(parts[i - 1].to_string());
-        }
-    }
-    None
+    path.parent()?.file_name()?.to_str().map(|s| s.to_string())
 }
 
 // ============================================================================

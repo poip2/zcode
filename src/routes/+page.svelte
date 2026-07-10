@@ -118,7 +118,9 @@
       }
       isEditing = false;
     } else {
-      editContent = doc.content;
+      if (!dirty) {
+        editContent = doc.content;
+      }
       isEditing = true;
     }
   }

@@ -12,6 +12,11 @@ const OWN_SAVE_SUPPRESSION_MS = 1500;
 export async function startFileWatcher(filePath: string): Promise<void> {
   if (unlisten) {
     unlisten();
+    unlisten = null;
+  }
+  if (reloadTimeout) {
+    clearTimeout(reloadTimeout);
+    reloadTimeout = null;
   }
 
   unlisten = await listen<{ path: string }>("file-changed", () => {

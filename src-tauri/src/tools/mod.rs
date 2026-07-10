@@ -228,7 +228,7 @@ pub fn enforce_cwd_scope(
 // ============================================================================
 
 pub const DEFAULT_MAX_LINES: usize = 500;
-pub const DEFAULT_MAX_BYTES: usize = 50_000;
+pub const DEFAULT_MAX_BYTES: usize = 100_000;
 pub const GREP_MAX_LINE_LENGTH: usize = 500;
 pub const DEFAULT_GREP_LIMIT: usize = 100;
 pub const DEFAULT_FIND_LIMIT: usize = 1000;
@@ -240,7 +240,11 @@ pub const IMAGE_MAX_BYTES: usize = 4_718_592;
 pub const DEFAULT_BASH_TIMEOUT_SECS: u64 = 120;
 
 /// Fraction of max_lines to allocate to the head when truncating with head+tail strategy.
-const HEAD_LINES_FRACTION: usize = 5;
+/// 2 = 50% head, 50% tail.
+const HEAD_FRACTION: usize = 2;
+
+/// Estimated byte overhead of the truncation notice inserted between head and tail.
+const TRUNCATION_NOTICE_OVERHEAD: usize = 80;
 
 /// Truncate output to max_bytes by keeping head + tail, with a truncation notice in between.
 /// This ensures error messages at the end of long output (build logs, test failures) are visible.
@@ -249,8 +253,8 @@ pub fn truncate_output(output: &str, max_bytes: usize) -> String {
         return output.to_string();
     }
 
-    let head_budget = max_bytes / 5; // 20% for head
-    let tail_budget = max_bytes - head_budget;
+    let head_budget = (max_bytes / HEAD_FRACTION).saturating_sub(TRUNCATION_NOTICE_OVERHEAD / 2);
+    let tail_budget = max_bytes - (max_bytes / HEAD_FRACTION) - (TRUNCATION_NOTICE_OVERHEAD / 2);
 
     let head_boundary = output.floor_char_boundary(head_budget.min(output.len()));
     let head = &output[..head_boundary];
@@ -267,14 +271,14 @@ pub fn truncate_output(output: &str, max_bytes: usize) -> String {
 
 /// Truncate output by lines: keep head + tail, with a truncation notice in between.
 /// This preserves both context (head) and error messages (tail).
-/// Allocates 20% of max_lines to head and 80% to tail.
+/// Allocates 50% of max_lines to head and 50% to tail.
 pub fn truncate_by_lines(output: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() <= max_lines {
         return output.to_string();
     }
 
-    let head_count = (max_lines / HEAD_LINES_FRACTION).min(lines.len());
+    let head_count = (max_lines / HEAD_FRACTION).min(lines.len());
     let tail_count = (max_lines - head_count).min(lines.len() - head_count);
 
     let head: Vec<&str> = lines[..head_count].to_vec();

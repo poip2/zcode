@@ -143,6 +143,12 @@ pub struct Agent {
 
     /// Recent tool calls for stuck-loop detection.
     recent_tool_calls: Vec<(String, serde_json::Value)>,
+
+    /// Turn index of the most recent compaction (for cooldown).
+    last_compaction_turn: Option<usize>,
+
+    /// Consecutive compactions that failed to bring tokens below threshold.
+    consecutive_compaction_failures: u32,
 }
 
 impl Agent {
@@ -157,6 +163,8 @@ impl Agent {
             compaction_settings: Some(CompactionSettings::default()),
             previous_summary: None,
             recent_tool_calls: Vec::new(),
+            last_compaction_turn: None,
+            consecutive_compaction_failures: 0,
         }
     }
 
@@ -308,50 +316,82 @@ impl Agent {
 
             // 1. Check if we need to compact context before sending
             if let Some(ref settings) = self.compaction_settings {
-                let estimated = compaction::estimate_total_tokens(&self.messages);
-                if compaction::should_compact(estimated, settings) {
-                    on_event(AgentEvent::CompactionStarted {
-                        reason: format!(
-                            "context ({estimated} tokens) exceeds threshold ({})",
-                            settings.trigger_threshold()
-                        ),
-                        tokens_before: estimated,
-                    });
+                // Rate-limit: skip compaction if we just compacted recently
+                let in_cooldown = self
+                    .last_compaction_turn
+                    .is_some_and(|t| current_turn.saturating_sub(t) < settings.compaction_cooldown_turns);
 
-                    let provider = Arc::clone(&self.provider);
-                    match compaction::maybe_compact(
-                        &self.messages,
-                        self.previous_summary.as_deref(),
-                        provider,
-                        settings,
-                        Some(estimated),
-                    )
-                    .await
-                    {
-                        Ok(Some(result)) => {
-                            eprintln!(
-                                "[zcode] agent::run_loop: compaction applied, {} msgs → {} keyst",
-                                result.messages_summarized,
-                                result.messages_kept
-                            );
-                            compaction::apply_compaction(
-                                &mut self.messages,
-                                &result,
-                            );
-                            self.previous_summary = Some(result.summary.clone());
-                            on_event(AgentEvent::CompactionFinished {
-                                tokens_after: result.tokens_after,
-                                summary_len: result.summary.len(),
-                            });
-                        }
-                        Ok(None) => {
-                            // No compaction needed
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "[zcode] agent::run_loop: compaction FAILED: {e}"
-                            );
-                            // Continue without compaction — better than losing the session
+                if self.consecutive_compaction_failures as usize >= settings.max_consecutive_compactions {
+                    // Thrashing kill-switch: compaction has repeatedly failed to reduce
+                    // context below threshold, so stop trying.
+                    eprintln!(
+                        "[zcode] agent::run_loop: thrashing kill-switch: {failures} consecutive \
+                         compactions failed to stay under threshold, disabling compaction",
+                        failures = self.consecutive_compaction_failures
+                    );
+                } else if in_cooldown {
+                    eprintln!(
+                        "[zcode] agent::run_loop: skipping compaction (cooldown, last turn {last:?})",
+                        last = self.last_compaction_turn
+                    );
+                } else {
+                    let estimated = compaction::estimate_total_tokens(&self.messages);
+                    if compaction::should_compact(estimated, settings) {
+                        on_event(AgentEvent::CompactionStarted {
+                            reason: format!(
+                                "context ({estimated} tokens) exceeds threshold ({})",
+                                settings.trigger_threshold()
+                            ),
+                            tokens_before: estimated,
+                        });
+
+                        let provider = Arc::clone(&self.provider);
+                        match compaction::maybe_compact(
+                            &self.messages,
+                            self.previous_summary.as_deref(),
+                            provider,
+                            settings,
+                            Some(estimated),
+                        )
+                        .await
+                        {
+                            Ok(Some(result)) => {
+                                eprintln!(
+                                    "[zcode] agent::run_loop: compaction applied, {} msgs → {} keyst",
+                                    result.messages_summarized,
+                                    result.messages_kept
+                                );
+                                self.last_compaction_turn = Some(current_turn);
+                                compaction::apply_compaction(
+                                    &mut self.messages,
+                                    &result,
+                                );
+                                self.previous_summary = Some(result.summary.clone());
+
+                                // Track whether compaction actually reduced tokens below threshold.
+                                // If consecutive compactions fail to converge, we'll hit the
+                                // kill-switch above.
+                                if result.tokens_after >= settings.trigger_threshold() {
+                                    self.consecutive_compaction_failures =
+                                        self.consecutive_compaction_failures.saturating_add(1);
+                                } else {
+                                    self.consecutive_compaction_failures = 0;
+                                }
+
+                                on_event(AgentEvent::CompactionFinished {
+                                    tokens_after: result.tokens_after,
+                                    summary_len: result.summary.len(),
+                                });
+                            }
+                            Ok(None) => {
+                                // No compaction needed
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "[zcode] agent::run_loop: compaction FAILED: {e}"
+                                );
+                                // Continue without compaction — better than losing the session
+                            }
                         }
                     }
                 }

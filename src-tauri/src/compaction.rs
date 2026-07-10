@@ -159,6 +159,17 @@ pub struct CompactionSettings {
     /// Tokens reserved for the assistant's output response.
     /// Clamped to max 20_000 regardless of window size.
     pub reserved_output_tokens: u32,
+
+    /// Minimum number of turns between consecutive compactions.
+    /// Prevents compaction thrashing when summary content alone pushes
+    /// the context back over the threshold.
+    pub compaction_cooldown_turns: usize,
+
+    /// Maximum number of consecutive compactions that fail to bring the
+    /// token count below the trigger threshold. After this many failures,
+    /// auto-compaction is disabled for the remainder of the session to
+    /// avoid an infinite compaction loop.
+    pub max_consecutive_compactions: usize,
 }
 
 impl Default for CompactionSettings {
@@ -169,6 +180,8 @@ impl Default for CompactionSettings {
             trigger_threshold_pct: 0.85,
             keep_recent_pct: 0.15,
             reserved_output_tokens: 16_384,
+            compaction_cooldown_turns: 5,
+            max_consecutive_compactions: 3,
         }
     }
 }

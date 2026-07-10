@@ -12,8 +12,8 @@
 
 use crate::error::{Error, Result};
 use crate::model::{
-    AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel,
-    Usage, UserContent, UserMessage,
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage, UserContent,
+    UserMessage,
 };
 use crate::provider::{Context, Provider, StreamOptions};
 use futures::StreamExt;
@@ -253,27 +253,27 @@ impl CompactionSettings {
             1_048_576
         } else if lower.contains("gemini") {
             128_000
-        } else if lower.contains("claude-opus") || lower.contains("claude-sonnet-4") {
+        } else if lower.contains("claude-opus")
+            || lower.contains("claude-sonnet-4")
+            || lower.contains("claude")
+        {
             200_000
-        } else if lower.contains("claude") {
-            200_000
-        } else if lower.contains("gpt-4.1") || lower.contains("gpt-4o") {
-            128_000
-        } else if lower.contains("gpt-4-turbo") {
-            128_000
-        } else if lower.contains("gpt-4") {
+        } else if lower.contains("gpt-4.1")
+            || lower.contains("gpt-4o")
+            || lower.contains("gpt-4-turbo")
+            || lower.contains("gpt-4")
+        {
             128_000
         } else if lower.contains("gpt-3.5") {
             16_384
-        } else if lower.contains("deepseek-r1") || lower.contains("deepseek-chat") {
-            131_072
-        } else if lower.contains("deepseek") {
-            131_072
-        } else if lower.contains("qwen") {
-            131_072
-        } else if lower.contains("llama-3") || lower.contains("llama3") {
-            131_072
-        } else if lower.contains("mistral-large") {
+        } else if lower.contains("deepseek-r1")
+            || lower.contains("deepseek-chat")
+            || lower.contains("deepseek")
+            || lower.contains("qwen")
+            || lower.contains("llama-3")
+            || lower.contains("llama3")
+            || lower.contains("mistral-large")
+        {
             131_072
         } else if lower.contains("mistral") {
             32_000
@@ -310,9 +310,7 @@ fn estimate_block_tokens(block: &ContentBlock) -> usize {
         ContentBlock::Text(tc) => tc.text.len(),
         ContentBlock::Thinking(tc) => tc.thinking.len(),
         ContentBlock::Image(_) => IMAGE_CHAR_ESTIMATE,
-        ContentBlock::ToolCall(tc) => {
-            tc.name.len().saturating_add(json_byte_len(&tc.arguments))
-        }
+        ContentBlock::ToolCall(tc) => tc.name.len().saturating_add(json_byte_len(&tc.arguments)),
         ContentBlock::RedactedThinking(_) => 0,
     }
 }
@@ -342,7 +340,6 @@ pub fn estimate_message_tokens(msg: &Message) -> u64 {
             for block in &assistant.content {
                 chars = chars.saturating_add(estimate_block_tokens(block));
             }
-
         }
         Message::ToolResult(tr) => {
             for block in &tr.content {
@@ -368,12 +365,14 @@ pub fn estimate_total_tokens(messages: &[Message], system_prompt_tokens: u64) ->
 
     for (idx, msg) in messages.iter().enumerate().rev() {
         if let Message::Assistant(assistant) = msg {
-            if !matches!(assistant.stop_reason, StopReason::Aborted | StopReason::Error) {
-                if assistant.usage.total_tokens > 0 {
-                    last_usage = Some(&assistant.usage);
-                    last_usage_idx = Some(idx);
-                    break;
-                }
+            if !matches!(
+                assistant.stop_reason,
+                StopReason::Aborted | StopReason::Error
+            ) && assistant.usage.total_tokens > 0
+            {
+                last_usage = Some(&assistant.usage);
+                last_usage_idx = Some(idx);
+                break;
             }
         }
     }
@@ -443,9 +442,7 @@ pub fn find_cut_index(messages: &[Message], keep_recent_tokens: u64) -> Option<u
     }
 
     // Everything fits — no cut needed
-    let Some(budget_idx) = budget_hit_idx else {
-        return None;
-    };
+    let budget_idx = budget_hit_idx?;
 
     // Step 2: From budget_idx forward, find a VALID cut boundary.
     // We scan from budget_idx backwards to find the nearest valid boundary.
@@ -505,15 +502,17 @@ fn find_nearest_valid_boundary(messages: &[Message], budget_idx: usize) -> Optio
 fn has_real_user_content(user: &UserMessage) -> bool {
     match &user.content {
         UserContent::Text(t) => !t.is_empty(),
-        UserContent::Blocks(blocks) => blocks.iter().any(|b| {
-            matches!(b, ContentBlock::Text(t) if !t.text.is_empty())
-        }),
+        UserContent::Blocks(blocks) => blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Text(t) if !t.text.is_empty())),
     }
 }
 
 /// Check if any content block is a tool call.
 fn has_tool_calls(blocks: &[ContentBlock]) -> bool {
-    blocks.iter().any(|b| matches!(b, ContentBlock::ToolCall(_)))
+    blocks
+        .iter()
+        .any(|b| matches!(b, ContentBlock::ToolCall(_)))
 }
 
 // ============================================================================
@@ -580,7 +579,14 @@ fn append_assistant_message(out: &mut String, assistant: &AssistantMessage) {
     let visible_blocks: Vec<&ContentBlock> = assistant
         .content
         .iter()
-        .filter(|b| !matches!(b, ContentBlock::Image(_) | ContentBlock::Thinking(_) | ContentBlock::RedactedThinking(_)))
+        .filter(|b| {
+            !matches!(
+                b,
+                ContentBlock::Image(_)
+                    | ContentBlock::Thinking(_)
+                    | ContentBlock::RedactedThinking(_)
+            )
+        })
         .collect();
 
     // Text + thinking
@@ -620,10 +626,7 @@ fn append_assistant_message(out: &mut String, assistant: &AssistantMessage) {
                         if !first_kv {
                             out.push_str(", ");
                         }
-                        let _ = std::fmt::Write::write_fmt(
-                            out,
-                            format_args!("{k}={v}"),
-                        );
+                        let _ = std::fmt::Write::write_fmt(out, format_args!("{k}={v}"));
                         first_kv = false;
                     }
                 } else if let Ok(s) = serde_json::to_string(&tc.arguments) {
@@ -799,15 +802,11 @@ async fn generate_summary(
 
     let conversation_text = serialize_conversation(messages);
 
-    let mut prompt_text = format!(
-        "<conversation>\n{conversation_text}\n</conversation>\n\n"
-    );
+    let mut prompt_text = format!("<conversation>\n{conversation_text}\n</conversation>\n\n");
     if let Some(previous) = previous_summary {
         let _ = std::fmt::Write::write_fmt(
             &mut prompt_text,
-            format_args!(
-                "<previous-summary>\n{previous}\n</previous-summary>\n\n"
-            ),
+            format_args!("<previous-summary>\n{previous}\n</previous-summary>\n\n"),
         );
     }
     prompt_text.push_str(base_prompt);
@@ -818,8 +817,13 @@ async fn generate_summary(
     #[allow(clippy::cast_sign_loss)]
     let max_tokens = ((f64::from(reserved_output_tokens) * factor) as u32).max(256);
 
-    let assistant =
-        complete_for_summary(provider, SUMMARIZATION_SYSTEM_PROMPT, prompt_text, max_tokens).await?;
+    let assistant = complete_for_summary(
+        provider,
+        SUMMARIZATION_SYSTEM_PROMPT,
+        prompt_text,
+        max_tokens,
+    )
+    .await?;
 
     let text = collect_text_blocks(&assistant.content);
 
@@ -914,14 +918,16 @@ pub async fn maybe_compact(
     )
     .await?;
 
-    let max_summary_chars = (settings.max_summary_tokens() as usize).saturating_mul(CHARS_PER_TOKEN_ESTIMATE);
+    let max_summary_chars =
+        (settings.max_summary_tokens() as usize).saturating_mul(CHARS_PER_TOKEN_ESTIMATE);
     if summary.len() > max_summary_chars {
         eprintln!(
             "[zcode] compaction: summary exceeds max size ({} > {max_summary_chars}), compressing",
             summary.len()
         );
         #[allow(clippy::cast_sign_loss)]
-        let compress_max_tokens = ((f64::from(settings.reserved_output_tokens) * 0.4) as u32).max(256);
+        let compress_max_tokens =
+            ((f64::from(settings.reserved_output_tokens) * 0.4) as u32).max(256);
         match compress_summary(&summary, Arc::clone(&provider), compress_max_tokens).await {
             Ok(compressed) if compressed.len() < summary.len() => {
                 summary = compressed;
@@ -965,9 +971,7 @@ pub async fn maybe_compact(
 /// building context.
 fn make_summary_message(summary: &str) -> Message {
     Message::Custom(crate::model::CustomMessage {
-        content: format!(
-            "[Context summary from earlier in this conversation]\n\n{summary}",
-        ),
+        content: format!("[Context summary from earlier in this conversation]\n\n{summary}",),
         custom_type: "compaction_summary".to_string(),
         display: false,
         details: None,
@@ -979,10 +983,7 @@ fn make_summary_message(summary: &str) -> Message {
 ///
 /// Replaces the summarized messages (messages up to `cut_idx`) with a single
 /// summary message, keeping the recent messages intact.
-pub fn apply_compaction(
-    messages: &mut Vec<Message>,
-    result: &CompactionResult,
-) {
+pub fn apply_compaction(messages: &mut Vec<Message>, result: &CompactionResult) {
     let mut kept = messages.split_off(messages.len() - result.messages_kept);
 
     for msg in &mut kept {
@@ -1117,7 +1118,10 @@ mod tests {
         match &messages[idx] {
             Message::User(_) => {} // OK
             Message::Assistant(a) => {
-                assert!(!a.content.iter().any(|b| matches!(b, ContentBlock::ToolCall(_))));
+                assert!(!a
+                    .content
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::ToolCall(_))));
             }
             _ => panic!("cut at invalid position {idx}: {:?}", messages[idx]),
         }
@@ -1213,7 +1217,10 @@ mod tests {
         assert!(!matches!(&messages[idx], Message::ToolResult(_)));
         // If it's an Assistant, it must be text-only (index 3 is text-only ✓)
         if let Message::Assistant(a) = &messages[idx] {
-            assert!(!a.content.iter().any(|b| matches!(b, ContentBlock::ToolCall(_))));
+            assert!(!a
+                .content
+                .iter()
+                .any(|b| matches!(b, ContentBlock::ToolCall(_))));
         }
     }
 
@@ -1239,7 +1246,10 @@ mod tests {
             match &messages[idx] {
                 Message::User(_) => {} // OK
                 Message::Assistant(a) => {
-                    assert!(!a.content.iter().any(|b| matches!(b, ContentBlock::ToolCall(_))));
+                    assert!(!a
+                        .content
+                        .iter()
+                        .any(|b| matches!(b, ContentBlock::ToolCall(_))));
                 }
                 _ => panic!("cut at invalid position {idx}: {:?}", messages[idx]),
             }
@@ -1339,10 +1349,7 @@ mod tests {
             CompactionSettings::guess_from_model("claude-sonnet-4-5-20250929"),
             200_000
         );
-        assert_eq!(
-            CompactionSettings::guess_from_model("gpt-4o"),
-            128_000
-        );
+        assert_eq!(CompactionSettings::guess_from_model("gpt-4o"), 128_000);
         assert_eq!(
             CompactionSettings::guess_from_model("deepseek-chat"),
             131_072
@@ -1405,7 +1412,10 @@ mod tests {
         })];
         let text = serialize_conversation(&messages);
         assert!(text.contains("public response"), "public content visible");
-        assert!(!text.contains("SECRET THOUGHTS"), "thinking content must be excluded");
+        assert!(
+            !text.contains("SECRET THOUGHTS"),
+            "thinking content must be excluded"
+        );
     }
 
     // ── Section 7: saturating sum / overflow tests ──
@@ -1521,10 +1531,13 @@ mod tests {
         };
         apply_compaction(&mut messages, &result);
         assert_eq!(messages.len(), 3); // 1 summary + 2 kept
-        // Kept messages should have their total_tokens cleared
+                                       // Kept messages should have their total_tokens cleared
         for msg in &messages[1..] {
             if let Message::Assistant(a) = msg {
-                assert_eq!(a.usage.total_tokens, 0, "kept assistant should have total_tokens=0");
+                assert_eq!(
+                    a.usage.total_tokens, 0,
+                    "kept assistant should have total_tokens=0"
+                );
             }
         }
     }
@@ -1536,7 +1549,10 @@ mod tests {
         let summary = "This is a test summary of the conversation";
         let msg = super::make_summary_message(summary);
         let tokens = estimate_message_tokens(&msg);
-        assert!(tokens > 0, "compaction summary should have non-zero token estimate");
+        assert!(
+            tokens > 0,
+            "compaction summary should have non-zero token estimate"
+        );
         if let Message::Custom(c) = &msg {
             assert!(c.content.contains(summary));
         }

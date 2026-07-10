@@ -13,8 +13,8 @@
 use crate::compaction::{self, CompactionSettings};
 use crate::error::Result;
 use crate::model::{
-    AssistantMessage, ContentBlock, CustomMessage, Message, StopReason, StreamEvent,
-    TextContent, ToolCall, ToolResultMessage, Usage, UserContent, UserMessage,
+    AssistantMessage, ContentBlock, CustomMessage, Message, StopReason, StreamEvent, TextContent,
+    ToolCall, ToolResultMessage, Usage, UserContent, UserMessage,
 };
 use crate::provider::{Context, Provider, StreamOptions, ToolDef};
 use crate::tools::{ToolOutput, ToolRegistry};
@@ -71,20 +71,14 @@ pub enum AgentEvent {
         is_error: bool,
     },
     /// Context compaction started (inline, blocks the current turn).
-    CompactionStarted {
-        reason: String,
-        tokens_before: u64,
-    },
+    CompactionStarted { reason: String, tokens_before: u64 },
     /// Context compaction finished.
     CompactionFinished {
         tokens_after: u64,
         summary_len: usize,
     },
     /// Agent was stopped due to stuck tool call loop.
-    StuckLoop {
-        tool_name: String,
-        count: usize,
-    },
+    StuckLoop { tool_name: String, count: usize },
 }
 
 // ============================================================================
@@ -157,7 +151,8 @@ pub struct Agent {
 impl Agent {
     /// Create a new agent.
     pub fn new(provider: Arc<dyn Provider>, tools: ToolRegistry, config: AgentConfig) -> Self {
-        let system_prompt_tokens = Self::compute_system_prompt_tokens(config.system_prompt.as_deref());
+        let system_prompt_tokens =
+            Self::compute_system_prompt_tokens(config.system_prompt.as_deref());
         Self {
             provider,
             tools,
@@ -330,11 +325,13 @@ impl Agent {
             // 1. Check if we need to compact context before sending
             if let Some(ref settings) = self.compaction_settings {
                 // Rate-limit: skip compaction if we just compacted recently
-                let in_cooldown = self
-                    .last_compaction_turn
-                    .is_some_and(|t| current_turn.saturating_sub(t) < settings.compaction_cooldown_turns);
+                let in_cooldown = self.last_compaction_turn.is_some_and(|t| {
+                    current_turn.saturating_sub(t) < settings.compaction_cooldown_turns
+                });
 
-                if self.consecutive_compaction_failures as usize >= settings.max_consecutive_compactions {
+                if self.consecutive_compaction_failures as usize
+                    >= settings.max_consecutive_compactions
+                {
                     // Thrashing kill-switch: compaction has repeatedly failed to reduce
                     // context below threshold, so stop trying.
                     eprintln!(
@@ -348,7 +345,10 @@ impl Agent {
                         last = self.last_compaction_turn
                     );
                 } else {
-                    let estimated = compaction::estimate_total_tokens(&self.messages, self.cached_system_prompt_tokens);
+                    let estimated = compaction::estimate_total_tokens(
+                        &self.messages,
+                        self.cached_system_prompt_tokens,
+                    );
                     if compaction::should_compact(estimated, settings) {
                         on_event(AgentEvent::CompactionStarted {
                             reason: format!(
@@ -376,10 +376,7 @@ impl Agent {
                                     result.messages_kept
                                 );
                                 self.last_compaction_turn = Some(current_turn);
-                                compaction::apply_compaction(
-                                    &mut self.messages,
-                                    &result,
-                                );
+                                compaction::apply_compaction(&mut self.messages, &result);
                                 self.previous_summary = Some(result.summary.clone());
 
                                 // Track whether compaction actually reduced tokens below threshold.
@@ -401,9 +398,7 @@ impl Agent {
                                 // No compaction needed
                             }
                             Err(e) => {
-                                eprintln!(
-                                    "[zcode] agent::run_loop: compaction FAILED: {e}"
-                                );
+                                eprintln!("[zcode] agent::run_loop: compaction FAILED: {e}");
                                 // Continue without compaction — better than losing the session
                             }
                         }
@@ -590,8 +585,7 @@ impl Agent {
                     let excess = self.recent_tool_calls.len().saturating_sub(window);
                     self.recent_tool_calls.drain(..excess);
                     if self.recent_tool_calls.len() >= window {
-                        let tail = &self.recent_tool_calls
-                            [self.recent_tool_calls.len() - window..];
+                        let tail = &self.recent_tool_calls[self.recent_tool_calls.len() - window..];
                         if tail.iter().all(|t| t.0 == tail[0].0 && t.1 == tail[0].1) {
                             let err_msg = format!(
                                 "Detected stuck loop: '{}' called {} times with same arguments",
@@ -639,7 +633,8 @@ impl Agent {
                         content: "[System note: You've been running tool calls for a while. \
                                   If you're close to done, please wrap up and provide your \
                                   final response. If you still have work to do, continue but \
-                                  aim to finish soon.]".to_string(),
+                                  aim to finish soon.]"
+                            .to_string(),
                         custom_type: "system_note".to_string(),
                         display: false,
                         details: None,
@@ -687,8 +682,10 @@ impl Agent {
 
                     // Replace image blocks with text placeholders before storing in history.
                     // Current turn already sent the real image to the provider.
-                    let history_content: Vec<ContentBlock> = result.content.iter().map(|block| {
-                        match block {
+                    let history_content: Vec<ContentBlock> = result
+                        .content
+                        .iter()
+                        .map(|block| match block {
                             ContentBlock::Image(img) => {
                                 let size_kb = img.data.len() / 1024;
                                 ContentBlock::Text(TextContent::new(format!(
@@ -697,8 +694,8 @@ impl Agent {
                                 )))
                             }
                             other => other.clone(),
-                        }
-                    }).collect();
+                        })
+                        .collect();
 
                     let tool_result_msg = Message::tool_result(ToolResultMessage {
                         tool_call_id: tc.id.clone(),

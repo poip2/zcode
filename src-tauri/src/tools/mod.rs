@@ -327,8 +327,14 @@ mod tests {
         let result = truncate_output(&input, 200);
         // Should contain both head and tail
         assert!(result.contains("AAAA"), "should contain head");
-        assert!(result.contains("ERROR"), "should contain tail with error message");
-        assert!(result.contains("bytes omitted"), "should have truncation notice");
+        assert!(
+            result.contains("ERROR"),
+            "should contain tail with error message"
+        );
+        assert!(
+            result.contains("bytes omitted"),
+            "should have truncation notice"
+        );
     }
 
     #[test]
@@ -340,7 +346,10 @@ mod tests {
         let input = format!("{head}\n{middle}\n{tail}");
         let result = truncate_output(&input, 200);
         assert!(result.contains("Build started"), "head should be visible");
-        assert!(result.contains("error[E0001]"), "tail error should be visible");
+        assert!(
+            result.contains("error[E0001]"),
+            "tail error should be visible"
+        );
     }
 
     #[test]
@@ -348,9 +357,18 @@ mod tests {
         let lines: Vec<String> = (1..=100).map(|i| format!("line {i}")).collect();
         let input = lines.join("\n");
         let result = truncate_by_lines(&input, 10);
-        assert!(result.contains("line 1"), "head: first lines should be present");
-        assert!(result.contains("line 100"), "tail: last lines should be present");
-        assert!(result.contains("lines omitted"), "should show truncation notice");
+        assert!(
+            result.contains("line 1"),
+            "head: first lines should be present"
+        );
+        assert!(
+            result.contains("line 100"),
+            "tail: last lines should be present"
+        );
+        assert!(
+            result.contains("lines omitted"),
+            "should show truncation notice"
+        );
     }
 
     #[test]

@@ -796,9 +796,7 @@ fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
             if c.custom_type == "compaction_summary" || c.custom_type == "system_note" {
                 AnthropicMessage {
                     role: "user",
-                    content: vec![AnthropicContent::Text {
-                        text: &c.content,
-                    }],
+                    content: vec![AnthropicContent::Text { text: &c.content }],
                 }
             } else {
                 AnthropicMessage {

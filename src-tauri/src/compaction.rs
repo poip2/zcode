@@ -515,26 +515,19 @@ fn push_separator(out: &mut String) {
 
 fn append_user_message(out: &mut String, user: &UserMessage) {
     let text = match &user.content {
-        UserContent::Text(t) => t.as_str(),
-        UserContent::Blocks(blocks) => {
-            // Just return — we'll handle below
-            let mut s = String::new();
-            for block in blocks {
-                if let ContentBlock::Text(tc) = block {
+        UserContent::Text(t) => t.as_str().to_string(),
+        UserContent::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(|b| {
+                if let ContentBlock::Text(tc) = b {
                     if !tc.text.is_empty() {
-                        s.push_str(&tc.text);
+                        return Some(tc.text.as_str());
                     }
                 }
-            }
-            if s.is_empty() {
-                return;
-            }
-            // We need to return a &str… let's push directly
-            push_separator(out);
-            out.push_str("[User]: ");
-            out.push_str(&s);
-            return;
-        }
+                None
+            })
+            .collect::<Vec<_>>()
+            .join(""),
     };
 
     if text.is_empty() {
@@ -543,7 +536,7 @@ fn append_user_message(out: &mut String, user: &UserMessage) {
 
     push_separator(out);
     out.push_str("[User]: ");
-    out.push_str(text);
+    out.push_str(&text);
 }
 
 fn append_assistant_message(out: &mut String, assistant: &AssistantMessage) {
@@ -861,7 +854,11 @@ pub async fn maybe_compact(
 
     let kept = &messages[cut_idx..];
     let tokens_after = estimate_message_tokens(&make_summary_message(&summary))
-        .saturating_add(kept.iter().map(estimate_message_tokens).sum::<u64>());
+        .saturating_add(
+            kept.iter()
+                .map(estimate_message_tokens)
+                .fold(0u64, |a, t| a.saturating_add(t)),
+        );
 
     eprintln!(
         "[zcode] compaction: done, summary_len={}, tokens_before={total_tokens}, tokens_after={tokens_after}",

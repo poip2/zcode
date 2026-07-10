@@ -239,10 +239,8 @@ pub const WRITE_TOOL_MAX_BYTES: usize = 100 * 1024 * 1024;
 pub const IMAGE_MAX_BYTES: usize = 4_718_592;
 pub const DEFAULT_BASH_TIMEOUT_SECS: u64 = 120;
 
-/// Lines to keep from the head when truncating with head+tail strategy.
-const HEAD_LINES: usize = 100;
-/// Lines to keep from the tail when truncating with head+tail strategy.
-const TAIL_LINES: usize = 400; // DEFAULT_MAX_LINES - HEAD_LINES
+/// Fraction of max_lines to allocate to the head when truncating with head+tail strategy.
+const HEAD_LINES_FRACTION: usize = 5;
 
 /// Truncate output to max_bytes by keeping head + tail, with a truncation notice in between.
 /// This ensures error messages at the end of long output (build logs, test failures) are visible.
@@ -262,28 +260,29 @@ pub fn truncate_output(output: &str, max_bytes: usize) -> String {
 
     let omitted = output.len() - head.len() - tail.len();
     format!(
-        "{head}\n... [已省略 {} 字节] ...\n{tail}",
+        "{head}\n... [truncated, original {} bytes] ...\n{tail}",
         omitted
     )
 }
 
-/// Truncate output by lines: keep HEAD_LINES from the beginning, TAIL_LINES from the end.
+/// Truncate output by lines: keep head + tail, with a truncation notice in between.
 /// This preserves both context (head) and error messages (tail).
+/// Allocates 20% of max_lines to head and 80% to tail.
 pub fn truncate_by_lines(output: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() <= max_lines {
         return output.to_string();
     }
 
-    let actual_head = HEAD_LINES.min(lines.len());
-    let actual_tail = TAIL_LINES.min(lines.len() - actual_head);
+    let head_count = (max_lines / HEAD_LINES_FRACTION).min(lines.len());
+    let tail_count = (max_lines - head_count).min(lines.len() - head_count);
 
-    let head: Vec<&str> = lines[..actual_head].to_vec();
-    let tail: Vec<&str> = lines[lines.len() - actual_tail..].to_vec();
-    let omitted = lines.len() - actual_head - actual_tail;
+    let head: Vec<&str> = lines[..head_count].to_vec();
+    let tail: Vec<&str> = lines[lines.len() - tail_count..].to_vec();
+    let omitted = lines.len() - head_count - tail_count;
 
     format!(
-        "{}\n... [已省略 {} 行] ...\n{}",
+        "{}\n... [truncated, {} lines total] ...\n{}",
         head.join("\n"),
         omitted,
         tail.join("\n")

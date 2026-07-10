@@ -6,7 +6,6 @@
     loadFile,
     saveFile,
     openFileDialog,
-    reloadCurrentFile,
     getBaseDir,
     allowAssets,
   } from "$lib/tauri/files";

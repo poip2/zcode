@@ -96,7 +96,7 @@ export async function openFileDialog(): Promise<string | null> {
   return null;
 }
 
-export async function reloadCurrentFile(path: string): Promise<void> {
+export async function reloadCurrentFile(path: string, isOwnSave = false): Promise<void> {
   try {
     const absolutePath = await resolvePath(path);
     const content = await readMarkdownFile(absolutePath);
@@ -115,8 +115,9 @@ export async function reloadCurrentFile(path: string): Promise<void> {
 
     await allowAssets(result.assetPaths);
 
-    // Mark as our own save so the watcher doesn't re-trigger a reload loop
-    markSaved(absolutePath);
+    if (isOwnSave) {
+      markSaved(absolutePath);
+    }
 
     document.set({
       filePath: absolutePath,

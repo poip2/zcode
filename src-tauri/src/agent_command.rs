@@ -438,15 +438,7 @@ fn safe_truncate(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         s.to_string()
     } else {
-        let end = if s.is_char_boundary(max_bytes) {
-            max_bytes
-        } else {
-            (0..max_bytes)
-                .rev()
-                .find(|&i| s.is_char_boundary(i))
-                .unwrap_or(0)
-        };
-        format!("{}...", &s[..end])
+        format!("{}...", tools::truncate_at_char_boundary(s, max_bytes))
     }
 }
 

@@ -981,7 +981,18 @@ pub fn apply_compaction(
     messages: &mut Vec<Message>,
     result: &CompactionResult,
 ) {
-    let kept = messages.split_off(messages.len() - result.messages_kept);
+    let mut kept = messages.split_off(messages.len() - result.messages_kept);
+
+    for msg in &mut kept {
+        if let Message::Assistant(assistant) = msg {
+            if assistant.usage.total_tokens > 0 {
+                let mut updated = (**assistant).clone();
+                updated.usage.total_tokens = 0;
+                *msg = Message::Assistant(Arc::new(updated));
+            }
+        }
+    }
+
     messages.clear();
     messages.push(make_summary_message(&result.summary));
     messages.extend(kept);

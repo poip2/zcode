@@ -792,10 +792,19 @@ fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
                 content,
             }
         }
-        Message::Custom(_) => AnthropicMessage {
-            role: "user",
-            content: vec![],
-        },
+        Message::Custom(c) => {
+            if c.custom_type == "compaction_summary" || c.custom_type == "system_note" {
+                AnthropicMessage {
+                    role: "user",
+                    content: vec![AnthropicContent::Text { text: &c.content }],
+                }
+            } else {
+                AnthropicMessage {
+                    role: "user",
+                    content: vec![],
+                }
+            }
+        }
     }
 }
 

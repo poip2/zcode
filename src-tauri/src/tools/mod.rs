@@ -227,8 +227,8 @@ pub fn enforce_cwd_scope(
 // Truncation constants
 // ============================================================================
 
-pub const DEFAULT_MAX_LINES: usize = 2000;
-pub const DEFAULT_MAX_BYTES: usize = 1_000_000;
+pub const DEFAULT_MAX_LINES: usize = 500;
+pub const DEFAULT_MAX_BYTES: usize = 100_000;
 pub const GREP_MAX_LINE_LENGTH: usize = 500;
 pub const DEFAULT_GREP_LIMIT: usize = 100;
 pub const DEFAULT_FIND_LIMIT: usize = 1000;
@@ -239,33 +239,59 @@ pub const WRITE_TOOL_MAX_BYTES: usize = 100 * 1024 * 1024;
 pub const IMAGE_MAX_BYTES: usize = 4_718_592;
 pub const DEFAULT_BASH_TIMEOUT_SECS: u64 = 120;
 
-/// Truncate output to max_bytes with a truncation notice.
+/// Fraction of max_lines to allocate to the head when truncating with head+tail strategy.
+/// 2 = 50% head, 50% tail.
+const HEAD_FRACTION: usize = 2;
+
+/// Estimated byte overhead of the truncation notice inserted between head and tail.
+const TRUNCATION_NOTICE_OVERHEAD: usize = 80;
+
+/// Truncate output to max_bytes by keeping head + tail, with a truncation notice in between.
+/// This ensures error messages at the end of long output (build logs, test failures) are visible.
 pub fn truncate_output(output: &str, max_bytes: usize) -> String {
     if output.len() <= max_bytes {
         return output.to_string();
     }
-    let boundary = max_bytes.saturating_sub(80);
-    if boundary == 0 {
-        return format!("... [truncated, original {} bytes]", output.len());
-    }
-    let truncated = &output[..output.floor_char_boundary(boundary)];
+
+    let half = max_bytes / HEAD_FRACTION;
+    let notice_half = TRUNCATION_NOTICE_OVERHEAD / 2;
+    let head_budget = half.saturating_sub(notice_half);
+    let tail_budget = max_bytes.saturating_sub(half).saturating_sub(notice_half);
+
+    let head_boundary = output.floor_char_boundary(head_budget.min(output.len()));
+    let head = &output[..head_boundary];
+
+    let tail_start = output.len().saturating_sub(tail_budget);
+    let tail = &output[output.floor_char_boundary(tail_start)..];
+
+    let omitted = output.len() - head.len() - tail.len();
     format!(
-        "{truncated}\n... [truncated, original {} bytes]",
-        output.len()
+        "{head}\n... [truncated, {} bytes omitted] ...\n{tail}",
+        omitted
     )
 }
 
-/// Truncate output by lines.
+/// Truncate output by lines: keep head + tail, with a truncation notice in between.
+/// This preserves both context (head) and error messages (tail).
+/// Allocates 50% of max_lines to head and 50% to tail.
 pub fn truncate_by_lines(output: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() <= max_lines {
         return output.to_string();
     }
-    let kept: Vec<&str> = lines.iter().take(max_lines).copied().collect();
+
+    let head_count = (max_lines / HEAD_FRACTION).min(lines.len());
+    let tail_count = (max_lines - head_count).min(lines.len() - head_count);
+
+    let head: Vec<&str> = lines[..head_count].to_vec();
+    let tail: Vec<&str> = lines[lines.len() - tail_count..].to_vec();
+    let omitted = lines.len() - head_count - tail_count;
+
     format!(
-        "{}\n... [truncated, {} lines total]",
-        kept.join("\n"),
-        lines.len()
+        "{}\n... [truncated, {} lines omitted] ...\n{}",
+        head.join("\n"),
+        omitted,
+        tail.join("\n")
     )
 }
 
@@ -278,4 +304,86 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
     }
     let end = s.floor_char_boundary(max_bytes);
     &s[..end]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_output_no_truncation() {
+        let input = "short string";
+        let result = truncate_output(input, 100);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_truncate_output_head_tail_strategy() {
+        // Create a string where the tail contains the error messages.
+        // Budget must be large enough for tail_budget to capture the error text.
+        let body = "A".repeat(300);
+        let tail = "ERROR: something went wrong\nExit code: 1";
+        let input = format!("{body}\n{tail}");
+        let result = truncate_output(&input, 200);
+        // Should contain both head and tail
+        assert!(result.contains("AAAA"), "should contain head");
+        assert!(
+            result.contains("ERROR"),
+            "should contain tail with error message"
+        );
+        assert!(
+            result.contains("bytes omitted"),
+            "should have truncation notice"
+        );
+    }
+
+    #[test]
+    fn test_truncate_output_head_tail_visible() {
+        // Verify both head (context) and tail (errors) are preserved
+        let head = "Build started...\nCompiling src/main.rs...";
+        let middle = "=".repeat(500);
+        let tail = "error[E0001]: failed to compile\n --> src/main.rs:1:1";
+        let input = format!("{head}\n{middle}\n{tail}");
+        let result = truncate_output(&input, 200);
+        assert!(result.contains("Build started"), "head should be visible");
+        assert!(
+            result.contains("error[E0001]"),
+            "tail error should be visible"
+        );
+    }
+
+    #[test]
+    fn test_truncate_by_lines_head_tail() {
+        let lines: Vec<String> = (1..=100).map(|i| format!("line {i}")).collect();
+        let input = lines.join("\n");
+        let result = truncate_by_lines(&input, 10);
+        assert!(
+            result.contains("line 1"),
+            "head: first lines should be present"
+        );
+        assert!(
+            result.contains("line 100"),
+            "tail: last lines should be present"
+        );
+        assert!(
+            result.contains("lines omitted"),
+            "should show truncation notice"
+        );
+    }
+
+    #[test]
+    fn test_truncate_by_lines_no_truncation() {
+        let input = "line1\nline2\nline3";
+        let result = truncate_by_lines(input, 10);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_truncate_output_tiny_budget() {
+        let input = "A".repeat(500);
+        let result = truncate_output(&input, 10);
+        // Should not panic; saturating_sub handles tiny budgets
+        assert!(!result.is_empty());
+        assert!(result.len() <= 100); // Allow for truncation notice
+    }
 }

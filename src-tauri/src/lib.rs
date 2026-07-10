@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_command;
 mod commands;
+pub mod compaction;
 pub mod error;
 pub mod model;
 pub mod provider;

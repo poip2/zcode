@@ -828,7 +828,19 @@ fn convert_message_to_openai<'a>(message: &'a Message) -> Vec<OpenAIMessage<'a>>
                 name: None,
             }]
         }
-        Message::Custom(_) => vec![],
+        Message::Custom(c) => {
+            if c.custom_type == "compaction_summary" || c.custom_type == "system_note" {
+                vec![OpenAIMessage {
+                    role: "user",
+                    content: Some(OpenAIContent::Text(Cow::Owned(c.content.clone()))),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
+                }]
+            } else {
+                vec![]
+            }
+        }
     }
 }
 

@@ -48,6 +48,8 @@ export interface StartAgentTurnArgs {
   currentFile?: string;
   cwd?: string;
   autoApproveWrites?: boolean;
+  /** Explicit context window size in tokens. If omitted, guessed from model name. */
+  contextWindowTokens?: number;
 }
 
 export async function startAgentTurn(args: StartAgentTurnArgs): Promise<void> {
@@ -61,6 +63,7 @@ export async function startAgentTurn(args: StartAgentTurnArgs): Promise<void> {
     currentFile: args.currentFile ?? null,
     cwd: args.cwd ?? null,
     autoApproveWrites: args.autoApproveWrites ?? false,
+    contextWindowTokens: args.contextWindowTokens ?? null,
   });
 }
 

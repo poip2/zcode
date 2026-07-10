@@ -46,7 +46,7 @@ impl Tool for BashTool {
 
     fn description(&self) -> &str {
         "Execute a bash command in the current working directory. Returns stdout and stderr. \
-         Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, \
+         Output is truncated to last 500 lines or 50KB (whichever is hit first). If truncated, \
          full output is saved to a temp file. Optionally provide a timeout in seconds."
     }
 

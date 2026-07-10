@@ -11,6 +11,9 @@
 //!   event names: `agent://{session_id}/token`, etc.
 //! - Dangerous tools (write, edit, bash) wait for user approval via oneshot
 //!   channels stored in the session's approval map.
+//! - Write/edit operations targeting the user's currently-open file skip the
+//!   confirmation dialog (smart auto-approve). The session's `current_file`
+//!   and `cwd` are updated each turn from the frontend.
 //! - Read-only tools (read, grep, find, ls) execute immediately.
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
@@ -99,9 +102,9 @@ pub(crate) struct SessionData {
     /// Map of call_id → oneshot sender for pending dangerous tool approvals.
     pub(crate) pending_approvals: Arc<Mutex<HashMap<String, PendingApproval>>>,
     pub(crate) auto_approve: Arc<AtomicBool>,
-    /// Current file open in the editor (updated each turn).
+    /// Current file open in the editor (updated each turn for smart auto-approve).
     pub(crate) current_file: Arc<std::sync::Mutex<Option<String>>>,
-    /// Working directory (updated each turn).
+    /// Working directory (updated each turn from the frontend).
     pub(crate) cwd: Arc<std::sync::Mutex<PathBuf>>,
 }
 

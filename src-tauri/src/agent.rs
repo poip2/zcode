@@ -365,6 +365,7 @@ impl Agent {
                             provider,
                             settings,
                             Some(estimated),
+                            self.cached_system_prompt_tokens,
                         )
                         .await
                         {

@@ -866,6 +866,7 @@ pub async fn maybe_compact(
     provider: Arc<dyn Provider>,
     settings: &CompactionSettings,
     precomputed_tokens: Option<u64>,
+    system_prompt_tokens: u64,
 ) -> Result<Option<CompactionResult>> {
     if messages.is_empty() {
         return Ok(None);
@@ -935,7 +936,8 @@ pub async fn maybe_compact(
     }
 
     let kept = &messages[cut_idx..];
-    let tokens_after = estimate_message_tokens(&make_summary_message(&summary))
+    let tokens_after = system_prompt_tokens
+        .saturating_add(estimate_message_tokens(&make_summary_message(&summary)))
         .saturating_add(
             kept.iter()
                 .map(estimate_message_tokens)

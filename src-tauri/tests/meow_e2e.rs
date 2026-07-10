@@ -4,18 +4,17 @@
 //! Run: cargo test --test meow_e2e -- --nocapture
 
 use futures::StreamExt;
+use std::path::Path;
 use zcode_lib::model::{Message, StreamEvent, UserContent, UserMessage};
 use zcode_lib::provider::{Context, Provider, StreamOptions};
 use zcode_lib::providers::OpenAIProvider;
 use zcode_lib::skills;
-use std::path::Path;
 
 const MODEL: &str = "deepseek-v4-flash";
 const BASE_URL: &str = "https://api.deepseek.com/v1/chat/completions";
 
 fn get_api_key() -> String {
-    std::env::var("ZCODE_TEST_API_KEY")
-        .expect("ZCODE_TEST_API_KEY env var must be set")
+    std::env::var("ZCODE_TEST_API_KEY").expect("ZCODE_TEST_API_KEY env var must be set")
 }
 
 #[tokio::test]
@@ -59,8 +58,7 @@ async fn test_meow_skill_injection() -> zcode_lib::error::Result<()> {
     );
 
     // 3. Send message to model
-    let provider =
-        OpenAIProvider::new("deepseek", MODEL, None::<String>, Some(BASE_URL))?;
+    let provider = OpenAIProvider::new("deepseek", MODEL, None::<String>, Some(BASE_URL))?;
 
     let messages = vec![Message::User(UserMessage {
         content: UserContent::Text("你好，你是谁？".to_string()),
@@ -77,10 +75,8 @@ async fn test_meow_skill_injection() -> zcode_lib::error::Result<()> {
         max_tokens: Some(150),
         ..Default::default()
     };
-    opts.headers.insert(
-        "Authorization".into(),
-        format!("Bearer {}", get_api_key()),
-    );
+    opts.headers
+        .insert("Authorization".into(), format!("Bearer {}", get_api_key()));
 
     eprintln!("\n--- Streaming with '喵' skill injected ---");
     let mut stream = provider.stream(&context, &opts).await?;

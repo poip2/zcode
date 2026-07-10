@@ -416,8 +416,8 @@ fn load_skill_state(user_config_dir: &Path) -> SkillState {
 
 fn save_skill_state(user_config_dir: &Path, state: &SkillState) -> std::io::Result<()> {
     std::fs::create_dir_all(user_config_dir)?;
-    let json = serde_json::to_string_pretty(state)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(state).map_err(|e| std::io::Error::other(e.to_string()))?;
     std::fs::write(skill_state_path(user_config_dir), json)
 }
 
@@ -593,7 +593,9 @@ pub async fn start_agent_turn(
     auto_approve_writes: Option<bool>,
 ) -> Result<(), String> {
     eprintln!("[zcode] start_agent_turn: session={session_id}, base_url={base_url}, model={model}, msg_len={}", user_message.len());
-    eprintln!("[zcode] start_agent_turn: tools={allowed_tools:?}, auto_approve={auto_approve_writes:?}");
+    eprintln!(
+        "[zcode] start_agent_turn: tools={allowed_tools:?}, auto_approve={auto_approve_writes:?}"
+    );
 
     if user_message.trim().is_empty() {
         eprintln!("[zcode] start_agent_turn: ERROR empty user message");
@@ -639,8 +641,11 @@ pub async fn start_agent_turn(
 
     // Build system prompt
     let user_config_dir = dirs::config_dir().map(|d| d.join("zcode"));
-    let system_prompt =
-        build_system_prompt(&work_dir, current_file.as_deref(), user_config_dir.as_deref());
+    let system_prompt = build_system_prompt(
+        &work_dir,
+        current_file.as_deref(),
+        user_config_dir.as_deref(),
+    );
     eprintln!(
         "[zcode] start_agent_turn: system_prompt len={}, cwd={}",
         system_prompt.len(),
@@ -774,13 +779,14 @@ pub async fn start_agent_turn(
         // The sub-task returns (result, agent) so we can always restore the
         // agent to the session afterwards.
         // Track skill names per tool call ID for ToolResult propagation
-        let skill_names = Arc::new(std::sync::Mutex::new(
-            std::collections::HashMap::<String, Option<String>>::new(),
-        ));
+        let skill_names = Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
+            String,
+            Option<String>,
+        >::new()));
         let run_task = tokio::spawn({
             let skill_names = Arc::clone(&skill_names);
             async move {
-            let result = agent
+                let result = agent
                 .run(user_message, move |event| {
                     let a = app_t.clone();
                     let pfx = &event_prefix;
@@ -866,8 +872,8 @@ pub async fn start_agent_turn(
                     }
                 })
                 .await;
-            (result, agent)
-        }
+                (result, agent)
+            }
         });
 
         match run_task.await {
@@ -983,5 +989,3 @@ pub async fn approve_tool_call(
         Err(format!("No pending tool call with id: {call_id}"))
     }
 }
-
-

@@ -722,7 +722,7 @@ fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
         if let Message::ToolResult(tr) = msg {
             // If the previous message in the output is already a user message,
             // append this tool_result into it (collapse consecutive results).
-            let is_tool_result_user = result.last().map_or(false, |m| {
+            let is_tool_result_user = result.last().is_some_and(|m| {
                 m.role == "user"
                     && m.content
                         .iter()

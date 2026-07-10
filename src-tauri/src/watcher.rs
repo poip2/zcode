@@ -147,10 +147,10 @@ pub fn start_skills_watching(app: AppHandle, cwd: String) -> Result<(), String> 
                         let path = &e.path;
                         if path.is_file() {
                             path.file_name()
-                                .map_or(false, |n| n == "SKILL.md")
+                                .is_some_and(|n| n == "SKILL.md")
                         } else {
                             path.parent()
-                                .map_or(false, |p| p.file_name().map_or(false, |n| n == "skills"))
+                                .is_some_and(|p| p.file_name().is_some_and(|n| n == "skills"))
                         }
                     });
                     if has_skill_change {

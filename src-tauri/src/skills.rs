@@ -32,12 +32,10 @@ pub struct Skill {
 
 /// Add new built-in skills here. Each entry is (dir_name, SKILL.md_content).
 /// The file lives under `src-tauri/skills/<dir_name>/SKILL.md`.
-const BUILTIN_SKILLS: &[(&str, &str)] = &[
-    (
-        "skill-creator",
-        include_str!("../skills/skill-creator/SKILL.md"),
-    ),
-];
+const BUILTIN_SKILLS: &[(&str, &str)] = &[(
+    "skill-creator",
+    include_str!("../skills/skill-creator/SKILL.md"),
+)];
 
 /// Load skills from project and user directories.
 /// Loading order determines priority: project > user > builtin.
@@ -348,17 +346,28 @@ Do something specific.
 
         let (skills, diags) = load_skills(tmp.path(), None, &[]);
         eprintln!("Diagnostics: {:?}", diags);
-        eprintln!("Skills found: {:?}", skills.iter().map(|s| &s.name).collect::<Vec<_>>());
+        eprintln!(
+            "Skills found: {:?}",
+            skills.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
         // At least 2: one builtin (skill-creator) + one project (test-skill)
-        assert!(skills.len() >= 2, "Expected at least 2 skills, got {}", skills.len());
+        assert!(
+            skills.len() >= 2,
+            "Expected at least 2 skills, got {}",
+            skills.len()
+        );
         // test-skill should be present (builtin loaded first, project can shadow)
-        let ts = skills.iter().find(|s| s.name == "test-skill")
+        let ts = skills
+            .iter()
+            .find(|s| s.name == "test-skill")
             .expect("test-skill should be in the list");
         assert_eq!(ts.description, "A test skill for verification");
         assert!(!ts.disable_model_invocation);
         assert_eq!(ts.source, "project");
         // skill-creator builtin should be present too
-        let sc = skills.iter().find(|s| s.name == "skill-creator")
+        let sc = skills
+            .iter()
+            .find(|s| s.name == "skill-creator")
             .expect("skill-creator should be in the list");
         assert_eq!(sc.source, "builtin");
     }
@@ -405,31 +414,35 @@ Do something specific.
 #[test]
 fn test_skill_state_persistence_roundtrip() {
     use serde::{Deserialize, Serialize};
-    
+
     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    struct SkillState { disabled: Vec<String> }
-    
+    struct SkillState {
+        disabled: Vec<String>,
+    }
+
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     let state_path = dir.join("skill-state.json");
-    
+
     // 1. No state file → default (all active)
     let state: SkillState = std::fs::read_to_string(&state_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     assert!(state.disabled.is_empty());
-    
+
     // 2. Disable "test-skill"
-    let state = SkillState { disabled: vec!["test-skill".into()] };
+    let state = SkillState {
+        disabled: vec!["test-skill".into()],
+    };
     std::fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
-    
+
     let loaded: SkillState = std::fs::read_to_string(&state_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap();
     assert_eq!(loaded.disabled, vec!["test-skill"]);
-    
+
     // 3. Enable "test-skill" again
     std::fs::write(&state_path, r#"{"disabled":[]}"#).unwrap();
     let loaded: SkillState = std::fs::read_to_string(&state_path)
@@ -437,7 +450,7 @@ fn test_skill_state_persistence_roundtrip() {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap();
     assert!(loaded.disabled.is_empty());
-    
+
     eprintln!("✅ Skill state persistence roundtrip OK");
 }
 

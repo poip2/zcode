@@ -12,7 +12,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command as TokioCommand;
+use tokio::process::{Child, Command as TokioCommand};
 use tokio::time::timeout;
 
 /// Input parameters for the bash tool.
@@ -35,6 +35,76 @@ impl BashTool {
     }
 }
 
+/// PowerShell binaries to try, in preference order. `pwsh` (PowerShell 7+)
+/// defaults to UTF-8; `powershell.exe` (Windows PowerShell 5.1, ships on
+/// every Windows box) is the fallback and needs an explicit UTF-8 override.
+#[cfg(windows)]
+const WINDOWS_SHELLS: [&str; 2] = ["pwsh", "powershell.exe"];
+
+/// Wrap the user command so that:
+/// - console I/O is forced to UTF-8 (Windows PowerShell 5.1 otherwise
+///   decodes/encodes with the system code page and mangles non-ASCII text,
+///   e.g. Chinese filenames/output)
+/// - the PowerShell host exits with the same code as the last native
+///   command it ran (`powershell -Command` otherwise returns 0 even if the
+///   wrapped command failed, unless the script ends with an explicit `exit`)
+#[cfg(windows)]
+fn wrap_windows_command(command: &str) -> String {
+    format!(
+        "$OutputEncoding = [System.Text.Encoding]::UTF8\n\
+         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+         {command}\n\
+         if ($LASTEXITCODE -ne $null) {{ exit $LASTEXITCODE }}"
+    )
+}
+
+#[cfg(windows)]
+use std::io::ErrorKind;
+
+#[cfg(windows)]
+fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
+    let wrapped = wrap_windows_command(command);
+    let mut last_err = None;
+    for shell in WINDOWS_SHELLS {
+        match TokioCommand::new(shell)
+            .args(["-NoProfile", "-NonInteractive", "-Command", &wrapped])
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => return Ok(child),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                last_err = Some(e);
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        std::io::Error::new(
+            ErrorKind::NotFound,
+            "neither pwsh nor powershell.exe found in PATH",
+        )
+    }))
+}
+
+#[cfg(not(windows))]
+fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
+    TokioCommand::new("bash")
+        .arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        // New process group so a timeout kill takes out the whole subtree
+        // (pipelines, backgrounded children), not just the bash process.
+        .process_group(0)
+        .spawn()
+}
+
 #[async_trait]
 impl Tool for BashTool {
     fn name(&self) -> &str {
@@ -45,18 +115,39 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Execute a bash command in the current working directory. Returns stdout and stderr. \
-         Output is truncated to last 500 lines or 50KB (whichever is hit first). If truncated, \
-         full output is saved to a temp file. Optionally provide a timeout in seconds."
+        if cfg!(windows) {
+            "Execute a shell command in the current working directory. Runs via PowerShell on \
+             Windows (pwsh if available, else Windows PowerShell) — use PowerShell syntax, not \
+             bash. Examples:\n\
+             - list files incl. hidden: Get-ChildItem -Force\n\
+             - find by name: Get-ChildItem -Recurse -Filter *.py\n\
+             - grep-like search: Select-String -Path *.txt -Pattern 'TODO'\n\
+             - filter processes: Get-Process | Where-Object { $_.ProcessName -like '*python*' }\n\
+             - set env var: $env:FOO = 'bar'\n\
+             - chain commands: use ; not &&\n\
+             Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
+             (whichever is hit first). If truncated, full output is saved to a temp file. \
+             Optionally provide a timeout in seconds."
+        } else {
+            "Execute a bash command in the current working directory. Returns stdout and stderr. \
+             Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
+             truncated, full output is saved to a temp file. Optionally provide a timeout in \
+             seconds."
+        }
     }
 
     fn parameters(&self) -> serde_json::Value {
+        let command_desc = if cfg!(windows) {
+            "PowerShell command to execute"
+        } else {
+            "Bash command to execute"
+        };
         serde_json::json!({
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "Bash command to execute"
+                    "description": command_desc
                 },
                 "timeout": {
                     "type": "integer",
@@ -82,14 +173,7 @@ impl Tool for BashTool {
 
         let timeout_secs = input.timeout.unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
-        let child = TokioCommand::new("bash")
-            .arg("-c")
-            .arg(&input.command)
-            .current_dir(&self.cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+        let child = spawn_shell(&self.cwd, &input.command)
             .map_err(|e| Error::tool("bash", format!("Failed to execute command: {e}")))?;
 
         let pid = child.id();
@@ -99,15 +183,18 @@ impl Tool for BashTool {
                 Ok(Ok(out)) => out,
                 Ok(Err(e)) => return Err(Error::tool("bash", format!("Command failed: {e}"))),
                 Err(_) => {
-                    // Kill on timeout using stored PID
                     if let Some(pid) = pid {
                         let _ = if cfg!(unix) {
+                            // Negative pid targets the whole process group
+                            // created via `.process_group(0)` above.
                             std::process::Command::new("kill")
-                                .args(["-9", &pid.to_string()])
+                                .args(["-9", &format!("-{pid}")])
                                 .status()
                         } else {
+                            // /T kills the whole process tree, not just the
+                            // PowerShell host.
                             std::process::Command::new("taskkill")
-                                .args(["/PID", &pid.to_string(), "/F"])
+                                .args(["/PID", &pid.to_string(), "/T", "/F"])
                                 .status()
                         };
                     }

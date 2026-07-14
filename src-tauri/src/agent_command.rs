@@ -246,7 +246,9 @@ pub async fn clear_session(
     }
     let mut map = state.sessions.lock().await;
     if let Some(sd) = map.get_mut(&session_key) {
-        sd.agent = None;
+        if let Some(ref mut agent) = sd.agent {
+            agent.clear_messages();
+        }
     }
     Ok(())
 }
@@ -902,12 +904,17 @@ pub async fn start_agent_turn(
 
         let mut agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
 
-        // Seed agent with existing conversation history from disk (first turn only)
+        // Seed agent with existing conversation history from disk (first turn only).
+        // The current user message was just appended to the JSONL above;
+        // agent.run() will push it into history itself, so skip it here.
         if let Ok(history) = crate::agent_command::load_session_messages(session_id.clone()) {
-            let history_messages: Vec<Message> = history
+            let mut history_messages: Vec<Message> = history
                 .iter()
                 .filter_map(chat_message_to_message)
                 .collect();
+            if matches!(history_messages.last(), Some(Message::User(_))) {
+                history_messages.pop();
+            }
             if !history_messages.is_empty() {
                 eprintln!(
                     "[zcode] start_agent_turn: seeding {} history messages for session={session_id}",

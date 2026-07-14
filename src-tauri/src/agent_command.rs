@@ -174,7 +174,7 @@ struct GuardedTool {
 impl GuardedTool {
     fn is_dangerous(&self) -> bool {
         let name = self.inner.name();
-        name == "write" || name == "edit" || name == "bash"
+        name == "write" || name == "edit" || name == "shell"
     }
 
     /// Returns true when the tool's target path matches the currently-open file.
@@ -328,7 +328,7 @@ fn build_confirmation_summary(tool_name: &str, input: &serde_json::Value) -> Str
                 new_preview.replace('\n', "\n+ ")
             )
         }
-        "bash" => {
+        "shell" => {
             let cmd = input
                 .get("command")
                 .and_then(|v| v.as_str())
@@ -351,7 +351,7 @@ fn build_confirmation_details(tool_name: &str, input: &serde_json::Value) -> ser
             "oldText": input.get("oldText"),
             "newText": input.get("newText"),
         }),
-        "bash" => serde_json::json!({
+        "shell" => serde_json::json!({
             "command": input.get("command"),
             "timeout": input.get("timeout"),
         }),
@@ -383,7 +383,7 @@ fn build_guarded_registry(
     for name in tool_names {
         let tool: Box<dyn Tool> = match *name {
             "read" => Box::new(ReadTool::new(cwd)),
-            "bash" => Box::new(BashTool::new(cwd)),
+            "shell" => Box::new(BashTool::new(cwd)),
             "edit" => Box::new(EditTool::new(cwd)),
             "write" => Box::new(WriteTool::new(cwd)),
             "grep" => Box::new(GrepTool::new(cwd)),
@@ -695,7 +695,7 @@ pub async fn start_agent_turn(
     let mut map = sessions.lock().await;
 
     let allowed_tools_for_rebuild: Vec<String> = if allowed_tools.is_empty() {
-        vec!["read", "write", "edit", "bash", "grep", "find", "ls"]
+        vec!["read", "write", "edit", "shell", "grep", "find", "ls"]
             .into_iter()
             .map(|s| s.to_string())
             .collect()

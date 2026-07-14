@@ -14,7 +14,7 @@ export interface AIProviderSettings {
   model: string;
   /** De-identified key stored locally; real key in keychain */
   maskedApiKey?: string;
-  /** Auto-approve write/edit/bash operations without confirmation */
+  /** Auto-approve write/edit/shell operations without confirmation */
   autoApproveWrites?: boolean;
 }
 

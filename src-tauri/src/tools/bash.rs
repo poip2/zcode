@@ -51,8 +51,8 @@ const WINDOWS_SHELLS: [&str; 2] = ["pwsh", "powershell.exe"];
 #[cfg(windows)]
 fn wrap_windows_command(command: &str) -> String {
     format!(
-        "$OutputEncoding = [System.Text.Encoding]::UTF8\n\
-         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+        "$OutputEncoding = [System.Text.UTF8Encoding]::new(`$false)\n\
+         [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(`$false)\n\
          {command}\n\
          if ($LASTEXITCODE -ne $null) {{ exit $LASTEXITCODE }}"
     )
@@ -108,10 +108,10 @@ fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
 #[async_trait]
 impl Tool for BashTool {
     fn name(&self) -> &str {
-        "bash"
+        "shell"
     }
     fn label(&self) -> &str {
-        "bash"
+        "shell"
     }
 
     fn description(&self) -> &str {
@@ -174,14 +174,14 @@ impl Tool for BashTool {
         let timeout_secs = input.timeout.unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
         let child = spawn_shell(&self.cwd, &input.command)
-            .map_err(|e| Error::tool("bash", format!("Failed to execute command: {e}")))?;
+            .map_err(|e| Error::tool("shell", format!("Failed to execute command: {e}")))?;
 
         let pid = child.id();
         let output_future = child.wait_with_output();
         let output = if timeout_secs > 0 {
             match timeout(Duration::from_secs(timeout_secs), output_future).await {
                 Ok(Ok(out)) => out,
-                Ok(Err(e)) => return Err(Error::tool("bash", format!("Command failed: {e}"))),
+                Ok(Err(e)) => return Err(Error::tool("shell", format!("Command failed: {e}"))),
                 Err(_) => {
                     if let Some(pid) = pid {
                         let _ = if cfg!(unix) {
@@ -199,7 +199,7 @@ impl Tool for BashTool {
                         };
                     }
                     return Err(Error::tool(
-                        "bash",
+                        "shell",
                         format!("Command timed out after {timeout_secs}s"),
                     ));
                 }
@@ -207,7 +207,7 @@ impl Tool for BashTool {
         } else {
             output_future
                 .await
-                .map_err(|e| Error::tool("bash", format!("Command failed: {e}")))?
+                .map_err(|e| Error::tool("shell", format!("Command failed: {e}")))?
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();

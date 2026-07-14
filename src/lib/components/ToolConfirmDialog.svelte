@@ -54,7 +54,7 @@
   );
 
   let commandPreview = $derived(
-    confirmation.toolName === "bash"
+    confirmation.toolName === "shell"
       ? String(confirmation.details.command ?? "")
       : "",
   );
@@ -130,7 +130,7 @@
         </div>
       {/if}
 
-      <!-- Command preview for bash -->
+      <!-- Command preview for shell -->
       {#if commandPreview}
         <div class="command-section">
           <span class="detail-label">Command</span>
@@ -146,7 +146,7 @@
           checked={autoApproveWrites}
           onchange={(e) => onAutoApproveChange?.((e.target as HTMLInputElement).checked)}
         />
-        <span>Auto-approve future write/edit/bash operations</span>
+        <span>Auto-approve future write/edit/shell operations</span>
       </label>
 
       <div class="confirm-actions">

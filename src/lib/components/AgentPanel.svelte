@@ -138,7 +138,6 @@
 
   function toggleHistory() {
     showHistory = !showHistory;
-    console.log('[AgentPanel] toggleHistory ->', showHistory);
     if (showHistory) {
       loadSessionList();
       searchQuery = "";
@@ -298,6 +297,7 @@
   }
 </script>
 
+<svelte:window onkeydown={(e) => e.key === 'Escape' && showHistory && (showHistory = false)} />
 <div class="agent-panel">
   <!-- ============================================================== -->
   <!-- Header: dropdown title + actions                               -->
@@ -423,7 +423,6 @@
       <div
         class="history-backdrop"
         onclick={toggleHistory}
-        onkeydown={(e) => e.key === "Escape" && (showHistory = false)}
         role="presentation"
       ></div>
       <div class="history-flyout">

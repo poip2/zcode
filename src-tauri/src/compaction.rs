@@ -1198,8 +1198,8 @@ mod tests {
         // Cuts should only happen at User or text-only Assistant boundaries
         let messages = vec![
             make_user_msg("do something"),
-            make_tool_call_assistant("bash", "ls"),
-            make_tool_result("bash", "file1.txt\nfile2.txt", false),
+            make_tool_call_assistant("shell", "ls"),
+            make_tool_result("shell", "file1.txt\nfile2.txt", false),
             make_assistant_msg(
                 "done",
                 Usage {
@@ -1230,8 +1230,8 @@ mod tests {
         // Must NOT cut at the mixed assistant (has tool calls)
         let messages = vec![
             make_user_msg("do something"),
-            make_tool_call_assistant("bash", "ls"),
-            make_tool_result("bash", "output", false),
+            make_tool_call_assistant("shell", "ls"),
+            make_tool_result("shell", "output", false),
             make_assistant_msg(
                 "all done",
                 Usage {

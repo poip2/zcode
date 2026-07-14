@@ -82,7 +82,7 @@ function createSession(sessionId: string) {
       console.log("[tool-call payload]", JSON.stringify(event.payload));
       const { callId, toolName, skillName } = event.payload;
 
-      const dangerousTools = ["write", "edit", "bash"];
+      const dangerousTools = ["write", "edit", "shell"];
       let initialContent: string;
       if (skillName) {
         initialContent = `📋 Reading skill: \`${skillName}\`…`;
@@ -237,7 +237,7 @@ function createSession(sessionId: string) {
     const args: StartAgentTurnArgs = {
       sessionId,
       userMessage,
-      allowedTools: ["read", "write", "edit", "bash", "grep", "find", "ls"],
+      allowedTools: ["read", "write", "edit", "shell", "grep", "find", "ls"],
       baseUrl: settings.baseUrl,
       model: settings.model,
       providerName: settings.providerName,

@@ -139,7 +139,7 @@ impl ToolRegistry {
         for name in enabled {
             match *name {
                 "read" => tools.push(Box::new(ReadTool::new(cwd))),
-                "bash" => tools.push(Box::new(BashTool::new(cwd))),
+                "shell" => tools.push(Box::new(BashTool::new(cwd))),
                 "edit" => tools.push(Box::new(EditTool::new(cwd))),
                 "write" => tools.push(Box::new(WriteTool::new(cwd))),
                 "grep" => tools.push(Box::new(GrepTool::new(cwd))),

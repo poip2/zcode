@@ -347,4 +347,7 @@ export function closeAgentSession(sessionId: string) {
   if (activeSessionId === sessionId) {
     activeSessionId = null;
   }
+  invoke("close_session", { sessionKey: sessionId }).catch((err) => {
+    console.error("Failed to close Rust-side session:", err);
+  });
 }

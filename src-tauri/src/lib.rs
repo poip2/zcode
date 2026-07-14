@@ -52,6 +52,7 @@ pub fn run() {
             agent_command::load_session_messages,
             agent_command::resolve_session_key,
             agent_command::clear_session,
+            agent_command::close_session,
             watcher::start_watching,
             watcher::stop_watching,
             watcher::start_skills_watching,

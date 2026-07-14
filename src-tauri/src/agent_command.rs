@@ -23,6 +23,7 @@ use crate::provider::StreamOptions;
 use crate::settings;
 use crate::skills;
 use crate::tools::{self, Tool, ToolEffects, ToolOutput, ToolRegistry};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -30,7 +31,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
@@ -193,6 +193,12 @@ fn session_file_path(session_key: &str) -> PathBuf {
 }
 
 static SESSIONS_DIR_CREATED: AtomicBool = AtomicBool::new(false);
+static NEXT_MSG_ID: AtomicU64 = AtomicU64::new(0);
+
+fn next_msg_id(role: &str) -> String {
+    let id = NEXT_MSG_ID.fetch_add(1, Ordering::Relaxed);
+    format!("{role}-{id}")
+}
 
 /// Append a single message to the session JSONL file (append-only).
 /// Only user/assistant messages are persisted; tool/error messages are silently skipped.
@@ -716,6 +722,18 @@ fn tool_result_summary(content: &[ContentBlock]) -> String {
     "(non-text result)".to_string()
 }
 
+/// Remove a session's in-memory state from the SessionManager.
+/// Called by the frontend when switching away from a file session.
+#[tauri::command]
+pub async fn close_session(
+    session_key: String,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<(), String> {
+    let mut map = state.sessions.lock().await;
+    map.remove(&session_key);
+    Ok(())
+}
+
 // ============================================================================
 // Command: start_agent_turn
 // ============================================================================
@@ -758,7 +776,7 @@ pub async fn start_agent_turn(
     let _ = append_session_message(
         &session_id,
         &ChatMessage {
-            id: format!("user-{}", chrono::Utc::now().timestamp_millis()),
+            id: next_msg_id("user"),
             role: "user".to_string(),
             content: user_message.clone(),
             input_tokens: None,
@@ -1125,7 +1143,7 @@ pub async fn start_agent_turn(
                             let _ = append_session_message(
                                 &session_id_t,
                                 &ChatMessage {
-                                    id: format!("assistant-{}", chrono::Utc::now().timestamp_millis()),
+                                    id: next_msg_id("assistant"),
                                     role: "assistant".to_string(),
                                     content: assistant_text,
                                     input_tokens: Some(msg.usage.input),

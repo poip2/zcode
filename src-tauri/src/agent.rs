@@ -173,9 +173,13 @@ impl Agent {
         &self.messages
     }
 
-    /// Clear message history.
+    /// Clear message history and all associated compaction/loop-detection state.
     pub fn clear_messages(&mut self) {
         self.messages.clear();
+        self.previous_summary = None;
+        self.last_compaction_turn = None;
+        self.consecutive_compaction_failures = 0;
+        self.recent_tool_calls.clear();
     }
 
     /// Add a message to history.

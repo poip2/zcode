@@ -18,9 +18,9 @@
     onClose: () => void;
   } = $props();
 
-  // Initialized in onMount — sessionId is constant for this component's lifetime
-  // (the component is destroyed/recreated by the parent's {#if}, not kept alive
-  // across prop changes, so reading the prop once at init is correct).
+  // Session key resolves reactively from filePath via $effect.
+  // The component is destroyed/recreated by the parent's {#if} on panel open/close,
+  // but filePath can also change while the panel stays open (switching tabs).
   let sessionId = $state("scratch");
   let session: AgentSession | undefined;
 

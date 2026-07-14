@@ -41,6 +41,7 @@ interface SessionState {
 // ============================================================================
 
 const sessions = new Map<string, ReturnType<typeof createSession>>();
+let activeSessionId: string | null = null;
 
 function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   const state = writable<SessionState>({
@@ -312,6 +313,11 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
 // ============================================================================
 
 export async function getAgentSession(sessionId: string) {
+  if (activeSessionId && activeSessionId !== sessionId) {
+    closeAgentSession(activeSessionId);
+  }
+  activeSessionId = sessionId;
+
   if (sessions.has(sessionId)) return sessions.get(sessionId)!;
 
   // Load persisted history from disk
@@ -329,11 +335,7 @@ export async function getAgentSession(sessionId: string) {
 
 export async function resolveSessionKey(filePath: string | null): Promise<string> {
   if (!filePath) return "scratch";
-  try {
-    return await invoke<string>("resolve_session_key", { filePath });
-  } catch {
-    return "scratch";
-  }
+  return await invoke<string>("resolve_session_key", { filePath });
 }
 
 export function closeAgentSession(sessionId: string) {
@@ -341,5 +343,8 @@ export function closeAgentSession(sessionId: string) {
   if (session) {
     session.cleanup();
     sessions.delete(sessionId);
+  }
+  if (activeSessionId === sessionId) {
+    activeSessionId = null;
   }
 }

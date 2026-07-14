@@ -144,10 +144,6 @@ pub struct ChatMessage {
     role: String,
     content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tool_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_tool_error: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     output_tokens: Option<u64>,
@@ -177,23 +173,26 @@ fn chat_message_to_message(msg: &ChatMessage) -> Option<Message> {
 
 /// Compute a stable session key from a file path.
 /// Uses dunce::canonicalize + sha256(hex, first 16 chars).
-fn compute_session_key(file_path: &str) -> Result<String, String> {
+fn compute_session_key(file_path: &str) -> String {
     let path = Path::new(file_path);
     let canonical = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hex = format!("{:x}", hasher.finalize());
-    Ok(hex[..16].to_string())
+    hex[..16].to_string()
 }
 
 /// Filesystem path for a session's JSONL file.
 fn session_file_path(session_key: &str) -> PathBuf {
     dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
         .join("zcode")
         .join("sessions")
         .join(format!("{session_key}.jsonl"))
 }
+
+static SESSIONS_DIR_CREATED: AtomicBool = AtomicBool::new(false);
 
 /// Append a single message to the session JSONL file (append-only).
 /// Only user/assistant messages are persisted; tool/error messages are silently skipped.
@@ -202,8 +201,11 @@ fn append_session_message(session_key: &str, msg: &ChatMessage) -> std::io::Resu
         return Ok(());
     }
     let path = session_file_path(session_key);
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
+    if !SESSIONS_DIR_CREATED.load(Ordering::Relaxed) {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        SESSIONS_DIR_CREATED.store(true, Ordering::Relaxed);
     }
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -230,14 +232,21 @@ pub fn load_session_messages(session_key: String) -> Result<Vec<ChatMessage>, St
 
 #[tauri::command]
 pub fn resolve_session_key(file_path: String) -> Result<String, String> {
-    compute_session_key(&file_path)
+    Ok(compute_session_key(&file_path))
 }
 
 #[tauri::command]
-pub fn clear_session(session_key: String) -> Result<(), String> {
+pub async fn clear_session(
+    session_key: String,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<(), String> {
     let path = session_file_path(&session_key);
     if path.exists() {
         fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    let mut map = state.sessions.lock().await;
+    if let Some(sd) = map.get_mut(&session_key) {
+        sd.agent = None;
     }
     Ok(())
 }
@@ -750,8 +759,6 @@ pub async fn start_agent_turn(
             id: format!("user-{}", chrono::Utc::now().timestamp_millis()),
             role: "user".to_string(),
             content: user_message.clone(),
-            tool_name: None,
-            is_tool_error: None,
             input_tokens: None,
             output_tokens: None,
             timestamp: chrono::Utc::now().timestamp_millis(),
@@ -1114,8 +1121,6 @@ pub async fn start_agent_turn(
                                     id: format!("assistant-{}", chrono::Utc::now().timestamp_millis()),
                                     role: "assistant".to_string(),
                                     content: assistant_text,
-                                    tool_name: None,
-                                    is_tool_error: None,
                                     input_tokens: Some(msg.usage.input),
                                     output_tokens: Some(msg.usage.output),
                                     timestamp: chrono::Utc::now().timestamp_millis(),

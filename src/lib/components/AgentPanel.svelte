@@ -119,8 +119,8 @@
       return;
     }
 
-    // Close current session listeners, open the new one
-    session = await getAgentSession(key);
+    // Close current session listeners, open the new one (pass pre-loaded msgs to avoid re-reading)
+    session = await getAgentSession(key, msgs);
     unsubMessages?.();
     unsubMessages = session.state.subscribe((s: any) => {
       messages = s.messages;

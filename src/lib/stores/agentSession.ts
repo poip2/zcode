@@ -339,7 +339,7 @@ export async function loadSessionMessages(sessionKey: string): Promise<ChatMessa
   }
 }
 
-export async function getAgentSession(sessionId: string) {
+export async function getAgentSession(sessionId: string, preloadedMessages?: ChatMessage[]) {
   if (activeSessionId && activeSessionId !== sessionId) {
     closeAgentSession(activeSessionId);
   }
@@ -347,12 +347,13 @@ export async function getAgentSession(sessionId: string) {
 
   if (sessions.has(sessionId)) return sessions.get(sessionId)!;
 
-  // Load persisted history from disk
-  let history: ChatMessage[] = [];
-  try {
-    history = await invoke<ChatMessage[]>("load_session_messages", { sessionKey: sessionId });
-  } catch (err) {
-    console.error("Failed to load session history:", err);
+  let history: ChatMessage[] = preloadedMessages ?? [];
+  if (preloadedMessages === undefined) {
+    try {
+      history = await invoke<ChatMessage[]>("load_session_messages", { sessionKey: sessionId });
+    } catch (err) {
+      console.error("Failed to load session history:", err);
+    }
   }
 
   const session = createSession(sessionId, history);

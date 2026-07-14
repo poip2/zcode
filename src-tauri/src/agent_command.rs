@@ -247,7 +247,7 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
             .map(|m| {
                 let t = m.content.trim();
                 if t.len() > 60 {
-                    format!("{}…", &t[..57])
+                    format!("{}…", t.chars().take(57).collect::<String>())
                 } else {
                     t.to_string()
                 }

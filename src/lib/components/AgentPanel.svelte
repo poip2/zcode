@@ -431,6 +431,7 @@
             <circle cx="7" cy="7" r="4.5"/>
             <line x1="11" y1="11" x2="15" y2="15"/>
           </svg>
+          <!-- svelte-ignore a11y_autofocus -->
           <input
             type="text"
             placeholder="Search conversations…"

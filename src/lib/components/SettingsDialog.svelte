@@ -77,6 +77,8 @@
       showApiKey = false;
       apiKeyDirty = false;
       aiWarning = null;
+      keychainExists = false;
+      keychainWarning = null;
 
       // Query real keychain state — the store's maskedApiKey is just a hint
       checkApiKey().then((status) => {
@@ -640,6 +642,7 @@
     background: #fef3c7;
     border: 1px solid #fcd34d;
     border-radius: 6px;
+    white-space: pre-line;
   }
 
   /* ── Buttons ── */

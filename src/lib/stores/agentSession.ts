@@ -1,5 +1,6 @@
 import { writable, get } from "svelte/store";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { startAgentTurn, approveToolCall, type StartAgentTurnArgs } from "$lib/tauri/ai";
 
 // ============================================================================
@@ -40,10 +41,11 @@ interface SessionState {
 // ============================================================================
 
 const sessions = new Map<string, ReturnType<typeof createSession>>();
+let activeSessionId: string | null = null;
 
-function createSession(sessionId: string) {
+function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   const state = writable<SessionState>({
-    messages: [],
+    messages: initialMessages,
     streamingText: "",
     sending: false,
     activeToolCall: null,
@@ -280,7 +282,7 @@ function createSession(sessionId: string) {
     state.update((s) => ({ ...s, sending: false }));
   }
 
-  function reset() {
+  async function reset() {
     stopped = false;
     state.set({
       messages: [],
@@ -292,6 +294,8 @@ function createSession(sessionId: string) {
       toolConfirmation: null,
     });
     cleanup();
+    // Also clear the persisted session on disk
+    invoke("clear_session", { sessionKey: sessionId }).catch(() => {});
   }
 
   return {
@@ -308,13 +312,30 @@ function createSession(sessionId: string) {
 // Public API
 // ============================================================================
 
-export function getAgentSession(sessionId: string) {
-  let session = sessions.get(sessionId);
-  if (!session) {
-    session = createSession(sessionId);
-    sessions.set(sessionId, session);
+export async function getAgentSession(sessionId: string) {
+  if (activeSessionId && activeSessionId !== sessionId) {
+    closeAgentSession(activeSessionId);
   }
+  activeSessionId = sessionId;
+
+  if (sessions.has(sessionId)) return sessions.get(sessionId)!;
+
+  // Load persisted history from disk
+  let history: ChatMessage[] = [];
+  try {
+    history = await invoke<ChatMessage[]>("load_session_messages", { sessionKey: sessionId });
+  } catch (err) {
+    console.error("Failed to load session history:", err);
+  }
+
+  const session = createSession(sessionId, history);
+  sessions.set(sessionId, session);
   return session;
+}
+
+export async function resolveSessionKey(filePath: string | null): Promise<string> {
+  if (!filePath) return "scratch";
+  return await invoke<string>("resolve_session_key", { filePath });
 }
 
 export function closeAgentSession(sessionId: string) {
@@ -323,4 +344,10 @@ export function closeAgentSession(sessionId: string) {
     session.cleanup();
     sessions.delete(sessionId);
   }
+  if (activeSessionId === sessionId) {
+    activeSessionId = null;
+  }
+  invoke("close_session", { sessionKey: sessionId }).catch((err) => {
+    console.error("Failed to close Rust-side session:", err);
+  });
 }

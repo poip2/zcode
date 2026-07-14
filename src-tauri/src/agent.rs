@@ -173,9 +173,13 @@ impl Agent {
         &self.messages
     }
 
-    /// Clear message history.
+    /// Clear message history and all associated compaction/loop-detection state.
     pub fn clear_messages(&mut self) {
         self.messages.clear();
+        self.previous_summary = None;
+        self.last_compaction_turn = None;
+        self.consecutive_compaction_failures = 0;
+        self.recent_tool_calls.clear();
     }
 
     /// Add a message to history.
@@ -186,6 +190,13 @@ impl Agent {
     /// Replace message history.
     pub fn replace_messages(&mut self, messages: Vec<Message>) {
         self.messages = messages;
+    }
+
+    /// Seed the agent's history with existing messages (e.g. loaded from disk).
+    /// These are added directly to self.messages as existing context —
+    /// they are NOT treated as new prompts that trigger a tool loop.
+    pub fn seed_history(&mut self, messages: Vec<Message>) {
+        self.messages.extend(messages);
     }
 
     pub fn provider(&self) -> Arc<dyn Provider> {

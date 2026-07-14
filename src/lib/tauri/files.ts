@@ -28,7 +28,7 @@ export function getBaseDir(path: string): string {
 
 export async function loadFile(path: string): Promise<void> {
   const absolutePath = await resolvePath(path);
-  const fileName = absolutePath.split("/").pop() ?? absolutePath;
+  const fileName = absolutePath.replace(/\\/g, "/").split("/").pop() ?? absolutePath;
   const baseDir = getBaseDir(absolutePath);
 
   document.set({
@@ -111,7 +111,7 @@ export async function reloadCurrentFile(path: string, isOwnSave = false): Promis
 
     const baseDir = getBaseDir(absolutePath);
     const result = renderFull(content, baseDir);
-    const fileName = absolutePath.split("/").pop() ?? absolutePath;
+    const fileName = absolutePath.replace(/\\/g, "/").split("/").pop() ?? absolutePath;
 
     await allowAssets(result.assetPaths);
 

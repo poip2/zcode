@@ -62,6 +62,26 @@ fn wrap_windows_command(command: &str) -> String {
 use std::io::ErrorKind;
 
 #[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Kill a process tree. On Windows uses taskkill /T, on Unix uses kill -9 -pid.
+#[cfg(windows)]
+fn kill_process_tree(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status();
+}
+
+#[cfg(not(windows))]
+fn kill_process_tree(pid: u32) {
+    // Negative pid targets the whole process group created via `.process_group(0)`.
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &format!("-{pid}")])
+        .status();
+}
+
+#[cfg(windows)]
 fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
     let wrapped = wrap_windows_command(command);
     let mut last_err = None;
@@ -72,6 +92,7 @@ fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW — suppress console flash
             .spawn()
         {
             Ok(child) => return Ok(child),
@@ -184,19 +205,7 @@ impl Tool for BashTool {
                 Ok(Err(e)) => return Err(Error::tool("shell", format!("Command failed: {e}"))),
                 Err(_) => {
                     if let Some(pid) = pid {
-                        let _ = if cfg!(unix) {
-                            // Negative pid targets the whole process group
-                            // created via `.process_group(0)` above.
-                            std::process::Command::new("kill")
-                                .args(["-9", &format!("-{pid}")])
-                                .status()
-                        } else {
-                            // /T kills the whole process tree, not just the
-                            // PowerShell host.
-                            std::process::Command::new("taskkill")
-                                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                                .status()
-                        };
+                        kill_process_tree(pid);
                     }
                     return Err(Error::tool(
                         "shell",

@@ -18,16 +18,22 @@
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
 use crate::error::Result as AgentResult;
-use crate::model::{ContentBlock, TextContent};
+use crate::model::{
+    AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent,
+    UserMessage,
+};
 use crate::provider::StreamOptions;
 use crate::settings;
 use crate::skills;
 use crate::tools::{self, Tool, ToolEffects, ToolOutput, ToolRegistry};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
@@ -127,6 +133,138 @@ pub(crate) struct SessionData {
     pub(crate) cwd: Arc<std::sync::Mutex<PathBuf>>,
 }
 
+// ============================================================================
+// Session persistence: JSONL storage under ~/.config/zcode/sessions/
+//
+// Assumptions: single-window, single-instance. No concurrent write protection.
+// ============================================================================
+
+/// Simplified message for disk storage. Only user/assistant messages are persisted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    id: String,
+    role: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<u64>,
+    timestamp: i64,
+}
+
+/// Convert a persisted ChatMessage back into a model Message for seeding agent history.
+fn chat_message_to_message(msg: &ChatMessage) -> Option<Message> {
+    match msg.role.as_str() {
+        "user" => Some(Message::User(UserMessage {
+            content: UserContent::Text(msg.content.clone()),
+            timestamp: msg.timestamp,
+        })),
+        "assistant" => Some(Message::assistant(AssistantMessage {
+            content: vec![ContentBlock::Text(TextContent::new(msg.content.clone()))],
+            api: String::new(),
+            provider: String::new(),
+            model: String::new(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: msg.timestamp,
+        })),
+        _ => None,
+    }
+}
+
+/// Compute a stable session key from a file path.
+/// Uses dunce::canonicalize + sha256(hex, first 16 chars).
+fn compute_session_key(file_path: &str) -> String {
+    let path = Path::new(file_path);
+    let canonical = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.to_string_lossy().as_bytes());
+    let hex = format!("{:x}", hasher.finalize());
+    hex[..16].to_string()
+}
+
+/// Filesystem path for a session's JSONL file.
+fn session_file_path(session_key: &str) -> PathBuf {
+    dirs::config_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("zcode")
+        .join("sessions")
+        .join(format!("{session_key}.jsonl"))
+}
+
+static SESSIONS_DIR_CREATED: AtomicBool = AtomicBool::new(false);
+static NEXT_MSG_ID: AtomicU64 = AtomicU64::new(0);
+
+fn next_msg_id(role: &str) -> String {
+    let id = NEXT_MSG_ID.fetch_add(1, Ordering::Relaxed);
+    format!("{role}-{id}")
+}
+
+/// Append a single message to the session JSONL file (append-only).
+/// Only user/assistant messages are persisted; tool/error messages are silently skipped.
+fn append_session_message(session_key: &str, msg: &ChatMessage) -> std::io::Result<()> {
+    if !matches!(msg.role.as_str(), "user" | "assistant") {
+        return Ok(());
+    }
+    let path = session_file_path(session_key);
+    if !SESSIONS_DIR_CREATED.load(Ordering::Relaxed) {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        SESSIONS_DIR_CREATED.store(true, Ordering::Relaxed);
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    let line = serde_json::to_string(msg).map_err(std::io::Error::other)?;
+    writeln!(file, "{line}")?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn load_session_messages(session_key: String) -> Result<Vec<ChatMessage>, String> {
+    let path = session_file_path(&session_key);
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(content
+        .lines()
+        .filter_map(|l| serde_json::from_str::<ChatMessage>(l).ok())
+        .collect())
+}
+
+#[tauri::command]
+pub fn resolve_session_key(file_path: String) -> Result<String, String> {
+    Ok(compute_session_key(&file_path))
+}
+
+#[tauri::command]
+pub async fn clear_session(
+    session_key: String,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<(), String> {
+    let path = session_file_path(&session_key);
+    if path.exists() {
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    let mut map = state.sessions.lock().await;
+    if let Some(sd) = map.get_mut(&session_key) {
+        if let Some(ref mut agent) = sd.agent {
+            agent.clear_messages();
+        }
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Session Manager
+// ============================================================================
+
 /// Global session map, shared between commands and background tasks.
 type SessionMap = Arc<Mutex<HashMap<String, SessionData>>>;
 
@@ -201,7 +339,7 @@ impl GuardedTool {
         drop(cwd);
 
         let cur = std::path::Path::new(current);
-        match (cur.canonicalize(), absolute.canonicalize()) {
+        match (dunce::canonicalize(cur), dunce::canonicalize(&absolute)) {
             (Ok(c), Ok(t)) => c == t,
             _ => cur == absolute.as_path(),
         }
@@ -586,6 +724,18 @@ fn tool_result_summary(content: &[ContentBlock]) -> String {
     "(non-text result)".to_string()
 }
 
+/// Remove a session's in-memory state from the SessionManager.
+/// Called by the frontend when switching away from a file session.
+#[tauri::command]
+pub async fn close_session(
+    session_key: String,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<(), String> {
+    let mut map = state.sessions.lock().await;
+    map.remove(&session_key);
+    Ok(())
+}
+
 // ============================================================================
 // Command: start_agent_turn
 // ============================================================================
@@ -623,6 +773,19 @@ pub async fn start_agent_turn(
         eprintln!("[zcode] start_agent_turn: ERROR empty model");
         return Err("No model configured".to_string());
     }
+
+    // Save the user message to disk (best-effort, don't block the turn on I/O error)
+    let _ = append_session_message(
+        &session_id,
+        &ChatMessage {
+            id: next_msg_id("user"),
+            role: "user".to_string(),
+            content: user_message.clone(),
+            input_tokens: None,
+            output_tokens: None,
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        },
+    );
 
     let name = provider_name
         .filter(|s| !s.is_empty())
@@ -760,6 +923,24 @@ pub async fn start_agent_turn(
         );
 
         let mut agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
+
+        // Seed agent with existing conversation history from disk (first turn only).
+        // The current user message was just appended to the JSONL above;
+        // agent.run() will push it into history itself, so skip it here.
+        if let Ok(history) = crate::agent_command::load_session_messages(session_id.clone()) {
+            let mut history_messages: Vec<Message> =
+                history.iter().filter_map(chat_message_to_message).collect();
+            if matches!(history_messages.last(), Some(Message::User(_))) {
+                history_messages.pop();
+            }
+            if !history_messages.is_empty() {
+                eprintln!(
+                    "[zcode] start_agent_turn: seeding {} history messages for session={session_id}",
+                    history_messages.len()
+                );
+                agent.seed_history(history_messages);
+            }
+        }
 
         // Configure compaction: use explicit window if provided, else guess from model name
         let window = context_window_tokens
@@ -947,6 +1128,31 @@ pub async fn start_agent_turn(
                             "[zcode] agent_task: SUCCESS, stop_reason={:?}, tokens in={} out={}",
                             msg.stop_reason, msg.usage.input, msg.usage.output
                         );
+
+                        // Save the final assistant message to disk (best-effort)
+                        let assistant_text: String = msg
+                            .content
+                            .iter()
+                            .filter_map(|b| match b {
+                                ContentBlock::Text(t) => Some(t.text.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        if !assistant_text.is_empty() {
+                            let _ = append_session_message(
+                                &session_id_t,
+                                &ChatMessage {
+                                    id: next_msg_id("assistant"),
+                                    role: "assistant".to_string(),
+                                    content: assistant_text,
+                                    input_tokens: Some(msg.usage.input),
+                                    output_tokens: Some(msg.usage.output),
+                                    timestamp: chrono::Utc::now().timestamp_millis(),
+                                },
+                            );
+                        }
+
                         let _ = app_post.emit(
                             &format!("{}/turn-end", event_prefix_post),
                             AgentFrontendEvent::TurnEnd {

@@ -63,6 +63,38 @@ pub fn get_api_key() -> Result<Option<String>, String> {
     }
 }
 
+/// Result of checking whether an API key exists in the keychain.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ApiKeyStatus {
+    /// true if a key is actually present in the keychain.
+    pub exists: bool,
+    /// Human-readable warning if the keychain itself is unreachable
+    /// (common on Linux/WSL without a secret-service daemon).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// Check whether an API key exists in the OS keychain.
+///
+/// Unlike `maskedApiKey` in the settings store (which is just a stale hint),
+/// this actually queries the keychain and returns the real state.
+pub fn check_api_key() -> Result<ApiKeyStatus, String> {
+    match get_api_key() {
+        Ok(Some(_)) => Ok(ApiKeyStatus {
+            exists: true,
+            warning: None,
+        }),
+        Ok(None) => Ok(ApiKeyStatus {
+            exists: false,
+            warning: None,
+        }),
+        Err(e) => Ok(ApiKeyStatus {
+            exists: false,
+            warning: Some(e),
+        }),
+    }
+}
+
 /// Remove the API key from the OS keychain.
 pub fn delete_api_key() -> Result<Option<String>, String> {
     let entry = match keyring_entry() {

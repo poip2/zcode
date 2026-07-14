@@ -43,6 +43,7 @@ pub fn run() {
             commands::path_exists,
             commands::create_markdown_file,
             commands::create_folder,
+            commands::check_api_key,
             commands::save_api_key,
             commands::call_ai_provider,
             agent_command::start_agent_turn,

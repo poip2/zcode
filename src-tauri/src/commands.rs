@@ -261,6 +261,15 @@ fn validate_simple_name(name: &str) -> Result<(), String> {
 // AI Provider Keychain Commands
 // ============================================================================
 
+/// Check whether an API key exists in the OS keychain.
+///
+/// This queries the real keychain state — unlike `maskedApiKey` in the
+/// settings store, which is only a de-identified hint that can be stale.
+#[tauri::command]
+pub async fn check_api_key() -> Result<settings::ApiKeyStatus, String> {
+    settings::check_api_key()
+}
+
 /// Store (or overwrite) the API key in the OS keychain.
 /// Passing an empty string deletes the key.
 /// Returns `Ok(None)` on success, `Ok(Some(warning))` if keychain unavailable.

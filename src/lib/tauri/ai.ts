@@ -1,5 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 
+/** Result of checking the OS keychain for an API key. */
+export interface ApiKeyStatus {
+  /** true if a key is actually present in the keychain. */
+  exists: boolean;
+  /** Warning if the keychain itself is unreachable (e.g. Linux/WSL). */
+  warning?: string;
+}
+
+/**
+ * Check whether an API key actually exists in the OS keychain.
+ * Unlike `maskedApiKey` in the store (which is just a stale hint),
+ * this queries the real keychain state.
+ */
+export async function checkApiKey(): Promise<ApiKeyStatus> {
+  return invoke<ApiKeyStatus>("check_api_key");
+}
+
 /**
  * Store (or overwrite) the API key in the OS keychain.
  * Pass empty string to delete.

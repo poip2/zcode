@@ -4,7 +4,7 @@
   import { folderTree } from "$lib/stores/folderTree";
   import { document as docStore } from "$lib/stores/document";
   import { openFolderDialog, listDirTree, getBaseDir } from "$lib/tauri/files";
-  import { saveApiKey, maskApiKey } from "$lib/tauri/ai";
+  import { saveApiKey, maskApiKey, checkApiKey } from "$lib/tauri/ai";
   import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { skillsStore } from "$lib/stores/skills.svelte";
 
@@ -38,6 +38,10 @@
   let showApiKey = $state(false);
   let apiKeyDirty = $state(false);     // true after user types in the key field
   let aiWarning = $state<string | null>(null);
+
+  // ── Keychain reality (queried on open, not from store) ──
+  let keychainExists = $state(false);
+  let keychainWarning = $state<string | null>(null);
 
   let saveError = $state(false);
   let dialogEl: HTMLDialogElement | undefined = $state();
@@ -73,6 +77,16 @@
       showApiKey = false;
       apiKeyDirty = false;
       aiWarning = null;
+      keychainExists = false;
+      keychainWarning = null;
+
+      // Query real keychain state — the store's maskedApiKey is just a hint
+      checkApiKey().then((status) => {
+        keychainExists = status.exists;
+        keychainWarning = status.warning ?? null;
+      }).catch((err) => {
+        console.error('Failed to check API key status:', err);
+      });
 
       // Reload skill list from backend when dialog opens
       skillsStore.reload(deriveCwd());
@@ -250,6 +264,10 @@
           <div class="settings-section-title">AI Provider</div>
           <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain. Standard path suffixes (like <code>/v1/chat/completions</code> or <code>/v1/messages</code>) are appended automatically if omitted.</p>
 
+          {#if keychainWarning}
+            <p class="keychain-warning">{keychainWarning}</p>
+          {/if}
+
           <label class="settings-label" for="settings-base-url">Base URL</label>
           <input
             id="settings-base-url"
@@ -261,8 +279,8 @@
 
           <label class="settings-label" for="settings-api-key">API Key</label>
           <div class="api-key-field">
-            {#if !apiKeyDirty && draftMaskedApiKey && !draftApiKey}
-              <!-- Saved key exists, not editing → show masked, no eye -->
+            {#if !apiKeyDirty && keychainExists && draftMaskedApiKey && !draftApiKey}
+              <!-- Key verified in keychain → show masked, no eye -->
               <button
                 id="settings-api-key"
                 class="settings-input mono masked-btn"
@@ -279,7 +297,7 @@
                 type={showApiKey ? "text" : "password"}
                 bind:value={draftApiKey}
                 oninput={handleApiKeyInput}
-                placeholder={draftMaskedApiKey ? "Enter a new key to replace" : "sk-your-key-here"}
+                placeholder={keychainExists && draftMaskedApiKey ? "Enter a new key to replace" : "sk-your-key-here"}
               />
               <button
                 class="icon-toggle-btn"
@@ -612,6 +630,19 @@
   .key-cancel-btn:hover {
     background: rgba(224, 62, 62, 0.1);
     color: #e03e3e;
+  }
+
+  /* ── Keychain warning ── */
+  .keychain-warning {
+    margin: 0 0 12px 0;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    white-space: pre-line;
   }
 
   /* ── Buttons ── */

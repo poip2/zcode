@@ -626,27 +626,28 @@ fn build_system_prompt(
     current_file: Option<&str>,
     user_config_dir: Option<&Path>,
 ) -> String {
-    let mut prompt = String::new();
+    // Static prompt from a standalone file — edit src/prompts/system.md to tweak.
+    let base = include_str!("prompts/system.md");
+    let mut prompt = String::with_capacity(base.len() + 512);
+    prompt.push_str(base);
 
-    prompt.push_str(
-        "You are an AI assistant embedded in zcode, a Markdown editor. \
-         You help the user read, write, and edit files in their project. \
-         You have access to tools for reading files, writing files, editing files, \
-         running shell commands, searching with grep, finding files, and listing directories.\n\n",
-    );
-
+    // --- Dynamic: session context ---
+    prompt.push_str("\n## Current Session\n\n");
     prompt.push_str(&format!("Working directory: {}\n", cwd.display()));
 
     if let Some(path) = current_file {
         prompt.push_str(&format!(
-            "The user currently has this file open: {path}\n\
-             You may freely edit this file without waiting for approval.\n\
-             Editing any OTHER file requires explicit user confirmation.\n"
+            "The user has this file open: `{path}`\n\
+             You may freely read and edit this file. Editing other files \
+             requires the user's confirmation.\n"
         ));
+    } else {
+        prompt.push_str("No file is open. All edits will require user confirmation.\n");
     }
+
     prompt.push('\n');
 
-    // Load skills from project dir + user config dir, filter by persisted state
+    // --- Dynamic: skills ---
     let (all_skills, _diags) = skills::load_skills(cwd, user_config_dir, &[]);
     let enabled: Vec<_> = match user_config_dir {
         Some(dir) => {
@@ -668,7 +669,6 @@ fn build_system_prompt(
         prompt.push_str(&skills::format_skills_for_prompt(&enabled));
     }
 
-    prompt.push_str("\n\nAlways respond in the same language as the user's message.\n");
     prompt
 }
 

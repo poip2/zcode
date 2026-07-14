@@ -51,8 +51,8 @@ pub fn resolve_path(path: String) -> Result<String, String> {
             .map_err(|e| format!("Failed to determine current directory: {}", e))?
             .join(p)
     };
-    absolute
-        .canonicalize()
+    // Use dunce::canonicalize to avoid Windows \\?\ extended-length path prefix
+    dunce::canonicalize(&absolute)
         .unwrap_or(absolute)
         .to_str()
         .map(|s| s.to_string())
@@ -201,8 +201,7 @@ pub fn create_markdown_file(dir: String, name: String) -> Result<String, String>
     };
 
     validate_simple_name(&filename)?;
-    let canonical_dir = dir_path
-        .canonicalize()
+    let canonical_dir = dunce::canonicalize(dir_path)
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
     let file_path = canonical_dir.join(&filename);
 
@@ -226,8 +225,7 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
     }
 
     validate_simple_name(&name)?;
-    let canonical_dir = dir_path
-        .canonicalize()
+    let canonical_dir = dunce::canonicalize(dir_path)
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
     let folder_path = canonical_dir.join(&name);
 

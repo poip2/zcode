@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { getAgentSession, type ChatMessage, type ToolConfirmation } from "$lib/stores/agentSession";
+  import { getAgentSession, resolveSessionKey, type ChatMessage, type ToolConfirmation } from "$lib/stores/agentSession";
   import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
@@ -8,18 +8,21 @@
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
   import { skillsStore } from "$lib/stores/skills.svelte";
 
+  type AgentSession = Awaited<ReturnType<typeof getAgentSession>>;
+
   let {
-    sessionId = "default",
+    filePath = null as string | null,
     onClose,
   }: {
-    sessionId?: string;
+    filePath?: string | null;
     onClose: () => void;
   } = $props();
 
   // Initialized in onMount — sessionId is constant for this component's lifetime
   // (the component is destroyed/recreated by the parent's {#if}, not kept alive
   // across prop changes, so reading the prop once at init is correct).
-  let session!: ReturnType<typeof getAgentSession>;
+  let sessionId = $state("scratch");
+  let session: AgentSession | undefined;
 
   let messages = $state<ChatMessage[]>([]);
   let streamingText = $state("");
@@ -35,27 +38,43 @@
 
   let inputEl: HTMLTextAreaElement | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
-  let unsubMessages: () => void;
+  let unsubMessages: (() => void) | undefined;
   let unsubPinned: () => void;
   let unsubDoc: () => void;
   let mounted = false;
+  let loading = $state(true);
+
+  // Reactive session switching: when filePath changes, resolve key and load session
+  $effect(() => {
+    const fp = filePath;
+    (async () => {
+      loading = true;
+      const key = await resolveSessionKey(fp);
+      sessionId = key;
+      session = await getAgentSession(key);
+
+      // Unsubscribe previous store if any
+      unsubMessages?.();
+
+      unsubMessages = session.state.subscribe((s: any) => {
+        messages = s.messages;
+        streamingText = s.streamingText;
+        sending = s.sending;
+        error = s.error;
+        activeToolCall = s.activeToolCall;
+        toolConfirmation = s.toolConfirmation;
+      });
+
+      loading = false;
+    })();
+  });
 
   onMount(async () => {
     mounted = true;
-    session = getAgentSession(sessionId);
 
     const saved = await loadSettings();
     aiSettings = saved.aiProvider;
     autoApproveWrites = saved.aiProvider.autoApproveWrites ?? false;
-
-    unsubMessages = session.state.subscribe((s) => {
-      messages = s.messages;
-      streamingText = s.streamingText;
-      sending = s.sending;
-      error = s.error;
-      activeToolCall = s.activeToolCall;
-      toolConfirmation = s.toolConfirmation;
-    });
 
     unsubPinned = pinnedFolder.subscribe((p) => {
       pinnedPath = p;
@@ -93,11 +112,11 @@
   });
 
   function handleApproveTool(callId: string) {
-    session.confirmTool(callId, true);
+    session?.confirmTool(callId, true);
   }
 
   function handleRejectTool(callId: string) {
-    session.confirmTool(callId, false);
+    session?.confirmTool(callId, false);
   }
 
   async function handleAutoApproveChange(value: boolean) {
@@ -110,7 +129,7 @@
 
   async function handleSend() {
     const text = inputText.trim();
-    if (!text || sending) return;
+    if (!text || sending || !session) return;
 
     inputText = "";
 
@@ -135,7 +154,7 @@
   }
 
   function handleStop() {
-    session.stop();
+    session?.stop();
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -146,7 +165,7 @@
   }
 
   function handleReset() {
-    session.reset();
+    session?.reset();
     inputText = "";
     requestAnimationFrame(() => inputEl?.focus());
   }

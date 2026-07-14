@@ -282,7 +282,7 @@
 <!-- Floating AI Agent (outside layout flow) -->
 <AgentFab open={agentPanelOpen} onclick={() => (agentPanelOpen = !agentPanelOpen)} />
 {#if agentPanelOpen}
-  <AgentPanel onClose={() => (agentPanelOpen = false)} />
+  <AgentPanel filePath={doc?.filePath ?? null} onClose={() => (agentPanelOpen = false)} />
 {/if}
 
 <style>

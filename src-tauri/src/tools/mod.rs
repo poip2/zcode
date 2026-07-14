@@ -198,8 +198,9 @@ pub fn resolve_path(path: &str, cwd: &Path) -> std::path::PathBuf {
 }
 
 /// Canonicalize a path, resolving symlinks.
+/// Uses dunce to avoid Windows \\?\ extended-length path prefix.
 pub fn canonicalize_safe(path: &std::path::Path) -> std::path::PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Ensure a path is within the CWD scope.

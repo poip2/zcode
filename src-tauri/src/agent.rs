@@ -188,6 +188,13 @@ impl Agent {
         self.messages = messages;
     }
 
+    /// Seed the agent's history with existing messages (e.g. loaded from disk).
+    /// These are added directly to self.messages as existing context —
+    /// they are NOT treated as new prompts that trigger a tool loop.
+    pub fn seed_history(&mut self, messages: Vec<Message>) {
+        self.messages.extend(messages);
+    }
+
     pub fn provider(&self) -> Arc<dyn Provider> {
         Arc::clone(&self.provider)
     }

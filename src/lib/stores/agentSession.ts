@@ -36,6 +36,13 @@ interface SessionState {
   toolConfirmation: ToolConfirmation | null;
 }
 
+export interface SessionMeta {
+  sessionKey: string;
+  title: string;
+  timestamp: number;
+  messageCount: number;
+}
+
 // ============================================================================
 // Session management
 // ============================================================================
@@ -312,7 +319,27 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
 // Public API
 // ============================================================================
 
-export async function getAgentSession(sessionId: string) {
+/** List all saved sessions with metadata (title, time, message count). */
+export async function listSessions(): Promise<SessionMeta[]> {
+  try {
+    return await invoke<SessionMeta[]>("list_sessions");
+  } catch (err) {
+    console.error("Failed to list sessions:", err);
+    return [];
+  }
+}
+
+/** Load all messages for a session from disk (read-only, no event listeners). */
+export async function loadSessionMessages(sessionKey: string): Promise<ChatMessage[]> {
+  try {
+    return await invoke<ChatMessage[]>("load_session_messages", { sessionKey });
+  } catch (err) {
+    console.error("Failed to load session messages:", err);
+    return [];
+  }
+}
+
+export async function getAgentSession(sessionId: string, preloadedMessages?: ChatMessage[]) {
   if (activeSessionId && activeSessionId !== sessionId) {
     closeAgentSession(activeSessionId);
   }
@@ -320,12 +347,13 @@ export async function getAgentSession(sessionId: string) {
 
   if (sessions.has(sessionId)) return sessions.get(sessionId)!;
 
-  // Load persisted history from disk
-  let history: ChatMessage[] = [];
-  try {
-    history = await invoke<ChatMessage[]>("load_session_messages", { sessionKey: sessionId });
-  } catch (err) {
-    console.error("Failed to load session history:", err);
+  let history: ChatMessage[] = preloadedMessages ?? [];
+  if (preloadedMessages === undefined) {
+    try {
+      history = await invoke<ChatMessage[]>("load_session_messages", { sessionKey: sessionId });
+    } catch (err) {
+      console.error("Failed to load session history:", err);
+    }
   }
 
   const session = createSession(sessionId, history);

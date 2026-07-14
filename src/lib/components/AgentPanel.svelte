@@ -44,18 +44,23 @@
   let mounted = false;
   let loading = $state(true);
 
-  // Reactive session switching: when filePath changes, resolve key and load session
+  // Reactive session switching: when filePath changes, resolve key and load session.
+  // The cleanup function aborts any in-flight effect invocation so overlapping
+  // runs from rapid filePath changes cannot overwrite the correct session state.
   $effect(() => {
     const fp = filePath;
+    let cancelled = false;
+
     (async () => {
       loading = true;
       const key = await resolveSessionKey(fp);
+      if (cancelled) return;
+
       sessionId = key;
       session = await getAgentSession(key);
+      if (cancelled) return;
 
-      // Unsubscribe previous store if any
       unsubMessages?.();
-
       unsubMessages = session.state.subscribe((s: any) => {
         messages = s.messages;
         streamingText = s.streamingText;
@@ -67,6 +72,11 @@
 
       loading = false;
     })();
+
+    return () => {
+      cancelled = true;
+      unsubMessages?.();
+    };
   });
 
   onMount(async () => {

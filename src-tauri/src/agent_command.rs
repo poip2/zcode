@@ -18,12 +18,14 @@
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
 use crate::error::Result as AgentResult;
-use crate::model::{AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent, UserMessage};
+use crate::model::{
+    AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent,
+    UserMessage,
+};
 use crate::provider::StreamOptions;
 use crate::settings;
 use crate::skills;
 use crate::tools::{self, Tool, ToolEffects, ToolOutput, ToolRegistry};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -31,6 +33,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
@@ -217,8 +220,7 @@ fn append_session_message(session_key: &str, msg: &ChatMessage) -> std::io::Resu
         .create(true)
         .append(true)
         .open(&path)?;
-    let line = serde_json::to_string(msg)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let line = serde_json::to_string(msg).map_err(std::io::Error::other)?;
     writeln!(file, "{line}")?;
     Ok(())
 }
@@ -926,10 +928,8 @@ pub async fn start_agent_turn(
         // The current user message was just appended to the JSONL above;
         // agent.run() will push it into history itself, so skip it here.
         if let Ok(history) = crate::agent_command::load_session_messages(session_id.clone()) {
-            let mut history_messages: Vec<Message> = history
-                .iter()
-                .filter_map(chat_message_to_message)
-                .collect();
+            let mut history_messages: Vec<Message> =
+                history.iter().filter_map(chat_message_to_message).collect();
             if matches!(history_messages.last(), Some(Message::User(_))) {
                 history_messages.pop();
             }

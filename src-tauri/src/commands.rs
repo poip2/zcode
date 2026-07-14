@@ -201,8 +201,8 @@ pub fn create_markdown_file(dir: String, name: String) -> Result<String, String>
     };
 
     validate_simple_name(&filename)?;
-    let canonical_dir = dunce::canonicalize(dir_path)
-        .map_err(|e| format!("Failed to resolve directory: {}", e))?;
+    let canonical_dir =
+        dunce::canonicalize(dir_path).map_err(|e| format!("Failed to resolve directory: {}", e))?;
     let file_path = canonical_dir.join(&filename);
 
     if file_path.exists() {
@@ -225,8 +225,8 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
     }
 
     validate_simple_name(&name)?;
-    let canonical_dir = dunce::canonicalize(dir_path)
-        .map_err(|e| format!("Failed to resolve directory: {}", e))?;
+    let canonical_dir =
+        dunce::canonicalize(dir_path).map_err(|e| format!("Failed to resolve directory: {}", e))?;
     let folder_path = canonical_dir.join(&name);
 
     if folder_path.exists() {

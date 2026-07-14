@@ -645,6 +645,8 @@ fn build_system_prompt(
         prompt.push_str("No file is open. All edits will require user confirmation.\n");
     }
 
+    prompt.push('\n');
+
     // --- Dynamic: skills ---
     let (all_skills, _diags) = skills::load_skills(cwd, user_config_dir, &[]);
     let enabled: Vec<_> = match user_config_dir {

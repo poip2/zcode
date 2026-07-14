@@ -82,6 +82,8 @@
       checkApiKey().then((status) => {
         keychainExists = status.exists;
         keychainWarning = status.warning ?? null;
+      }).catch((err) => {
+        console.error('Failed to check API key status:', err);
       });
 
       // Reload skill list from backend when dialog opens
@@ -261,7 +263,7 @@
           <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain. Standard path suffixes (like <code>/v1/chat/completions</code> or <code>/v1/messages</code>) are appended automatically if omitted.</p>
 
           {#if keychainWarning}
-            <p class="keychain-warning">⚠️ 请重新配置 ApiKey</p>
+            <p class="keychain-warning">{keychainWarning}</p>
           {/if}
 
           <label class="settings-label" for="settings-base-url">Base URL</label>

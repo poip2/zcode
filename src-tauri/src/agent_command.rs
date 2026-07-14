@@ -174,6 +174,106 @@ fn chat_message_to_message(msg: &ChatMessage) -> Option<Message> {
     }
 }
 
+// ============================================================================
+// Session listing: enumerate all saved sessions with metadata
+// ============================================================================
+
+/// Lightweight session metadata for history list display.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMeta {
+    pub session_key: String,
+    /// Title derived from the first user message (truncated to ~60 chars).
+    pub title: String,
+    /// Timestamp of the most recent message in this session.
+    pub timestamp: i64,
+    /// Number of user + assistant messages.
+    pub message_count: usize,
+}
+
+/// List all saved sessions with metadata (title, time, message count).
+/// Sessions are sorted by most recent first.
+#[tauri::command]
+pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
+    let sessions_dir = dirs::config_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("zcode")
+        .join("sessions");
+
+    if !sessions_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut metas = Vec::new();
+    let entries = fs::read_dir(&sessions_dir).map_err(|e| e.to_string())?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        if path.extension().map_or(true, |ext| ext != "jsonl") {
+            continue;
+        }
+        let session_key = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        if session_key.is_empty() {
+            continue;
+        }
+
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let messages: Vec<ChatMessage> = content
+            .lines()
+            .filter_map(|l| serde_json::from_str::<ChatMessage>(l).ok())
+            .collect();
+
+        if messages.is_empty() {
+            continue;
+        }
+
+        // Title = first user message, truncated
+        let title = messages
+            .iter()
+            .find(|m| m.role == "user")
+            .map(|m| {
+                let t = m.content.trim();
+                if t.len() > 60 {
+                    format!("{}…", &t[..57])
+                } else {
+                    t.to_string()
+                }
+            })
+            .unwrap_or_else(|| "New conversation".to_string());
+
+        let timestamp = messages.last().map(|m| m.timestamp).unwrap_or(0);
+        let message_count = messages
+            .iter()
+            .filter(|m| m.role == "user" || m.role == "assistant")
+            .count();
+
+        metas.push(SessionMeta {
+            session_key,
+            title,
+            timestamp,
+            message_count,
+        });
+    }
+
+    // Sort by most recent first
+    metas.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    Ok(metas)
+}
+
 /// Compute a stable session key from a file path.
 /// Uses dunce::canonicalize + sha256(hex, first 16 chars).
 fn compute_session_key(file_path: &str) -> String {

@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>zcode Agent Panel — UI Mock</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --zc-bg-page: #FAF9F6;
+  --zc-bg-chrome: #F4F2ED;
+  --zc-bg-card: #FDFDFB;
+  --zc-border: #E7E4DD;
+  --zc-border-soft: #ECE9E2;
+  --zc-text-primary: #1F1E1C;
+  --zc-text-secondary: #8A8782;
+  --zc-text-tertiary: #A8A49D;
+  --zc-active-row: #EAE6DD;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  background: var(--zc-bg-page);
+  color: var(--zc-text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #b9b6b0; border-radius: 999px; }
+* { scrollbar-width: thin; scrollbar-color: #b9b6b0 transparent; }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 24px 40px; }
+
+/* Header */
+.page-header { margin-bottom: 16px; }
+.page-header h1 { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+.page-subtitle { font-size: 13px; color: var(--zc-text-secondary); }
+
+/* State switches */
+.picker-row { margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.picker-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--zc-text-tertiary); white-space: nowrap; }
+.picker { display: flex; gap: 6px; flex-wrap: wrap; }
+.state-btn {
+  padding: 5px 12px; border-radius: 6px; border: 1px solid #D9D5CC; background: #fff;
+  font-size: 12px; cursor: pointer; transition: all 0.1s; color: var(--zc-text-primary); font-family: inherit;
+}
+.state-btn.active { background: var(--zc-text-primary); color: #fff; border-color: var(--zc-text-primary); }
+.state-btn:hover:not(.active) { background: var(--zc-bg-chrome); }
+
+/* ── Mock window ── */
+.mock-window {
+  background: var(--zc-bg-chrome);
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.10);
+  margin-bottom: 24px;
+  transition: max-width 0.15s;
+  position: relative;
+}
+
+/* Titlebar */
+.titlebar {
+  display: flex; align-items: center; height: 36px;
+  background: var(--zc-bg-chrome); border-bottom: 1px solid var(--zc-border);
+  user-select: none; flex-shrink: 0; padding: 0 10px;
+}
+.tb-dots { display: flex; gap: 5px; }
+.tb-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.12); }
+.tb-dot.r { background: #ef9a9a; }
+.tb-dot.y { background: #fff59d; }
+.tb-dot.g { background: #a5d6a7; }
+.tb-file {
+  flex: 1; text-align: center; font-size: 12px; font-weight: 500; color: var(--zc-text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; margin: 0 auto;
+}
+.tb-spacer { width: 44px; }
+
+/* Body */
+.mock-body { display: flex; min-height: 420px; background: var(--zc-bg-chrome); }
+
+/* Sidebar */
+.sidebar {
+  width: 220px; min-width: 180px; flex-shrink: 0;
+  background: var(--zc-bg-card); margin: 10px 0 10px 10px;
+  border-radius: 12px; border: 1px solid var(--zc-border-soft);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 8px 14px; flex-shrink: 0;
+}
+.sidebar-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--zc-text-tertiary);
+}
+.tree-scroll { flex: 1; overflow-y: auto; padding: 4px 0; }
+.tree-row {
+  display: flex; align-items: center; width: 100%; gap: 4px;
+  padding: 4px 8px 4px 0; font-size: 12.5px; color: var(--zc-text-primary);
+  background: none; border: none; cursor: pointer; text-align: left;
+  font-family: inherit; line-height: 1.5;
+}
+.tree-row:hover { background: var(--zc-active-row); }
+.tree-row.active { background: var(--zc-active-row); font-weight: 600; }
+.depth-0 { padding-left: 14px; }
+.depth-1 { padding-left: 30px; }
+.tree-icon { flex-shrink: 0; color: var(--zc-text-tertiary); margin-right: 2px; }
+.tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-footer {
+  flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid var(--zc-border-soft);
+}
+.open-folder-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 12px; border: none; border-radius: 6px;
+  background: var(--zc-text-primary); color: #fff;
+  font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer;
+}
+.open-folder-btn:hover { opacity: 0.88; }
+
+/* Main pane */
+.main-pane { flex: 1; min-width: 0; overflow-y: auto; padding: 24px 32px; }
+.main-pane h2 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.main-pane p { font-size: 13px; color: var(--zc-text-secondary); line-height: 1.6; }
+.main-pane code {
+  font-family: 'SF Mono', Menlo, monospace; font-size: 11px;
+  background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px;
+}
+
+/* ── Agent FAB ── */
+.agent-fab {
+  position: absolute; bottom: 16px; right: 16px; z-index: 20;
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 1px solid var(--zc-border); background: var(--zc-bg-card);
+  color: var(--zc-text-primary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s, color 0.15s;
+}
+.agent-fab:hover { transform: scale(1.06); box-shadow: 0 4px 18px rgba(0,0,0,0.14); }
+.agent-fab.on { background: var(--zc-text-primary); color: var(--zc-bg-card); border-color: var(--zc-text-primary); }
+
+/* ── Agent Panel ── */
+.agent-panel {
+  position: absolute; bottom: 54px; right: 16px; z-index: 19;
+  width: 320px; height: 360px;
+  display: flex; flex-direction: column;
+  background: var(--zc-bg-card); border: 1px solid var(--zc-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
+  overflow: hidden;
+  transition: opacity 0.18s, transform 0.18s;
+}
+.agent-panel.hidden {
+  opacity: 0; transform: translateY(8px); pointer-events: none;
+}
+
+/* Panel header */
+.panel-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid var(--zc-border-soft); flex-shrink: 0;
+}
+.panel-hd-l { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.panel-title-btn {
+  display: flex; align-items: center; gap: 4px; border: none; background: none;
+  cursor: pointer; font-family: inherit; padding: 2px 4px; border-radius: 4px; min-width: 0;
+}
+.panel-title-btn:hover { background: var(--zc-active-row); }
+.panel-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+.panel-title-caret { color: var(--zc-text-tertiary); flex-shrink: 0; }
+.panel-hd-r { display: flex; gap: 2px; flex-shrink: 0; }
+.icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--zc-text-tertiary); cursor: pointer; border-radius: 4px;
+}
+.icon-btn:hover { background: var(--zc-active-row); color: var(--zc-text-primary); }
+
+/* Skills bar */
+.skills-bar {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px;
+  border-bottom: 1px solid var(--zc-border-soft); flex-shrink: 0;
+}
+.skill-tag {
+  font-size: 10px; font-weight: 500; padding: 2px 6px;
+  background: #f0f4ff; color: #4a6fa5; border: 1px solid #d0ddf5; border-radius: 4px;
+}
+
+/* Messages */
+.msgs { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; text-align: center; color: var(--zc-text-tertiary);
+  min-height: 180px; gap: 4px;
+}
+.empty-state p { font-size: 13px; }
+.empty-state .hint { font-size: 11px; max-width: 220px; line-height: 1.4; }
+
+/* Message */
+.msg { display: flex; gap: 7px; max-width: 100%; }
+.msg.user { flex-direction: row-reverse; }
+.msg-av { flex-shrink: 0; width: 22px; text-align: center; font-size: 13px; line-height: 1.4; }
+.msg-body {
+  flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.55;
+  padding: 7px 10px; border-radius: 8px; word-break: break-word;
+}
+.msg.user .msg-body { background: var(--zc-text-primary); color: #fff; }
+.msg.assistant .msg-body { background: var(--zc-bg-chrome); }
+.msg.tool .msg-body { background: transparent; font-size: 11px; color: var(--zc-text-tertiary); padding: 3px 0; }
+.msg.error .msg-body { background: #fff5f5; border: 1px solid #fecaca; color: #b91c1c; font-size: 11.5px; }
+.msg-body code {
+  font-family: 'SF Mono', Menlo, monospace; font-size: 11px;
+  background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px;
+}
+.msg.user .msg-body code { background: rgba(255,255,255,0.15); }
+.msg-usage { margin-top: 3px; font-size: 10px; color: var(--zc-text-tertiary); }
+.cursor-blink { animation: blink 1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.thinking { color: var(--zc-text-tertiary); font-style: italic; }
+.tool-working { font-size: 11px; color: var(--zc-text-tertiary); }
+.tool-working code { background: rgba(0,0,0,0.05); padding: 1px 4px; border-radius: 3px; font-family: 'SF Mono', Menlo, monospace; }
+
+/* Compaction */
+.compaction-note {
+  margin: 2px 0; padding: 6px 10px;
+  background: #f0f4ff; border: 1px solid #d0ddf5; border-radius: 6px;
+  font-size: 11px; color: #4a6fa5; text-align: center;
+}
+
+/* Error banner */
+.err-banner {
+  display: flex; align-items: flex-start; gap: 6px; padding: 6px 12px;
+  font-size: 11px; color: #b45309; background: #fffbeb;
+  border-top: 1px solid #fde68a; border-bottom: 1px solid #fde68a;
+  flex-shrink: 0; line-height: 1.4;
+}
+
+/* Input */
+.input-area { padding: 10px 12px 12px; border-top: 1px solid var(--zc-border-soft); flex-shrink: 0; }
+.chat-input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--zc-border);
+  border-radius: 8px; font-size: 13px; font-family: inherit; line-height: 1.5;
+  color: var(--zc-text-primary); background: var(--zc-bg-card);
+  resize: none; outline: none;
+}
+.chat-input:focus { border-color: #B9B6B0; }
+.chat-input:disabled { background: var(--zc-bg-chrome); color: var(--zc-text-tertiary); }
+.input-acts { display: flex; justify-content: flex-end; margin-top: 6px; gap: 6px; }
+.send-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: none; border-radius: 8px;
+  background: var(--zc-text-primary); color: #fff; cursor: pointer;
+}
+.send-btn:hover { opacity: 0.88; }
+.stop-btn {
+  display: flex; align-items: center; gap: 4px; padding: 5px 10px;
+  font-size: 12px; font-weight: 500; font-family: inherit;
+  border: 1px solid #e03e3e; background: #fff5f5; color: #e03e3e; border-radius: 6px; cursor: pointer;
+}
+.stop-btn:hover { background: #fee2e2; }
+
+/* Tool Confirm overlay */
+.confirm-ov {
+  position: absolute; inset: 0; z-index: 30;
+  background: rgba(24,21,16,0.4); display: flex; align-items: center;
+  justify-content: center; padding: 16px;
+}
+.confirm-dlg {
+  background: var(--zc-bg-card); border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0,0,0,0.24); width: 100%; max-width: 440px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.confirm-hd {
+  display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px;
+  border-bottom: 1px solid var(--zc-border-soft);
+}
+.confirm-icon {
+  flex-shrink: 0; width: 34px; height: 34px; display: flex; align-items: center;
+  justify-content: center; background: #fef3c7; border-radius: 8px; color: #b45309;
+}
+.confirm-hd h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+.confirm-sub { font-size: 11.5px; color: var(--zc-text-secondary); }
+.confirm-body { padding: 12px 16px; overflow-y: auto; flex: 1; font-size: 12px; }
+.detail-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--zc-text-tertiary); display: block; margin-bottom: 3px; }
+.detail-path {
+  font-family: 'SF Mono', Menlo, monospace; font-size: 11.5px;
+  background: var(--zc-bg-chrome); padding: 3px 8px; border-radius: 4px;
+  word-break: break-all; display: block; margin-bottom: 8px;
+}
+.diff-summary {
+  font-size: 11.5px; color: var(--zc-text-secondary); padding: 8px;
+  background: var(--zc-bg-chrome); border-radius: 6px;
+  white-space: pre-wrap; font-family: 'SF Mono', Menlo, monospace;
+  line-height: 1.5; margin-top: 2px;
+}
+.confirm-ft {
+  padding: 10px 16px; border-top: 1px solid var(--zc-border-soft);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.auto-check { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--zc-text-secondary); cursor: pointer; }
+.confirm-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-reject {
+  padding: 6px 14px; font-size: 12px; font-weight: 500; font-family: inherit;
+  border: 1px solid var(--zc-border); background: var(--zc-bg-card);
+  color: var(--zc-text-primary); border-radius: 6px; cursor: pointer;
+}
+.btn-reject:hover { background: var(--zc-bg-chrome); }
+.btn-approve {
+  padding: 6px 14px; font-size: 12px; font-weight: 600; font-family: inherit;
+  border: none; background: var(--zc-text-primary); color: #fff; border-radius: 6px; cursor: pointer;
+}
+.btn-approve:hover { opacity: 0.88; }
+
+/* ── History flyout ── */
+.history-ov {
+  position: absolute; top: 41px; left: 0; right: 0; bottom: 0; z-index: 25;
+  background: var(--zc-bg-card); display: flex; flex-direction: column;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.history-ov.hidden { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+.history-search { padding: 8px 12px; border-bottom: 1px solid var(--zc-border-soft); flex-shrink: 0; }
+.history-search input {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--zc-border); border-radius: 6px;
+  font-size: 12px; font-family: inherit; outline: none; background: var(--zc-bg-card); color: var(--zc-text-primary);
+}
+.history-search input:focus { border-color: #B9B6B0; }
+.history-new {
+  display: flex; align-items: center; gap: 6px; width: calc(100% - 16px); margin: 0 8px 4px;
+  padding: 7px 8px; border: none; border-radius: 6px; background: none;
+  font-size: 12.5px; font-weight: 600; color: var(--zc-text-primary); cursor: pointer;
+  font-family: inherit; flex-shrink: 0;
+}
+.history-new:hover { background: var(--zc-active-row); }
+.history-list { flex: 1; overflow-y: auto; padding: 2px 0 4px; }
+.history-item {
+  display: flex; flex-direction: column; gap: 2px; width: 100%;
+  padding: 7px 12px; border: none; background: none; text-align: left;
+  cursor: pointer; font-family: inherit;
+}
+.history-item:hover { background: var(--zc-active-row); }
+.history-item.active { background: var(--zc-active-row); }
+.history-item-title {
+  font-size: 12.5px; font-weight: 500; color: var(--zc-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.history-item-meta { font-size: 10.5px; color: var(--zc-text-tertiary); }
+.history-empty { padding: 24px 16px; text-align: center; font-size: 12px; color: var(--zc-text-tertiary); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="page-header">
+    <h1>zcode Agent Panel — UI Mock</h1>
+    <p class="page-subtitle">Click state badges to preview all AI Agent chat window UI states. Click the clock icon in the panel header to preview History; click "+" for New Agent.</p>
+  </div>
+
+  <!-- State switcher -->
+  <div class="picker-row">
+    <span class="picker-label">Agent State</span>
+    <div class="picker">
+      <button class="state-btn active" onclick="setState('empty')">Empty</button>
+      <button class="state-btn" onclick="setState('chatting')">Chatting</button>
+      <button class="state-btn" onclick="setState('streaming')">Streaming</button>
+      <button class="state-btn" onclick="setState('tool-result')">Tool Result</button>
+      <button class="state-btn" onclick="setState('confirm')">Tool Confirm</button>
+      <button class="state-btn" onclick="setState('error')">Error</button>
+      <button class="state-btn" onclick="setState('compact')">Compaction</button>
+      <button class="state-btn" onclick="setState('full')">Full Chat</button>
+    </div>
+  </div>
+
+  <!-- Mock Window -->
+  <div class="mock-window" id="mockWindow">
+    <div class="titlebar">
+      <div class="tb-dots">
+        <span class="tb-dot r"></span>
+        <span class="tb-dot y"></span>
+        <span class="tb-dot g"></span>
+      </div>
+      <span class="tb-file">📄 README.md — zcode</span>
+      <div class="tb-spacer"></div>
+    </div>
+
+    <div class="mock-body">
+      <div class="sidebar">
+        <div class="sidebar-header"><span class="sidebar-title">FILES</span></div>
+        <div class="tree-scroll">
+          <div class="tree-row depth-0"><span class="tree-icon">📁</span><span class="tree-label">zcode</span></div>
+          <div class="tree-row depth-1 active"><span class="tree-icon">📄</span><span class="tree-label">README.md</span></div>
+          <div class="tree-row depth-1"><span class="tree-icon">📄</span><span class="tree-label">agents.md</span></div>
+          <div class="tree-row depth-1"><span class="tree-icon">📄</span><span class="tree-label">REMOVED.md</span></div>
+          <div class="tree-row depth-0"><span class="tree-icon">📁</span><span class="tree-label">src</span></div>
+          <div class="tree-row depth-0"><span class="tree-icon">📁</span><span class="tree-label">src-tauri</span></div>
+        </div>
+        <div class="sidebar-footer">
+          <button class="open-folder-btn">📂 Open Folder…</button>
+        </div>
+      </div>
+
+      <div class="main-pane">
+        <h2>zcode</h2>
+        <p>A minimal Markdown editor with AI Agent support. Built with Tauri v2 + SvelteKit 5.</p>
+        <p style="margin-top:8px">Agent tools: <code>read</code> <code>write</code> <code>edit</code> <code>bash</code> <code>grep</code> <code>find</code> <code>ls</code></p>
+      </div>
+    </div>
+
+    <!-- Agent FAB -->
+    <button class="agent-fab on" id="agentFab" onclick="togglePanel()" title="AI Agent">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        <circle cx="10" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+        <circle cx="14" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="7.5" r="1.4" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
+
+    <!-- Agent Panel -->
+    <div class="agent-panel" id="agentPanel"></div>
+  </div>
+</div>
+
+<script>
+// ── Templates ──
+
+const H = `
+<div class="panel-hd">
+  <div class="panel-hd-l">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><circle cx="10" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1.4" fill="currentColor" stroke="none"/></svg>
+    <button class="panel-title-btn" onclick="toggleHistory()" title="Switch conversation">
+      <span class="panel-title" id="panelTitle">AI Agent</span>
+      <svg class="panel-title-caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,6 8,10 12,6"/></svg>
+    </button>
+  </div>
+  <div class="panel-hd-r">
+    <button class="icon-btn" title="New Agent" onclick="newAgent()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>
+    <button class="icon-btn" title="History" onclick="toggleHistory()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.5" r="6"/><path d="M8 5.2v3.3l2.4 1.4"/></svg></button>
+    <button class="icon-btn" title="Close" onclick="togglePanel()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>
+  </div>
+</div>
+`;
+
+const SKILLS = `
+<div class="skills-bar">
+  <span class="skill-tag">Summarize</span>
+  <span class="skill-tag">Fix Grammar</span>
+</div>
+`;
+
+const IN = `
+<div class="input-area">
+  <textarea class="chat-input" placeholder="Ask something… (Enter to send, Shift+Enter for new line)" rows="2"></textarea>
+  <div class="input-acts">
+    <button class="send-btn">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2" x2="8" y2="14"/><polyline points="4,8 8,2 12,8"/></svg>
+    </button>
+  </div>
+</div>
+`;
+
+const IN_STOP = `
+<div class="input-area">
+  <textarea class="chat-input" placeholder="Agent is responding…" rows="2" disabled></textarea>
+  <div class="input-acts">
+    <button class="stop-btn">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+      Stop
+    </button>
+  </div>
+</div>
+`;
+
+const U = t => `<div class="msg user"><div class="msg-av">👤</div><div class="msg-body">${t}</div></div>`;
+const A = (t, u) => `<div class="msg assistant"><div class="msg-av">🤖</div><div class="msg-body">${t}${u ? `<div class="msg-usage">${u}</div>` : ''}</div></div>`;
+const T = t => `<div class="msg tool"><div class="msg-av">🔧</div><div class="msg-body">${t}</div></div>`;
+const E = t => `<div class="msg error"><div class="msg-av">⚠️</div><div class="msg-body">${t}</div></div>`;
+const STREAM = t => `<div class="msg assistant"><div class="msg-av">🤖</div><div class="msg-body">${t}<span class="cursor-blink">▌</span></div></div>`;
+const THINK = `<div class="msg assistant"><div class="msg-av">🤖</div><div class="msg-body"><span class="thinking">Thinking…</span></div></div>`;
+const TW = n => `<div class="msg tool"><div class="msg-av">⚙️</div><div class="msg-body"><span class="tool-working">Running <code>${n}</code>…</span></div></div>`;
+const COMPACT = `<div class="compaction-note">🧠 Context compacted — earlier messages summarized (3.2K → 420 tokens)</div>`;
+const ERR = m => `<div class="err-banner"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${m}</span></div>`;
+
+const CONFIRM = `
+<div class="confirm-ov">
+  <div class="confirm-dlg">
+    <div class="confirm-hd">
+      <div class="confirm-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </div>
+      <div><h3>Allow tool execution?</h3><p class="confirm-sub">Agent wants to edit a file</p></div>
+    </div>
+    <div class="confirm-body">
+      <span class="detail-label">File</span>
+      <code class="detail-path">src/lib/components/Editor.svelte</code>
+      <span class="detail-label">Changes</span>
+      <div class="diff-summary">Replace the placeholder text in the empty state
+from "No file open" to "Open a file to start editing"</div>
+    </div>
+    <div class="confirm-ft">
+      <label class="auto-check"><input type="checkbox"> Auto-approve future write/edit/shell operations</label>
+      <div class="confirm-acts">
+        <button class="btn-reject">Reject</button>
+        <button class="btn-approve">Approve</button>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+// ── States ──
+
+const states = {
+  empty: {
+    title: 'AI Agent',
+    msgs: `<div class="msgs"><div class="empty-state"><p>Ask me anything about your project.</p><p class="hint">I can read, write, and edit files, run commands, and search your codebase.</p></div></div>`,
+    xt: '', inp: IN, skills: SKILLS,
+  },
+  chatting: {
+    title: 'Render pipeline',
+    msgs: `<div class="msgs">${U("What does the render pipeline do?")}${A("The render pipeline in <code>src/lib/renderer/pipeline.ts</code> handles <strong>Markdown → HTML</strong> conversion with several stages:<br><br>1. <strong>markdown-it</strong> parses GFM Markdown<br>2. <strong>highlight.js</strong> adds syntax highlighting (24 languages)<br>3. <strong>KaTeX</strong> renders math formulas<br>4. <strong>DOMPurify</strong> sanitizes output (XSS protection)<br>5. <strong>Frontmatter</strong> extraction (YAML header)<br><br>It's used by <code>MarkdownRenderer.svelte</code> to display the preview pane.", "1.2K↑ 180↓ tokens")}</div>`,
+    xt: '', inp: IN, skills: SKILLS,
+  },
+  streaming: {
+    title: 'Dark mode support',
+    msgs: `<div class="msgs">${U("Add dark mode support to the editor")}${STREAM("To add dark mode support, you'll need to:<br><br>1. Add CSS variables for dark colors in <code>app.css</code><br>2. Create a theme toggle in the <code>TitleBar.svelte</code><br>3. Store")}</div>`,
+    xt: '', inp: IN_STOP, skills: SKILLS,
+  },
+  'tool-result': {
+    title: 'List Svelte components',
+    msgs: `<div class="msgs">${U("List all Svelte components in this project")}${TW("grep")}${T(`<strong>grep</strong>: Found 5 matches in src/<br><code>src/lib/components/Editor.svelte</code><br><code>src/lib/components/MarkdownRenderer.svelte</code><br><code>src/lib/components/Sidebar.svelte</code><br><code>src/lib/components/TitleBar.svelte</code><br><code>src/lib/components/SettingsDialog.svelte</code>`)}${A("Found <strong>5 Svelte components</strong> under <code>src/lib/components/</code>.", "820↑ 95↓ tokens")}</div>`,
+    xt: '', inp: IN, skills: SKILLS,
+  },
+  confirm: {
+    title: 'Update README title',
+    msgs: `<div class="msgs">${U("Update the README title to be more descriptive")}${T(`<strong>edit</strong>: Awaiting approval…`)}</div>`,
+    xt: CONFIRM, inp: IN_STOP, skills: SKILLS,
+  },
+  error: {
+    title: 'Run the build command',
+    msgs: `<div class="msgs">${U("Run the build command")}${T(`<strong>bash</strong>: npm run build<br><span style="color:#b91c1c">✗ Command failed with exit code 1</span>`)}${E("<strong>Build failed</strong>: Cannot find module '@sveltejs/kit'. Did you run <code>npm install</code>?")}</div>`,
+    xt: ERR('Error: build command failed — missing dependencies'), inp: IN, skills: SKILLS,
+  },
+  compact: {
+    title: 'Gitignore build output',
+    msgs: `<div class="msgs">${COMPACT}${U("That's good, now also add a gitignore entry for the build output")}${T(`<strong>read</strong>: .gitignore — 12 lines`)}${T(`<strong>edit</strong>: .gitignore — appended 2 lines`)}${A("Added <code>build/</code> and <code>.svelte-kit/</code> to <code>.gitignore</code>. The build output directories will now be excluded from version control.", "1.4K↑ 110↓ tokens")}</div>`,
+    xt: '', inp: IN, skills: SKILLS,
+  },
+  full: {
+    title: 'Refactor editor component',
+    msgs: `<div class="msgs">${U("Help me refactor the editor component")}${A("Sure! Let me first read the current <code>Editor.svelte</code> to understand its structure.")}${T(`<strong>read</strong>: src/lib/components/Editor.svelte — 85 lines`)}${A("I see the editor currently mixes editing logic with styling. I'll extract the tab-handling into a reusable action. Let me create a new <code>tabHandler.ts</code> utility:")}${T(`<strong>write</strong>: src/lib/utils/tabHandler.ts — created (32 lines)`)}${T(`<strong>edit</strong>: src/lib/components/Editor.svelte — replaced 18 lines`)}${A("Done! Extracted tab-handling, Editor reduced from 85→72 lines. Reusable across other text inputs.", "3.1K↑ 280↓ tokens")}${U("Great! Can you also add undo/redo support?")}${STREAM("For undo/redo, we can add a simple history stack:<br><br>1. Track content snapshots in a ring buffer<br>2. Bind <code>⌘Z</code> / <code>⌘⇧Z</code> to undo/redo<br>3. Keep")}</div>`,
+    xt: '', inp: IN_STOP, skills: SKILLS,
+  },
+};
+
+// ── History data (mock) ──
+// Each past session maps to one of the states above, so selecting it
+// demonstrates loading a real transcript back into the panel.
+const HISTORY = [
+  { id: 'streaming',    time: '2m ago',       count: 2 },
+  { id: 'tool-result',  time: '18m ago',      count: 6 },
+  { id: 'confirm',      time: '1h ago',       count: 3 },
+  { id: 'error',        time: '3h ago',       count: 5 },
+  { id: 'full',         time: 'Yesterday',    count: 9 },
+  { id: 'compact',      time: '2 days ago',   count: 5 },
+  { id: 'chatting',     time: '3 days ago',   count: 2 },
+];
+
+function historyRow(h) {
+  const s = states[h.id];
+  const activeCls = h.id === cs ? ' active' : '';
+  return `<button class="history-item${activeCls}" onclick="loadHistory('${h.id}')">
+    <span class="history-item-title">${s.title}</span>
+    <span class="history-item-meta">${h.time} · ${h.count} messages</span>
+  </button>`;
+}
+
+function renderHistoryList() {
+  const rows = HISTORY.length
+    ? HISTORY.map(historyRow).join('')
+    : `<div class="history-empty">No past conversations yet.</div>`;
+  return `
+  <div class="history-ov hidden" id="historyOv">
+    <div class="history-search"><input type="text" placeholder="Search conversations…"></div>
+    <button class="history-new" onclick="newAgent()">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>
+      New Agent
+    </button>
+    <div class="history-list">${rows}</div>
+  </div>`;
+}
+
+// ── Logic ──
+
+let cs = 'empty', pv = true, historyOpen = false;
+
+function setState(n) {
+  cs = n;
+  historyOpen = false;
+  render();
+  document.querySelectorAll('.state-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.state-btn[onclick="setState('${n}')"]`)?.classList.add('active');
+}
+
+function togglePanel() {
+  pv = !pv;
+  const p = document.getElementById('agentPanel');
+  const f = document.getElementById('agentFab');
+  if (pv) {
+    p.classList.remove('hidden');
+    f.classList.add('on');
+  } else {
+    p.classList.add('hidden');
+    f.classList.remove('on');
+  }
+}
+
+function toggleHistory() {
+  historyOpen = !historyOpen;
+  document.getElementById('historyOv')?.classList.toggle('hidden', !historyOpen);
+}
+
+function loadHistory(id) {
+  setState(id);
+}
+
+function newAgent() {
+  setState('empty');
+}
+
+function render() {
+  const s = states[cs];
+  document.getElementById('agentPanel').innerHTML = H + s.skills + s.msgs + s.xt + s.inp + renderHistoryList();
+  const titleEl = document.getElementById('panelTitle');
+  if (titleEl) titleEl.textContent = cs === 'empty' ? 'AI Agent' : s.title;
+  if (historyOpen) document.getElementById('historyOv')?.classList.remove('hidden');
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,7 +1,9 @@
----
 name: Check
+"on": [pull_request]
 
-"on": [push, pull_request]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -11,32 +13,23 @@ jobs:
         os:
           - windows-latest
           - macos-latest
-
     runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
           cache: pnpm
-
       - name: Install frontend dependencies
-        run: pnpm install
-
+        run: pnpm install --frozen-lockfile
       - name: Build frontend
         run: pnpm build
-
-      - uses: dtolnay/rust-toolchain@stable
-
+      - uses: dtolnay/rust-toolchain@1.92.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-
       - name: Cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml

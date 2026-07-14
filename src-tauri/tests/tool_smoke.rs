@@ -20,6 +20,7 @@ fn test_tool_registry_subset() {
     assert!(registry.get("find").is_some());
     assert!(registry.get("ls").is_some());
     assert!(registry.get("bash").is_none());
+    assert!(registry.get("shell").is_none());
     assert!(registry.get("edit").is_none());
     eprintln!("PASS: ToolRegistry subset works");
 }

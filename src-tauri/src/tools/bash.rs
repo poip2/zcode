@@ -51,8 +51,8 @@ const WINDOWS_SHELLS: [&str; 2] = ["pwsh", "powershell.exe"];
 #[cfg(windows)]
 fn wrap_windows_command(command: &str) -> String {
     format!(
-        "$OutputEncoding = [System.Text.UTF8Encoding]::new(`$false)\n\
-         [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(`$false)\n\
+        "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
+         [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
          {command}\n\
          if ($LASTEXITCODE -ne $null) {{ exit $LASTEXITCODE }}"
     )

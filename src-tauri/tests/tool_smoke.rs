@@ -111,10 +111,10 @@ async fn test_ls_tool() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_bash_tool() -> Result<()> {
+async fn test_shell_tool() -> Result<()> {
     let tmp = tempfile::tempdir()?;
-    let registry = ToolRegistry::new(&["bash"], tmp.path());
-    let tool = registry.get("bash").unwrap();
+    let registry = ToolRegistry::new(&["shell"], tmp.path());
+    let tool = registry.get("shell").unwrap();
     let output = tool
         .execute(
             "test-id",
@@ -125,9 +125,9 @@ async fn test_bash_tool() -> Result<()> {
     assert!(!output.is_error);
     if let zcode_lib::model::ContentBlock::Text(tc) = &output.content[0] {
         assert!(tc.text.contains("hello world"));
-        eprintln!("Bash output: {}", tc.text);
+        eprintln!("Shell output: {}", tc.text);
     }
-    eprintln!("PASS: BashTool works");
+    eprintln!("PASS: ShellTool works");
     Ok(())
 }
 

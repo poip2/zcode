@@ -9,7 +9,7 @@
 //! - Each `start_agent_turn` spawns a tokio task that runs Agent::run().
 //! - The callback emits events via AppHandle::emit() using session-scoped
 //!   event names: `agent://{session_id}/token`, etc.
-//! - Dangerous tools (write, edit, bash) wait for user approval via oneshot
+//! - Dangerous tools (write, edit, shell) wait for user approval via oneshot
 //!   channels stored in the session's approval map.
 //! - Write/edit operations targeting the user's currently-open file skip the
 //!   confirmation dialog (smart auto-approve). The session's `current_file`
@@ -178,7 +178,7 @@ impl GuardedTool {
     }
 
     /// Returns true when the tool's target path matches the currently-open file.
-    /// Only applies to write/edit (not bash). Relative paths are resolved against `cwd`.
+    /// Only applies to write/edit (not shell). Relative paths are resolved against `cwd`.
     fn targets_current_file(&self, input: &serde_json::Value) -> bool {
         let name = self.inner.name();
         if name != "write" && name != "edit" {

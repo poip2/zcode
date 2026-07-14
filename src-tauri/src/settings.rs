@@ -90,7 +90,12 @@ pub fn check_api_key() -> Result<ApiKeyStatus, String> {
         }),
         Err(e) => Ok(ApiKeyStatus {
             exists: false,
-            warning: Some(e),
+            warning: Some(format!(
+                "Could not access your keychain.\n\
+                 On Linux/WSL, make sure a secret-service daemon is running\n\
+                 (gnome-keyring, kwallet, etc.).\n\
+                 Details: {e}"
+            )),
         }),
     }
 }

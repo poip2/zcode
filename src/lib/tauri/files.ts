@@ -157,6 +157,16 @@ export async function pathExists(path: string): Promise<boolean> {
   return invoke<boolean>("path_exists", { path });
 }
 
+/** Get the app data directory from the Rust backend (for computing default folder paths). */
+export async function getAppDataDir(): Promise<string> {
+  return invoke<string>("get_app_data_dir");
+}
+
+/** Open a path in the system file manager (creates the directory if needed). */
+export async function openInShell(path: string): Promise<void> {
+  return invoke("open_in_shell", { path });
+}
+
 export async function openFolderDialog(): Promise<string | null> {
   try {
     const selected = await open({

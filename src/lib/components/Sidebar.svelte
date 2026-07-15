@@ -16,7 +16,10 @@
     createMarkdownFile,
     createFolder,
     pathExists,
+    openInShell,
+    getAppDataDir,
   } from "$lib/tauri/files";
+  import { load as loadSettings } from "$lib/stores/settings";
 
   // New file/folder inline editing
   let newItemMode = $state<null | "file" | "folder">(null);
@@ -25,6 +28,7 @@
   let newItemInput: HTMLInputElement | undefined = $state();
 
   let recentExpanded = $state(true);
+  let outputFolderPath = $state<string>("");
 
   let doc = $derived($docStore);
   let ft = $derived($folderTree);
@@ -43,6 +47,13 @@
   onMount(async () => {
     recents.load();
     await pinnedFolder.load();
+
+    // Resolve output folder path
+    getAppDataDir().then((dataDir) => {
+      loadSettings().then((s) => {
+        outputFolderPath = s.outputFolder || `${dataDir}/output`;
+      });
+    });
     if (!autoLoadDone) {
       autoLoadDone = true;
       const p = $pinnedFolder;
@@ -265,18 +276,23 @@
         {@const key = child.path}
         {#if child.is_dir}
           {@const open = $expanded.has(key)}
+          {@const hasKids = child.children && child.children.length > 0}
           <div class="tree-row depth-0">
-            <button
-              class="tree-chevron"
-              onclick={() => toggleDir(key)}
-              aria-expanded={open}
-              aria-label={open ? "Collapse folder" : "Expand folder"}
-              data-tauri-drag-region="false"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={open}>
-                <polyline points="6,3 11,8 6,13"/>
-              </svg>
-            </button>
+            {#if hasKids}
+              <button
+                class="tree-chevron"
+                onclick={() => toggleDir(key)}
+                aria-expanded={open}
+                aria-label={open ? "Collapse folder" : "Expand folder"}
+                data-tauri-drag-region="false"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={open}>
+                  <polyline points="6,3 11,8 6,13"/>
+                </svg>
+              </button>
+            {:else}
+              <span class="tree-chevron-placeholder"></span>
+            {/if}
             <span class="tree-icon">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                 <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -284,23 +300,28 @@
             </span>
             <span class="tree-label">{child.name}</span>
           </div>
-          {#if open && child.children}
+          {#if hasKids && open}
             {#each child.children as sub}
               {#if sub.is_dir}
                 {@const subKey = sub.path}
                 {@const subOpen = $expanded.has(subKey)}
+                {@const subHasKids = sub.children && sub.children.length > 0}
                 <div class="tree-row depth-1">
-                  <button
-                    class="tree-chevron"
-                    onclick={() => toggleDir(subKey)}
-                    aria-expanded={subOpen}
-                    aria-label={subOpen ? "Collapse folder" : "Expand folder"}
-                    data-tauri-drag-region="false"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={subOpen}>
-                      <polyline points="6,3 11,8 6,13"/>
-                    </svg>
-                  </button>
+                  {#if subHasKids}
+                    <button
+                      class="tree-chevron"
+                      onclick={() => toggleDir(subKey)}
+                      aria-expanded={subOpen}
+                      aria-label={subOpen ? "Collapse folder" : "Expand folder"}
+                      data-tauri-drag-region="false"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={subOpen}>
+                        <polyline points="6,3 11,8 6,13"/>
+                      </svg>
+                    </button>
+                  {:else}
+                    <span class="tree-chevron-placeholder"></span>
+                  {/if}
                   <span class="tree-icon">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                       <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -308,23 +329,28 @@
                   </span>
                   <span class="tree-label">{sub.name}</span>
                 </div>
-                {#if subOpen && sub.children}
+                {#if subHasKids && subOpen}
                   {#each sub.children as leaf}
                     {#if leaf.is_dir}
                       {@const leafKey = leaf.path}
                       {@const leafOpen = $expanded.has(leafKey)}
+                      {@const leafHasKids = leaf.children && leaf.children.length > 0}
                       <div class="tree-row depth-2">
-                        <button
-                          class="tree-chevron"
-                          onclick={() => toggleDir(leafKey)}
-                          aria-expanded={leafOpen}
-                          aria-label={leafOpen ? "Collapse folder" : "Expand folder"}
-                          data-tauri-drag-region="false"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={leafOpen}>
-                            <polyline points="6,3 11,8 6,13"/>
-                          </svg>
-                        </button>
+                        {#if leafHasKids}
+                          <button
+                            class="tree-chevron"
+                            onclick={() => toggleDir(leafKey)}
+                            aria-expanded={leafOpen}
+                            aria-label={leafOpen ? "Collapse folder" : "Expand folder"}
+                            data-tauri-drag-region="false"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={leafOpen}>
+                              <polyline points="6,3 11,8 6,13"/>
+                            </svg>
+                          </button>
+                        {:else}
+                          <span class="tree-chevron-placeholder"></span>
+                        {/if}
                         <span class="tree-icon">
                           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                             <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -332,9 +358,20 @@
                         </span>
                         <span class="tree-label">{leaf.name}</span>
                       </div>
-                      {#if leafOpen && leaf.children}
+                      {#if leafHasKids && leafOpen}
                         {#each leaf.children as deep}
-                          {#if !deep.is_dir}
+                          {#if deep.is_dir}
+                            <!-- depth-3 empty dir (max depth reached) -->
+                            <div class="tree-row depth-3">
+                              <span class="tree-chevron-placeholder"></span>
+                              <span class="tree-icon">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+                                  <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+                                </svg>
+                              </span>
+                              <span class="tree-label">{deep.name}</span>
+                            </div>
+                          {:else}
                             <!-- depth-3 file -->
                             <button
                               class="tree-row tree-file depth-3"
@@ -456,14 +493,36 @@
     </div>
   {/if}
 
-  <!-- Open folder button -->
+  <!-- Segmented icon button group -->
   <div class="sidebar-footer">
-    <button class="open-folder-btn" onclick={handleOpenFolder} data-tauri-drag-region="false">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-        <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-      </svg>
-      Open Folder…
-    </button>
+    <div class="segmented-btn-group">
+      <button
+        class="seg-btn"
+        aria-label="打开文件夹"
+        onclick={handleOpenFolder}
+        data-tauri-drag-region="false"
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5" />
+          <path d="M3 7v10a2 2 0 0 0 2 2h13.5a1.5 1.5 0 0 0 1.45-1.11L21.7 12H5.5a1.5 1.5 0 0 0-1.45 1.11L3 17"/>
+        </svg>
+      </button>
+      {#if outputFolderPath}
+        <span class="seg-divider" aria-hidden="true"></span>
+        <button
+          class="seg-btn"
+          aria-label="输出面板"
+          title={outputFolderPath}
+          onclick={() => openInShell(outputFolderPath)}
+          data-tauri-drag-region="false"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <line x1="3" y1="14" x2="21" y2="14"/>
+          </svg>
+        </button>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -656,6 +715,13 @@
     color: var(--zc-text-primary, #1F1E1C);
   }
 
+  .tree-chevron-placeholder {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
   .chevron-svg {
     transition: transform 0.15s;
   }
@@ -728,29 +794,45 @@
 
   /* Footer */
   .sidebar-footer {
+    display: flex;
     flex-shrink: 0;
     padding: 8px 12px 10px;
     border-top: 1px solid var(--zc-border-soft, #ECE9E2);
   }
 
-  .open-folder-btn {
-    display: flex;
+  /* Segmented icon button group */
+  .segmented-btn-group {
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 6px 12px;
-    border: none;
+    border: 1px solid var(--zc-border, #E7E4DD);
     border-radius: 6px;
-    background: var(--zc-text-primary, #1F1E1C);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-    transition: opacity 0.15s;
+    overflow: hidden;
   }
 
-  .open-folder-btn:hover {
-    opacity: 0.88;
+  .seg-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--zc-text-secondary, #8A8782);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .seg-btn:hover {
+    background: var(--zc-active-row, #EAE6DD);
+    color: var(--zc-text-primary, #1F1E1C);
+  }
+
+  .seg-divider {
+    display: block;
+    width: 1px;
+    height: 20px;
+    background: var(--zc-border, #E7E4DD);
+    flex-shrink: 0;
   }
 </style>

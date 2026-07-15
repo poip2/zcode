@@ -20,6 +20,10 @@ export interface AIProviderSettings {
 
 export interface AppSettings {
   aiProvider: AIProviderSettings;
+  /** Folder for generated non-md files (word, pdf, etc.). Default: {dataDir}/output */
+  outputFolder?: string;
+  /** Default pin folder when none is explicitly selected. Default: {dataDir}/pin */
+  pinFolder?: string;
 }
 
 const DEFAULTS: AppSettings = {

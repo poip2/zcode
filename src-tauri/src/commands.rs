@@ -77,27 +77,42 @@ pub fn read_dir_tree(root: String) -> Result<DirNode, String> {
 }
 
 fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // At max depth, show the directory but don't recurse into children
     if depth > MAX_TREE_DEPTH {
-        return None;
+        return Some(DirNode {
+            name,
+            path: dir.to_string_lossy().to_string(),
+            is_dir: true,
+            modified: None,
+            children: Some(vec![]),
+        });
     }
 
-    let entries = fs::read_dir(dir).ok()?;
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return None,
+    };
     let mut children: Vec<DirNode> = Vec::new();
 
     for entry in entries.flatten() {
         let path = entry.path();
 
         // Skip hidden files/directories
-        if let Some(name) = path.file_name() {
-            if name.to_string_lossy().starts_with('.') {
+        if let Some(fname) = path.file_name() {
+            if fname.to_string_lossy().starts_with('.') {
                 continue;
             }
         }
 
         if path.is_dir() {
             // Skip common non-content directories
-            if let Some(name) = path.file_name() {
-                let n = name.to_string_lossy();
+            if let Some(fname) = path.file_name() {
+                let n = fname.to_string_lossy();
                 if matches!(
                     n.as_ref(),
                     "node_modules"
@@ -114,15 +129,12 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
             }
 
             if let Some(subnode) = build_dir_node(&path, depth + 1) {
-                // Only include directory if it has children
-                if subnode.children.as_ref().is_some_and(|c| !c.is_empty()) {
-                    children.push(subnode);
-                }
+                children.push(subnode);
             }
         } else if path.is_file() {
             if let Some(ext) = path.extension() {
                 if ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd" {
-                    let name = path
+                    let fname = path
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default();
@@ -135,7 +147,7 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
                         .map(|d| d.as_secs() as i64);
 
                     children.push(DirNode {
-                        name,
+                        name: fname,
                         path: path.to_string_lossy().to_string(),
                         is_dir: false,
                         modified,
@@ -159,20 +171,12 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
         }
     });
 
-    if children.is_empty() && depth > 0 {
-        return None;
-    }
-
     let name = dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let children = if children.is_empty() {
-        None
-    } else {
-        Some(children)
-    };
+    let children = Some(children);
 
     Some(DirNode {
         name,
@@ -255,6 +259,33 @@ fn validate_simple_name(name: &str) -> Result<(), String> {
         return Err("Invalid name".to_string());
     }
     Ok(())
+}
+
+// ============================================================================
+// App paths
+// ============================================================================
+
+/// Return the app data directory so the frontend can compute default folder paths.
+#[tauri::command]
+pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {e}"))?
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "App data dir is not valid UTF-8".to_string())
+}
+
+/// Open a file or folder path in the system file manager.
+#[tauri::command]
+pub fn open_in_shell(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    // Create the directory if it doesn't exist (for default output/pin folders)
+    if !p.exists() {
+        std::fs::create_dir_all(p)
+            .map_err(|e| format!("Failed to create directory: {e}"))?;
+    }
+    open::that(p).map_err(|e| format!("Failed to open: {e}"))
 }
 
 // ============================================================================

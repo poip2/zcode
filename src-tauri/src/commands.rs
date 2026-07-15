@@ -282,8 +282,7 @@ pub fn open_in_shell(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
     // Create the directory if it doesn't exist (for default output/pin folders)
     if !p.exists() {
-        std::fs::create_dir_all(p)
-            .map_err(|e| format!("Failed to create directory: {e}"))?;
+        std::fs::create_dir_all(p).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
     open::that(p).map_err(|e| format!("Failed to open: {e}"))
 }

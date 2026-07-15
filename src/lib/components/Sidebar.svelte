@@ -271,7 +271,7 @@
       <div class="tree-empty">Loading…</div>
     {:else if ft.error}
       <div class="tree-error">{ft.error}</div>
-    {:else if ft.tree?.children}
+    {:else if ft.tree?.children?.length}
       {#each ft.tree.children as child}
         {@const key = child.path}
         {#if child.is_dir}

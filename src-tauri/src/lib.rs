@@ -43,6 +43,8 @@ pub fn run() {
             commands::path_exists,
             commands::create_markdown_file,
             commands::create_folder,
+            commands::get_app_data_dir,
+            commands::open_in_shell,
             commands::check_api_key,
             commands::save_api_key,
             commands::call_ai_provider,

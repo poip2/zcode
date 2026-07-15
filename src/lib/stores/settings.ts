@@ -20,6 +20,10 @@ export interface AIProviderSettings {
 
 export interface AppSettings {
   aiProvider: AIProviderSettings;
+  /** Folder for generated non-md files (word, pdf, etc.). Default: {dataDir}/output */
+  outputFolder?: string;
+  /** Default pin folder when none is explicitly selected. Default: {dataDir}/pin */
+  pinFolder?: string;
 }
 
 const DEFAULTS: AppSettings = {
@@ -48,6 +52,8 @@ export async function load(): Promise<AppSettings> {
       // maskedApiKey is safe to store — it's the de-identified version only.
       return {
         aiProvider: { ...DEFAULTS.aiProvider, ...(saved.aiProvider ?? {}) },
+        outputFolder: saved.outputFolder,
+        pinFolder: saved.pinFolder,
       };
     }
   } catch {

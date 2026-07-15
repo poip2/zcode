@@ -3,7 +3,7 @@
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { folderTree } from "$lib/stores/folderTree";
   import { document as docStore } from "$lib/stores/document";
-  import { openFolderDialog, listDirTree, getBaseDir } from "$lib/tauri/files";
+  import { openFolderDialog, listDirTree, getBaseDir, getAppDataDir } from "$lib/tauri/files";
   import { saveApiKey, maskApiKey, checkApiKey } from "$lib/tauri/ai";
   import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { skillsStore } from "$lib/stores/skills.svelte";
@@ -29,6 +29,11 @@
     if (pinnedPath) return pinnedPath;
     return ".";
   }
+
+  // ── Folder draft state ──
+  let draftOutputFolder = $state<string | undefined>(undefined);
+  let draftPinFolder = $state<string | undefined>(undefined);
+  let appDataDir = $state<string>("");
 
   // ── AI draft state (populated from store on open, written back on Save) ──
   let draftBaseUrl = $state("");
@@ -59,6 +64,9 @@
 
     const s = await loadSettings();
     persistedAi = { ...s.aiProvider };
+
+    // Get app data dir for default folder paths
+    getAppDataDir().then((d) => { appDataDir = d; }).catch(() => {});
   });
 
   onDestroy(() => {
@@ -79,6 +87,15 @@
       aiWarning = null;
       keychainExists = false;
       keychainWarning = null;
+
+      // Load folder settings from store (or leave undefined for defaults)
+      loadSettings().then((s) => {
+        draftOutputFolder = s.outputFolder;
+        draftPinFolder = s.pinFolder;
+      });
+      if (!appDataDir) {
+        getAppDataDir().then((d) => { appDataDir = d; }).catch(() => {});
+      }
 
       // Query real keychain state — the store's maskedApiKey is just a hint
       checkApiKey().then((status) => {
@@ -136,7 +153,11 @@
       autoApproveWrites: persistedAi.autoApproveWrites,
     };
 
-    const ok = await saveSettings({ aiProvider: newAi });
+    const ok = await saveSettings({
+      aiProvider: newAi,
+      outputFolder: draftOutputFolder || undefined,
+      pinFolder: draftPinFolder || undefined,
+    });
     if (!ok) {
       saveError = true;
       return;
@@ -165,19 +186,30 @@
     onClose();
   }
 
-  async function handleBrowsePin() {
+  async function handleBrowseOutput() {
     const path = await openFolderDialog();
-    if (path) {
-      await pinnedFolder.pin(path);
-      folderTree.setRoot(path);
-      folderTree.setLoading(true);
-      try {
-        const tree = await listDirTree(path);
-        folderTree.setTree(tree);
-      } catch (err) {
-        folderTree.setError(`Failed to read folder: ${err}`);
-      }
-    }
+    if (path) draftOutputFolder = path;
+  }
+
+  async function handleBrowsePinDefault() {
+    const path = await openFolderDialog();
+    if (path) draftPinFolder = path;
+  }
+
+  function defaultOutputFolder(): string {
+    return appDataDir ? `${appDataDir}/output` : "(default: output)";
+  }
+
+  function defaultPinFolder(): string {
+    return appDataDir ? `${appDataDir}/pin` : "(default: pin)";
+  }
+
+  function resolveOutputFolder(): string {
+    return draftOutputFolder || defaultOutputFolder();
+  }
+
+  function resolvePinFolder(): string {
+    return draftPinFolder || defaultPinFolder();
   }
 
   function handleBackdropClick(e: MouseEvent) {
@@ -242,18 +274,48 @@
       <!-- Section: Default Folder -->
       {#if activeTab === "folder"}
         <section class="settings-section">
-          <div class="settings-section-title">Default Folder</div>
-          <p class="settings-section-desc">The folder zcode opens automatically on launch.</p>
+          <div class="settings-section-title">Pin Folder</div>
+          <p class="settings-section-desc">Working folder opened on launch. If not set, defaults to <code>{defaultPinFolder()}</code>.</p>
           <div class="folder-field">
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
             </svg>
-            <span class="folder-path" title={pinnedPath ?? ""}>{pinnedPath ?? "No folder pinned"}</span>
+            <span class="folder-path" title={resolvePinFolder()}>{resolvePinFolder()}</span>
             <button
               class="settings-btn-secondary"
-              onclick={handleBrowsePin}
+              onclick={handleBrowsePinDefault}
               data-tauri-drag-region="false"
-            >{pinnedPath ? "Change…" : "Browse…"}</button>
+            >{draftPinFolder ? "Change…" : "Browse…"}</button>
+            {#if draftPinFolder}
+              <button
+                class="settings-btn-clear"
+                onclick={() => (draftPinFolder = undefined)}
+                title="Reset to default"
+                data-tauri-drag-region="false"
+              >Reset</button>
+            {/if}
+          </div>
+
+          <div class="settings-section-title" style="margin-top: 20px;">Output Folder</div>
+          <p class="settings-section-desc">Where the agent writes generated non-md files (Word, PDF, etc.). If not set, defaults to <code>{defaultOutputFolder()}</code>.</p>
+          <div class="folder-field">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+            </svg>
+            <span class="folder-path" title={resolveOutputFolder()}>{resolveOutputFolder()}</span>
+            <button
+              class="settings-btn-secondary"
+              onclick={handleBrowseOutput}
+              data-tauri-drag-region="false"
+            >{draftOutputFolder ? "Change…" : "Browse…"}</button>
+            {#if draftOutputFolder}
+              <button
+                class="settings-btn-clear"
+                onclick={() => (draftOutputFolder = undefined)}
+                title="Reset to default"
+                data-tauri-drag-region="false"
+              >Reset</button>
+            {/if}
           </div>
         </section>
       {/if}
@@ -660,6 +722,24 @@
 
   .settings-btn-secondary:hover {
     background: var(--zc-bg-chrome, #F4F2ED);
+  }
+
+  .settings-btn-clear {
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: inherit;
+    border: 1px solid var(--zc-border, #E7E4DD);
+    background: transparent;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--zc-text-tertiary, #A8A49D);
+  }
+
+  .settings-btn-clear:hover {
+    background: rgba(224, 62, 62, 0.08);
+    color: #e03e3e;
+    border-color: rgba(224, 62, 62, 0.2);
   }
 
   .settings-btn-primary {

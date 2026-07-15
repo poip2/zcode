@@ -186,21 +186,6 @@
     onClose();
   }
 
-  async function handleBrowsePin() {
-    const path = await openFolderDialog();
-    if (path) {
-      await pinnedFolder.pin(path);
-      folderTree.setRoot(path);
-      folderTree.setLoading(true);
-      try {
-        const tree = await listDirTree(path);
-        folderTree.setTree(tree);
-      } catch (err) {
-        folderTree.setError(`Failed to read folder: ${err}`);
-      }
-    }
-  }
-
   async function handleBrowseOutput() {
     const path = await openFolderDialog();
     if (path) draftOutputFolder = path;

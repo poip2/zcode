@@ -52,6 +52,8 @@ export async function load(): Promise<AppSettings> {
       // maskedApiKey is safe to store — it's the de-identified version only.
       return {
         aiProvider: { ...DEFAULTS.aiProvider, ...(saved.aiProvider ?? {}) },
+        outputFolder: saved.outputFolder,
+        pinFolder: saved.pinFolder,
       };
     }
   } catch {

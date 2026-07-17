@@ -927,27 +927,29 @@ pub async fn start_agent_turn(
     };
 
     // --- Ensure bundled runtime (Python + uv + Bun) is initialized ---
-    let mut runtime_init_error: Option<String> = None;
-    let runtime_opt: Option<runtime_env::AgentRuntime> = {
+    let runtime_opt: runtime_env::AgentRuntime = {
         let needs_init = runtime_state.runtime.lock().unwrap().is_none();
         if needs_init {
             match runtime_env::ensure_agent_venv(&app).await {
                 Ok(rt) => {
                     eprintln!("[zcode] Bundled runtime initialized: venv={}", rt.venv_dir.display());
-                    *runtime_state.runtime.lock().unwrap() = Some(rt);
+                    *runtime_state.runtime.lock().unwrap() = Some(rt.clone());
+                    rt
                 }
                 Err(e) => {
-                    eprintln!("[zcode] WARNING: Failed to init bundled runtime: {e}");
-                    runtime_init_error = Some(format!(
-                        "⚠️ 内置运行时初始化失败：{e}\n本轮 shell 命令将使用系统环境，Python/uv/bun 可能不可用"
+                    eprintln!("[zcode] ERROR: Failed to init bundled runtime: {e}");
+                    return Err(format!(
+                        "内置运行时初始化失败：{}\n\n请检查网络连接后重试，或手动运行 scripts/fetch-runtime/ 脚本下载运行时。",
+                        e
                     ));
                 }
             }
+        } else {
+            runtime_state.runtime.lock().unwrap().clone().unwrap()
         }
-        runtime_state.runtime.lock().unwrap().clone()
     };
-    let augmented_path: Option<String> = runtime_opt.as_ref().map(|rt| runtime_env::augmented_path(rt));
-    let runtime_venv_dir: Option<PathBuf> = runtime_opt.as_ref().map(|rt| rt.venv_dir.clone());
+    let augmented_path: String = runtime_env::augmented_path(&runtime_opt);
+    let runtime_venv_dir: PathBuf = runtime_opt.venv_dir.clone();
 
     // Build system prompt
     let user_config_dir = dirs::config_dir().map(|d| d.join("zcode"));
@@ -961,13 +963,6 @@ pub async fn start_agent_turn(
         system_prompt.len(),
         work_dir.display()
     );
-
-    // Prepend runtime init error to user message so both LLM and user see it
-    let user_message = if let Some(ref err) = runtime_init_error {
-        format!("{err}\n\n---\n\n{user_message}")
-    } else {
-        user_message
-    };
 
     // Build provider
     eprintln!("[zcode] start_agent_turn: building provider (name={name})...");
@@ -1060,8 +1055,8 @@ pub async fn start_agent_turn(
             &session_id,
             Arc::clone(&current_file_arc),
             Arc::clone(&cwd_arc),
-            augmented_path.as_deref(),
-            runtime_venv_dir.as_deref(),
+            Some(&augmented_path),
+            Some(&runtime_venv_dir),
         );
 
         let mut agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
@@ -1363,8 +1358,8 @@ pub async fn start_agent_turn(
                     &rebuild_session_id,
                     rebuild_current_file,
                     rebuild_cwd,
-                    rebuild_augmented_path.as_deref(),
-                    rebuild_runtime_venv_dir.as_deref(),
+                    Some(&rebuild_augmented_path),
+                    Some(&rebuild_runtime_venv_dir),
                 );
                 let new_agent = Agent::new(rebuild_provider, tool_registry, rebuild_config);
 

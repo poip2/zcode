@@ -51,10 +51,11 @@ if [ ! -d "$PY_DIR" ]; then
     exit 1
   fi
   echo "==> Downloading $ASSET_URL"
-  curl -fL "$ASSET_URL" -o /tmp/python-standalone.tar.gz
+  TMP_PY_TARBALL="$(mktemp)"
+  curl -fL "$ASSET_URL" -o "$TMP_PY_TARBALL"
   mkdir -p "$PY_DIR"
-  tar -xzf /tmp/python-standalone.tar.gz -C "$PY_DIR" --strip-components=1
-  rm -f /tmp/python-standalone.tar.gz
+  tar -xzf "$TMP_PY_TARBALL" -C "$PY_DIR" --strip-components=1
+  rm -f "$TMP_PY_TARBALL"
 else
   echo "==> python-build-standalone already present, skipping"
 fi

@@ -182,6 +182,7 @@ impl Agent {
     /// Clear message history and all associated compaction/loop-detection state.
     pub fn clear_messages(&mut self) {
         self.messages.clear();
+        self.pending_image_indices.clear();
         self.previous_summary = None;
         self.last_compaction_turn = None;
         self.consecutive_compaction_failures = 0;
@@ -196,6 +197,7 @@ impl Agent {
     /// Replace message history.
     pub fn replace_messages(&mut self, messages: Vec<Message>) {
         self.messages = messages;
+        self.pending_image_indices.clear();
     }
 
     /// Seed the agent's history with existing messages (e.g. loaded from disk).
@@ -617,6 +619,11 @@ impl Agent {
 
             // Get final assistant message
             let Some(assistant_msg_arc) = assistant_arc else {
+                for idx in self.pending_image_indices.drain(..) {
+                    if let Some(msg) = self.messages.get_mut(idx) {
+                        Self::age_out_image(msg);
+                    }
+                }
                 let msg = AssistantMessage {
                     content: vec![],
                     api: self.provider.api().to_string(),

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::process::Command as TokioCommand;
 
@@ -53,17 +54,29 @@ pub async fn ensure_agent_venv(app: &AppHandle) -> Result<AgentRuntime, String> 
     let venv_dir = app_dir.join("agent_venv");
     let bun_bin_dir = embedded_bun_dir(app)?;
 
-    if !venv_dir.exists() {
+    let python_bin = if cfg!(windows) {
+        venv_dir.join("Scripts").join("python.exe")
+    } else {
+        venv_dir.join("bin").join("python3")
+    };
+    let sentinel = venv_dir.join("pyvenv.cfg");
+    let venv_valid = sentinel.exists() && python_bin.exists();
+
+    if !venv_valid {
+        if venv_dir.exists() {
+            let _ = std::fs::remove_dir_all(&venv_dir);
+        }
         let uv = embedded_uv(app)?;
         let python = embedded_python(app)?;
 
-        let output = TokioCommand::new(&uv)
+        let output = tokio::time::timeout(Duration::from_secs(120), TokioCommand::new(&uv)
             .arg("venv")
             .arg(&venv_dir)
             .arg("--python")
             .arg(&python)
-            .output()
+            .output())
             .await
+            .map_err(|_| "内置运行时初始化超时（超过120秒），请检查系统资源后重试".to_string())?
             .map_err(|e| e.to_string())?;
 
         if !output.status.success() {

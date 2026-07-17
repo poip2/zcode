@@ -32,20 +32,41 @@ fn resource_bin(app: &AppHandle, rel: &str) -> Result<PathBuf, String> {
 
 fn embedded_python(app: &AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
-    return resource_bin(app, "python/python.exe");
+    let path = resource_bin(app, "python/python.exe")?;
     #[cfg(not(target_os = "windows"))]
-    return resource_bin(app, "python/bin/python3");
+    let path = resource_bin(app, "python/bin/python3")?;
+    if !path.exists() {
+        return Err(format!(
+            "内置 Python 运行时未找到: {}\n请运行 scripts/fetch-runtime/ 脚本下载运行时。",
+            path.display()
+        ));
+    }
+    Ok(path)
 }
 
 fn embedded_uv(app: &AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
-    return resource_bin(app, "bin/uv.exe");
+    let path = resource_bin(app, "bin/uv.exe")?;
     #[cfg(not(target_os = "windows"))]
-    return resource_bin(app, "bin/uv");
+    let path = resource_bin(app, "bin/uv")?;
+    if !path.exists() {
+        return Err(format!(
+            "内置 uv 运行时未找到: {}\n请运行 scripts/fetch-runtime/ 脚本下载运行时。",
+            path.display()
+        ));
+    }
+    Ok(path)
 }
 
 fn embedded_bun_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    resource_bin(app, "bin")
+    let path = resource_bin(app, "bin")?;
+    if !path.exists() {
+        return Err(format!(
+            "内置 Bun 运行时未找到: {}\n请运行 scripts/fetch-runtime/ 脚本下载运行时。",
+            path.display()
+        ));
+    }
+    Ok(path)
 }
 
 /// 幂等：venv 不存在才创建。用 uv venv，不用 python -m venv。

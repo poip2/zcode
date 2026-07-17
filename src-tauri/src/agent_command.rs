@@ -928,12 +928,17 @@ pub async fn start_agent_turn(
 
     // --- Ensure bundled runtime (Python + uv + Bun) is initialized ---
     let runtime_opt: runtime_env::AgentRuntime = {
-        let needs_init = runtime_state.runtime.lock().unwrap().is_none();
-        if needs_init {
+        let cached = runtime_state.runtime.lock().unwrap().clone();
+        if let Some(rt) = cached {
+            rt
+        } else {
             match runtime_env::ensure_agent_venv(&app).await {
                 Ok(rt) => {
                     eprintln!("[zcode] Bundled runtime initialized: venv={}", rt.venv_dir.display());
-                    *runtime_state.runtime.lock().unwrap() = Some(rt.clone());
+                    let mut guard = runtime_state.runtime.lock().unwrap();
+                    if guard.is_none() {
+                        *guard = Some(rt.clone());
+                    }
                     rt
                 }
                 Err(e) => {
@@ -944,8 +949,6 @@ pub async fn start_agent_turn(
                     ));
                 }
             }
-        } else {
-            runtime_state.runtime.lock().unwrap().clone().unwrap()
         }
     };
     let augmented_path: String = runtime_env::augmented_path(&runtime_opt);

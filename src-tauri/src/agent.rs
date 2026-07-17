@@ -432,8 +432,12 @@ impl Agent {
                                     result.messages_kept
                                 );
                                 self.last_compaction_turn = Some(current_turn);
+                                for idx in self.pending_image_indices.drain(..) {
+                                    if let Some(msg) = self.messages.get_mut(idx) {
+                                        Self::age_out_image(msg);
+                                    }
+                                }
                                 compaction::apply_compaction(&mut self.messages, &result);
-                                self.pending_image_indices.clear(); // indices invalid after compaction
                                 self.previous_summary = Some(result.summary.clone());
 
                                 // Track whether compaction actually reduced tokens below threshold.
@@ -468,19 +472,49 @@ impl Agent {
             let context = self.build_context();
             let stream_options = self.config.stream_options.clone();
 
-            let mut stream = match self.provider.stream(&context, &stream_options).await {
+            let stream_result = self.provider.stream(&context, &stream_options).await;
+
+            let mut stream = match stream_result {
                 Ok(s) => {
                     eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() started OK");
                     s
                 }
-                Err(err) => {
-                    eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() FAILED: {err}");
-                    on_event(AgentEvent::AgentEnd {
-                        session_id: session_id.clone(),
-                        messages: new_messages,
-                        error: Some(err.to_string()),
-                    });
-                    return Err(err);
+                Err(first_err) => {
+                    if !self.pending_image_indices.is_empty() {
+                        eprintln!(
+                            "[zcode] agent::run_loop: turn #{current_turn} stream failed, retrying after aging out {} image(s): {first_err}",
+                            self.pending_image_indices.len()
+                        );
+                        for idx in self.pending_image_indices.drain(..) {
+                            if let Some(msg) = self.messages.get_mut(idx) {
+                                Self::age_out_image(msg);
+                            }
+                        }
+                        let retry_context = self.build_context();
+                        match self.provider.stream(&retry_context, &stream_options).await {
+                            Ok(s) => {
+                                eprintln!("[zcode] agent::run_loop: turn #{current_turn} retry after image age-out succeeded");
+                                s
+                            }
+                            Err(retry_err) => {
+                                eprintln!("[zcode] agent::run_loop: turn #{current_turn} retry also FAILED: {retry_err}");
+                                on_event(AgentEvent::AgentEnd {
+                                    session_id: session_id.clone(),
+                                    messages: new_messages,
+                                    error: Some(retry_err.to_string()),
+                                });
+                                return Err(retry_err);
+                            }
+                        }
+                    } else {
+                        eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() FAILED: {first_err}");
+                        on_event(AgentEvent::AgentEnd {
+                            session_id: session_id.clone(),
+                            messages: new_messages,
+                            error: Some(first_err.to_string()),
+                        });
+                        return Err(first_err);
+                    }
                 }
             };
 

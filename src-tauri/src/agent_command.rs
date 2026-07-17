@@ -927,6 +927,7 @@ pub async fn start_agent_turn(
     };
 
     // --- Ensure bundled runtime (Python + uv + Bun) is initialized ---
+    let mut runtime_init_error: Option<String> = None;
     let runtime_opt: Option<runtime_env::AgentRuntime> = {
         let needs_init = runtime_state.runtime.lock().unwrap().is_none();
         if needs_init {
@@ -937,6 +938,9 @@ pub async fn start_agent_turn(
                 }
                 Err(e) => {
                     eprintln!("[zcode] WARNING: Failed to init bundled runtime: {e}");
+                    runtime_init_error = Some(format!(
+                        "⚠️ 内置运行时初始化失败：{e}\n本轮 shell 命令将使用系统环境，Python/uv/bun 可能不可用"
+                    ));
                 }
             }
         }
@@ -957,6 +961,13 @@ pub async fn start_agent_turn(
         system_prompt.len(),
         work_dir.display()
     );
+
+    // Prepend runtime init error to user message so both LLM and user see it
+    let user_message = if let Some(ref err) = runtime_init_error {
+        format!("{err}\n\n---\n\n{user_message}")
+    } else {
+        user_message
+    };
 
     // Build provider
     eprintln!("[zcode] start_agent_turn: building provider (name={name})...");

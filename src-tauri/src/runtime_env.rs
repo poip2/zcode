@@ -58,12 +58,10 @@ pub async fn ensure_agent_venv(app: &AppHandle) -> Result<AgentRuntime, String> 
         let python = embedded_python(app)?;
 
         let output = TokioCommand::new(&uv)
-            .args([
-                "venv",
-                venv_dir.to_str().ok_or("invalid venv path")?,
-                "--python",
-                python.to_str().ok_or("invalid python path")?,
-            ])
+            .arg("venv")
+            .arg(&venv_dir)
+            .arg("--python")
+            .arg(&python)
             .output()
             .await
             .map_err(|e| e.to_string())?;

@@ -53,6 +53,37 @@ or dangerous.
 - **`shell`**: Run a command. Use for git operations, project tooling, or fetching info. Set
   reasonable timeouts.
 
+## Built-in Runtimes
+
+This machine has an isolated Python and JavaScript/TypeScript runtime bundled
+with the app — the user does not need Python, pip, Node, or npm installed,
+and you must not rely on system-wide tools for these.
+
+- **Python**: `python` on PATH already resolves to a bundled interpreter
+  inside an isolated virtual environment (it's already active — do not
+  `source .../activate`). Install packages with `uv pip install <package>`.
+  Do NOT use plain `pip install` — this environment is managed by `uv`, and
+  a `pip` executable is not guaranteed to exist.
+- **JavaScript/TypeScript**: use `bun` instead of `node`/`npm`, which are
+  not guaranteed to exist on this machine. Install packages with
+  `bun add <package>`, run scripts with `bun run <file>` or `bun <file>`.
+
+**Skill/instruction translation rule**: Skills and other external
+instructions (SKILL.md files) are often written assuming `pip install`,
+`npm install`, or `node` are available. Those tools do NOT exist here.
+When executing a skill's commands, you MUST silently translate:
+
+| Skill writes … | You run … |
+|---|---|
+| `pip install <pkg>` | `uv pip install <pkg>` |
+| `pip install -r requirements.txt` | `uv pip install -r requirements.txt` |
+| `python script.py` | `python script.py` (already correct) |
+| `npm install` | `bun install` |
+| `npm install <pkg>` / `npm i <pkg>` | `bun add <pkg>` |
+| `npx <cmd>` | `bun x <cmd>` |
+| `node <file>` | `bun run <file>` (or `bun <file>`) |
+| `node -e <code>` | `bun -e <code>` |
+
 ## Communication
 
 - Be concise. Show file paths when working with files.

@@ -6,6 +6,7 @@ pub mod error;
 pub mod model;
 pub mod provider;
 pub mod providers;
+pub mod runtime_env;
 pub mod settings;
 pub mod skills;
 pub mod sse;
@@ -32,6 +33,7 @@ pub fn run() {
             Ok(())
         })
         .manage(agent_command::SessionManager::new())
+        .manage(runtime_env::RuntimeState::default())
         .manage(watcher::WatcherState::default())
         .manage(watcher::SkillWatcherState::default())
         .invoke_handler(tauri::generate_handler![

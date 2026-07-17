@@ -146,6 +146,11 @@ pub struct Agent {
 
     /// Cached system prompt token count. Re-computed when the system prompt changes.
     cached_system_prompt_tokens: u64,
+
+    /// Indices in self.messages of ToolResults that still contain real
+    /// ContentBlock::Image blocks (not yet aged out into text placeholders).
+    /// Cleared on compaction (which reorders messages).
+    pending_image_indices: Vec<usize>,
 }
 
 impl Agent {
@@ -165,6 +170,7 @@ impl Agent {
             last_compaction_turn: None,
             consecutive_compaction_failures: 0,
             cached_system_prompt_tokens: system_prompt_tokens,
+            pending_image_indices: Vec::new(),
         }
     }
 
@@ -176,6 +182,7 @@ impl Agent {
     /// Clear message history and all associated compaction/loop-detection state.
     pub fn clear_messages(&mut self) {
         self.messages.clear();
+        self.pending_image_indices.clear();
         self.previous_summary = None;
         self.last_compaction_turn = None;
         self.consecutive_compaction_failures = 0;
@@ -190,6 +197,7 @@ impl Agent {
     /// Replace message history.
     pub fn replace_messages(&mut self, messages: Vec<Message>) {
         self.messages = messages;
+        self.pending_image_indices.clear();
     }
 
     /// Seed the agent's history with existing messages (e.g. loaded from disk).
@@ -284,6 +292,51 @@ impl Agent {
     // ========================================================================
     // Core Loop
     // ========================================================================
+
+    /// Replace any ContentBlock::Image in content with text placeholders.
+    fn replace_images_with_placeholders(content: &[ContentBlock]) -> Vec<ContentBlock> {
+        content
+            .iter()
+            .map(|block| match block {
+                ContentBlock::Image(img) => {
+                    let size_kb = img.data.len() / 1024;
+                    ContentBlock::Text(TextContent::new(format!(
+                        "[已读取图片: {}, {}KB]",
+                        img.mime_type, size_kb
+                    )))
+                }
+                other => other.clone(),
+            })
+            .collect()
+    }
+
+    /// Replace any ContentBlock::Image entries in a ToolResult message with text placeholders.
+    fn age_out_image(msg: &mut Message) {
+        let tr = match msg {
+            Message::ToolResult(tr) => tr,
+            _ => return,
+        };
+        let has_image = tr
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Image(_)));
+        if !has_image {
+            return;
+        }
+        let new_tr = ToolResultMessage {
+            content: Self::replace_images_with_placeholders(&tr.content),
+            tool_call_id: tr.tool_call_id.clone(),
+            tool_name: tr.tool_name.clone(),
+            details: tr.details.clone(),
+            is_error: tr.is_error,
+            timestamp: tr.timestamp,
+        };
+        *msg = Message::tool_result(new_tr);
+    }
+
+    fn result_has_image(content: &[ContentBlock]) -> bool {
+        content.iter().any(|b| matches!(b, ContentBlock::Image(_)))
+    }
 
     async fn run_loop(
         &mut self,
@@ -387,6 +440,11 @@ impl Agent {
                                     result.messages_kept
                                 );
                                 self.last_compaction_turn = Some(current_turn);
+                                for idx in self.pending_image_indices.drain(..) {
+                                    if let Some(msg) = self.messages.get_mut(idx) {
+                                        Self::age_out_image(msg);
+                                    }
+                                }
                                 compaction::apply_compaction(&mut self.messages, &result);
                                 self.previous_summary = Some(result.summary.clone());
 
@@ -422,19 +480,49 @@ impl Agent {
             let context = self.build_context();
             let stream_options = self.config.stream_options.clone();
 
-            let mut stream = match self.provider.stream(&context, &stream_options).await {
+            let stream_result = self.provider.stream(&context, &stream_options).await;
+
+            let mut stream = match stream_result {
                 Ok(s) => {
                     eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() started OK");
                     s
                 }
-                Err(err) => {
-                    eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() FAILED: {err}");
-                    on_event(AgentEvent::AgentEnd {
-                        session_id: session_id.clone(),
-                        messages: new_messages,
-                        error: Some(err.to_string()),
-                    });
-                    return Err(err);
+                Err(first_err) => {
+                    if !self.pending_image_indices.is_empty() {
+                        eprintln!(
+                            "[zcode] agent::run_loop: turn #{current_turn} stream failed, retrying after aging out {} image(s): {first_err}",
+                            self.pending_image_indices.len()
+                        );
+                        for idx in self.pending_image_indices.drain(..) {
+                            if let Some(msg) = self.messages.get_mut(idx) {
+                                Self::age_out_image(msg);
+                            }
+                        }
+                        let retry_context = self.build_context();
+                        match self.provider.stream(&retry_context, &stream_options).await {
+                            Ok(s) => {
+                                eprintln!("[zcode] agent::run_loop: turn #{current_turn} retry after image age-out succeeded");
+                                s
+                            }
+                            Err(retry_err) => {
+                                eprintln!("[zcode] agent::run_loop: turn #{current_turn} retry also FAILED: {retry_err}");
+                                on_event(AgentEvent::AgentEnd {
+                                    session_id: session_id.clone(),
+                                    messages: new_messages,
+                                    error: Some(retry_err.to_string()),
+                                });
+                                return Err(retry_err);
+                            }
+                        }
+                    } else {
+                        eprintln!("[zcode] agent::run_loop: turn #{current_turn} provider.stream() FAILED: {first_err}");
+                        on_event(AgentEvent::AgentEnd {
+                            session_id: session_id.clone(),
+                            messages: new_messages,
+                            error: Some(first_err.to_string()),
+                        });
+                        return Err(first_err);
+                    }
                 }
             };
 
@@ -537,6 +625,11 @@ impl Agent {
 
             // Get final assistant message
             let Some(assistant_msg_arc) = assistant_arc else {
+                for idx in self.pending_image_indices.drain(..) {
+                    if let Some(msg) = self.messages.get_mut(idx) {
+                        Self::age_out_image(msg);
+                    }
+                }
                 let msg = AssistantMessage {
                     content: vec![],
                     api: self.provider.api().to_string(),
@@ -561,6 +654,15 @@ impl Agent {
             let event_msg = Message::assistant(assistant_msg.clone());
             self.messages.push(event_msg.clone());
             new_messages.push(event_msg.clone());
+
+            // Age out any pending image that was sent in this turn's stream call.
+            // The real base64 data was included in the request we just made;
+            // future turns only need the text placeholder.
+            for idx in self.pending_image_indices.drain(..) {
+                if let Some(msg) = self.messages.get_mut(idx) {
+                    Self::age_out_image(msg);
+                }
+            }
 
             if error_occurred {
                 on_event(AgentEvent::AgentEnd {
@@ -691,34 +793,38 @@ impl Agent {
                         is_error,
                     });
 
-                    // Replace image blocks with text placeholders before storing in history.
-                    // Current turn already sent the real image to the provider.
-                    let history_content: Vec<ContentBlock> = result
-                        .content
-                        .iter()
-                        .map(|block| match block {
-                            ContentBlock::Image(img) => {
-                                let size_kb = img.data.len() / 1024;
-                                ContentBlock::Text(TextContent::new(format!(
-                                    "[已读取图片: {}, {}KB]",
-                                    img.mime_type, size_kb
-                                )))
-                            }
-                            other => other.clone(),
-                        })
-                        .collect();
+                    // Push tool result with real Image blocks to history.
+                    // The image will be sent to the provider next turn,
+                    // then aged out into a text placeholder immediately after.
+                    let has_image = Self::result_has_image(&result.content);
 
-                    let tool_result_msg = Message::tool_result(ToolResultMessage {
+                    let history_msg = Message::tool_result(ToolResultMessage {
                         tool_call_id: tc.id.clone(),
                         tool_name: tc.name.clone(),
-                        content: history_content,
-                        details: result.details,
+                        content: result.content.clone(),
+                        details: result.details.clone(),
                         is_error,
                         timestamp: chrono::Utc::now().timestamp_millis(),
                     });
 
-                    self.messages.push(tool_result_msg.clone());
-                    tool_messages.push(tool_result_msg);
+                    let idx = self.messages.len();
+                    self.messages.push(history_msg);
+                    if has_image {
+                        self.pending_image_indices.push(idx);
+                    }
+
+                    // TurnEnd event uses text placeholder (frontend doesn't need base64).
+                    let placeholder_content =
+                        Self::replace_images_with_placeholders(&result.content);
+
+                    tool_messages.push(Message::tool_result(ToolResultMessage {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        content: placeholder_content,
+                        details: result.details,
+                        is_error,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    }));
                 }
 
                 // 4. Loop back: provider sees tool results and responds

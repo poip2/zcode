@@ -20,6 +20,7 @@ agent.rs          ←── 主循环：输入 → Provider 调用 → 工具执
   ├── tools/            ← 7 个工具（read/bash/edit/write/grep/find/ls）
   ├── skills.rs         ← 技能加载注入
   ├── compaction.rs     ← 上下文压缩（v0.6）
+  ├── runtime_env.rs    ← 内置运行时管理（Python + uv + Bun）
   ├── model.rs          ← 共享类型
   ├── sse.rs            ← SSE 流解析
   └── error.rs          ← 统一错误类型
@@ -40,6 +41,8 @@ agent.rs          ←── 主循环：输入 → Provider 调用 → 工具执
 - **Session scoped events**：每个会话独立事件流，前端实时接收工具调用/结果/流 token
 - **自动批准**（v0.5）：write/edit 操作目标为当前编辑器打开文件时跳过确认
 - **CWD 智能推导**（v0.5）：优先当前文件目录 → 回退钉选文件夹
+- **内置运行时初始化**：`start_agent_turn` 中调用 `ensure_agent_venv` 初始化捆绑的 Python + uv + Bun 运行时，结果缓存于 `RuntimeState`。若运行时未下载或初始化失败，返回友好错误并提示手动运行 fetch 脚本
+- **工具注册表增强**：`build_guarded_registry` 接受 `augmented_path` 和 `venv_dir`，将注入了内置运行时的 PATH 传递给 `BashTool`
 - **事件类型**：Token、ToolCall、ToolResult、ApprovalRequired、Error、Done、CompactionStarted、CompactionFinished
 
 ---
@@ -63,7 +66,8 @@ loop:
 **保护机制**（v0.6）：
 - **卡死循环检测**：同一工具+相同参数连续 3 次 → 自动停止
 - **40 轮软提示**：工具迭代达 40 轮时注入 system_note 提示收尾
-- **图片历史占位**：工具执行后图片替换为 `[已读取图片]` 文本占位，避免 base64 膨胀
+- **图片年龄化（image age-out）**：工具返回的图片 base64 数据保存在真实消息历史中供下一轮发送给 Provider，发送后立即替换为 `[已读取图片]` 文本占位避免后续轮次重复传输 base64。通过 `pending_image_indices`（`Vec<usize>`）追踪哪些消息索引仍包含真实 Image 块。该追踪器在 compaction 时自动批量年龄化所有待处理图片后清空（compaction 会重排序消息，索引失效）
+- **图片年龄化重试**：若 `provider.stream()` 失败且存在 `pending_image_indices`，自动年龄化这些图片后重试一次（某些 Provider 不接受 tool_result 中的 image 块）
 
 ---
 
@@ -123,6 +127,7 @@ pub struct StreamOptions {
 - 原生 Anthropic Messages API
 - 支持 extended thinking
 - 工具调用通过 tool_use content block
+- **ToolResult 合并**：同一 `tool_use_id` 的所有 content block 合并到单个 `ToolResult`（不再为每个 block 生成独立 ToolResult），`AnthropicToolResultContent` 支持 `Text` 和 `Image` 变体，通过 `block_to_tool_result_content` 辅助函数转换
 
 ### `providers/openai.rs` — OpenAI Chat Completions API
 
@@ -171,6 +176,30 @@ skill instructions here...
 
 ---
 
+## 内置运行时系统（runtime_env.rs）
+
+`runtime_env` 模块管理捆绑在应用中的可移植 Python + uv + Bun 运行时。
+
+**核心类型**：
+- `AgentRuntime` — 持有的运行时路径：`venv_dir`（Python venv 目录）和 `bun_bin_dir`（Bun 可执行文件目录）
+- `RuntimeState` — Tauri managed state，缓存 `Option<AgentRuntime>`，首次使用时惰性初始化
+
+**关键函数**：
+- `ensure_agent_venv(app)` — 幂等创建 agent venv：使用嵌入的 `uv` 和 `python-build-standalone` 解释器通过 `uv venv --python <embedded>` 创建隔离虚拟环境（不用 `python -m venv`），120 秒超时保护
+- `augmented_path(runtime)` — 生成注入了 venv `bin/`（或 `Scripts/` on Windows）和 bundled `bin/` 目录的 PATH 字符串
+- `embedded_python(app)` / `embedded_uv(app)` / `embedded_bun_dir(app)` — 通过 `AppHandle::path().resolve()` 定位 `resources/runtime/` 下的嵌入二进制文件
+
+**运行时不存在的处理**：
+- 若 `resources/runtime/` 下找不到二进制文件，返回中文错误消息提示用户运行 `scripts/fetch-runtime/` 脚本
+- `start_agent_turn` 捕获此错误并向前端返回友好提示
+
+**fetch 脚本**：
+- `scripts/ensure-runtime.cjs` — Node.js 入口，在 `tauri dev`/`build` 前自动执行（由 `tauri.conf.json` 的 `beforeDevCommand`/`beforeBuildCommand` 触发）
+- `scripts/fetch-runtime/fetch-macos.sh` — macOS aarch64 下载脚本
+- `scripts/fetch-runtime/fetch-linux.sh` — Linux x86_64 下载脚本
+- `scripts/fetch-runtime/fetch-windows.ps1` — Windows x86_64 下载脚本
+- 均幂等：已存在则跳过；支持 `GITHUB_TOKEN` 环境变量避免 GitHub API 限速
+
 ## 工具系统
 
 ### Tool trait
@@ -190,7 +219,7 @@ pub trait Tool: Send + Sync {
 | 工具 | 文件 | 危险 | 说明 |
 |---|---|---|---|
 | **read** | `read.rs` | ❌ | 文件读取：offset/limit、图片（png/jpg/gif/webp/bmp）、截断 2000 行/50KB |
-| **bash** | `bash.rs` | ✅ | Shell 执行：120s 超时、输出截断 2000 行/50KB、保存到临时文件 |
+| **bash** | `bash.rs` | ✅ | Shell 执行：120s 超时、输出截断 2000 行/50KB、保存到临时文件。当内置运行时可用时，注入增强 PATH（含 Python venv 和 Bun 目录）和 `VIRTUAL_ENV` 环境变量 |
 | **edit** | `edit.rs` | ❌ | 精确文本替换：多编辑批量、oldText 唯一性校验、边界检查 |
 | **write** | `write.rs` | ❌ | 文件创建/覆盖：自动建父目录、路径限制 100MB |
 | **grep** | `grep.rs` | ❌ | ripgrep 文本搜索（需系统装 `rg`） |

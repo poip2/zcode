@@ -94,7 +94,12 @@ fn kill_process_tree(pid: u32) {
 }
 
 #[cfg(windows)]
-fn spawn_shell(cwd: &Path, command: &str, augmented_path: Option<&str>, venv_dir: Option<&Path>) -> std::io::Result<Child> {
+fn spawn_shell(
+    cwd: &Path,
+    command: &str,
+    augmented_path: Option<&str>,
+    venv_dir: Option<&Path>,
+) -> std::io::Result<Child> {
     let wrapped = wrap_windows_command(command);
     let mut last_err = None;
     for shell in WINDOWS_SHELLS {
@@ -111,8 +116,7 @@ fn spawn_shell(cwd: &Path, command: &str, augmented_path: Option<&str>, venv_dir
         if let Some(venv) = venv_dir {
             cmd.env("VIRTUAL_ENV", venv.to_str().unwrap_or(""));
         }
-        match cmd.spawn()
-        {
+        match cmd.spawn() {
             Ok(child) => return Ok(child),
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 last_err = Some(e);
@@ -130,7 +134,12 @@ fn spawn_shell(cwd: &Path, command: &str, augmented_path: Option<&str>, venv_dir
 }
 
 #[cfg(not(windows))]
-fn spawn_shell(cwd: &Path, command: &str, augmented_path: Option<&str>, venv_dir: Option<&Path>) -> std::io::Result<Child> {
+fn spawn_shell(
+    cwd: &Path,
+    command: &str,
+    augmented_path: Option<&str>,
+    venv_dir: Option<&Path>,
+) -> std::io::Result<Child> {
     let mut cmd = TokioCommand::new("bash");
     cmd.arg("-c")
         .arg(command)
@@ -188,26 +197,24 @@ impl Tool for BashTool {
                  packages, and `bun add` / `bun run` (not `npm` / `node`) for \
                  JavaScript/TypeScript."
             }
+        } else if cfg!(windows) {
+            "Execute a shell command in the current working directory. Runs via PowerShell on \
+             Windows (pwsh if available, else Windows PowerShell) — use PowerShell syntax, not \
+             bash. Examples:\n\
+             - list files incl. hidden: Get-ChildItem -Force\n\
+             - find by name: Get-ChildItem -Recurse -Filter *.py\n\
+             - grep-like search: Select-String -Path *.txt -Pattern 'TODO'\n\
+             - filter processes: Get-Process | Where-Object { $_.ProcessName -like '*python*' }\n\
+             - set env var: $env:FOO = 'bar'\n\
+             - chain commands: use ; not &&\n\
+             Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
+             (whichever is hit first). If truncated, full output is saved to a temp file. \
+             Optionally provide a timeout in seconds."
         } else {
-            if cfg!(windows) {
-                "Execute a shell command in the current working directory. Runs via PowerShell on \
-                 Windows (pwsh if available, else Windows PowerShell) — use PowerShell syntax, not \
-                 bash. Examples:\n\
-                 - list files incl. hidden: Get-ChildItem -Force\n\
-                 - find by name: Get-ChildItem -Recurse -Filter *.py\n\
-                 - grep-like search: Select-String -Path *.txt -Pattern 'TODO'\n\
-                 - filter processes: Get-Process | Where-Object { $_.ProcessName -like '*python*' }\n\
-                 - set env var: $env:FOO = 'bar'\n\
-                 - chain commands: use ; not &&\n\
-                 Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
-                 (whichever is hit first). If truncated, full output is saved to a temp file. \
-                 Optionally provide a timeout in seconds."
-            } else {
-                "Execute a bash command in the current working directory. Returns stdout and stderr. \
-                 Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
-                 truncated, full output is saved to a temp file. Optionally provide a timeout in \
-                 seconds."
-            }
+            "Execute a bash command in the current working directory. Returns stdout and stderr. \
+             Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
+             truncated, full output is saved to a temp file. Optionally provide a timeout in \
+             seconds."
         }
     }
 
@@ -248,8 +255,13 @@ impl Tool for BashTool {
 
         let timeout_secs = input.timeout.unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
-        let child = spawn_shell(&self.cwd, &input.command, self.augmented_path.as_deref(), self.venv_dir.as_deref())
-            .map_err(|e| Error::tool("shell", format!("Failed to execute command: {e}")))?;
+        let child = spawn_shell(
+            &self.cwd,
+            &input.command,
+            self.augmented_path.as_deref(),
+            self.venv_dir.as_deref(),
+        )
+        .map_err(|e| Error::tool("shell", format!("Failed to execute command: {e}")))?;
 
         let pid = child.id();
         let output_future = child.wait_with_output();

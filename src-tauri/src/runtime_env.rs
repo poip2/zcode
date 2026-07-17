@@ -92,15 +92,18 @@ pub async fn ensure_agent_venv(app: &AppHandle) -> Result<AgentRuntime, String> 
         let uv = embedded_uv(app)?;
         let python = embedded_python(app)?;
 
-        let output = tokio::time::timeout(Duration::from_secs(120), TokioCommand::new(&uv)
-            .arg("venv")
-            .arg(&venv_dir)
-            .arg("--python")
-            .arg(&python)
-            .output())
-            .await
-            .map_err(|_| "内置运行时初始化超时（超过120秒），请检查系统资源后重试".to_string())?
-            .map_err(|e| e.to_string())?;
+        let output = tokio::time::timeout(
+            Duration::from_secs(120),
+            TokioCommand::new(&uv)
+                .arg("venv")
+                .arg(&venv_dir)
+                .arg("--python")
+                .arg(&python)
+                .output(),
+        )
+        .await
+        .map_err(|_| "内置运行时初始化超时（超过120秒），请检查系统资源后重试".to_string())?
+        .map_err(|e| e.to_string())?;
 
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).to_string());

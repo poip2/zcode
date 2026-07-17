@@ -10,8 +10,7 @@ use std::sync::Arc;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::model::{
-    AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent,
-    ToolCall, Usage,
+    AssistantMessage, ContentBlock, Message, StopReason, StreamEvent, TextContent, ToolCall, Usage,
 };
 use zcode_lib::provider::{Context, Provider, StreamOptions};
 use zcode_lib::runtime_env;
@@ -275,10 +274,7 @@ async fn test_agent_image_aging_mechanism() -> Result<()> {
     let result = agent
         .run("What does the image contain?", move |ev| {
             match &ev {
-                AgentEvent::TurnEnd {
-                    tool_results,
-                    ..
-                } => {
+                AgentEvent::TurnEnd { tool_results, .. } => {
                     turn_end_count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     for tr in tool_results {
                         // Check if any tool result message contains an Image block
@@ -301,9 +297,7 @@ async fn test_agent_image_aging_mechanism() -> Result<()> {
                 } => {
                     eprintln!("  [ToolEnd: {tool_name} error={is_error}]");
                 }
-                AgentEvent::TurnStart {
-                    turn_index, ..
-                } => eprintln!("--- Turn #{turn_index} ---"),
+                AgentEvent::TurnStart { turn_index, .. } => eprintln!("--- Turn #{turn_index} ---"),
                 AgentEvent::AgentEnd { .. } => eprintln!("[AgentEnd]"),
                 _ => {}
             }
@@ -380,19 +374,21 @@ async fn test_tool_result_with_image_in_history() -> Result<()> {
     let mut agent = Agent::new(mock, tools, config);
 
     let result = agent
-        .run("Read test.txt and respond", move |ev| {
-            match &ev {
-                AgentEvent::TurnStart { turn_index, .. } => {
-                    eprintln!("--- Turn #{turn_index} ---")
-                }
-                AgentEvent::ToolEnd { tool_name, is_error, .. } => {
-                    eprintln!("  [ToolEnd: {tool_name} error={is_error}]")
-                }
-                AgentEvent::AgentEnd { error, .. } => {
-                    eprintln!("[AgentEnd error={:?}]", error)
-                }
-                _ => {}
+        .run("Read test.txt and respond", move |ev| match &ev {
+            AgentEvent::TurnStart { turn_index, .. } => {
+                eprintln!("--- Turn #{turn_index} ---")
             }
+            AgentEvent::ToolEnd {
+                tool_name,
+                is_error,
+                ..
+            } => {
+                eprintln!("  [ToolEnd: {tool_name} error={is_error}]")
+            }
+            AgentEvent::AgentEnd { error, .. } => {
+                eprintln!("[AgentEnd error={:?}]", error)
+            }
+            _ => {}
         })
         .await;
 
@@ -411,7 +407,10 @@ async fn test_tool_result_with_image_in_history() -> Result<()> {
         .collect::<Vec<_>>()
         .join("");
     eprintln!("Final response: {text}");
-    assert!(text.contains("image analysis"), "Should contain expected text");
+    assert!(
+        text.contains("image analysis"),
+        "Should contain expected text"
+    );
 
     // Verify agent history has been cleaned up - no bare Image blocks remain
     // after the agent run completes (they should have been aged out)
@@ -423,7 +422,10 @@ async fn test_tool_result_with_image_in_history() -> Result<()> {
                 .content
                 .iter()
                 .any(|b| matches!(b, ContentBlock::Image(_)));
-            eprintln!("  History[{i}]: tool={} has_image={has_image}", tr.tool_name);
+            eprintln!(
+                "  History[{i}]: tool={} has_image={has_image}",
+                tr.tool_name
+            );
             // Images should have been aged out by the time agent finishes
             if has_image {
                 eprintln!(

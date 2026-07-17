@@ -316,7 +316,10 @@ impl Agent {
             Message::ToolResult(tr) => tr,
             _ => return,
         };
-        let has_image = tr.content.iter().any(|b| matches!(b, ContentBlock::Image(_)));
+        let has_image = tr
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Image(_)));
         if !has_image {
             return;
         }

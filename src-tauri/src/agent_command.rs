@@ -17,13 +17,13 @@
 //! - Read-only tools (read, grep, find, ls) execute immediately.
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
-use crate::runtime_env::{self, RuntimeState};
 use crate::error::Result as AgentResult;
 use crate::model::{
     AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent,
     UserMessage,
 };
 use crate::provider::StreamOptions;
+use crate::runtime_env::{self, RuntimeState};
 use crate::settings;
 use crate::skills;
 use crate::tools::{self, Tool, ToolEffects, ToolOutput, ToolRegistry};
@@ -626,7 +626,11 @@ fn build_guarded_registry(
             "read" => Box::new(ReadTool::new(cwd)),
             "shell" => {
                 if let (Some(path), Some(venv)) = (augmented_path, venv_dir) {
-                    Box::new(BashTool::with_runtime(cwd, path.to_string(), venv.to_path_buf()))
+                    Box::new(BashTool::with_runtime(
+                        cwd,
+                        path.to_string(),
+                        venv.to_path_buf(),
+                    ))
                 } else {
                     Box::new(BashTool::new(cwd))
                 }
@@ -934,7 +938,10 @@ pub async fn start_agent_turn(
         } else {
             match runtime_env::ensure_agent_venv(&app).await {
                 Ok(rt) => {
-                    eprintln!("[zcode] Bundled runtime initialized: venv={}", rt.venv_dir.display());
+                    eprintln!(
+                        "[zcode] Bundled runtime initialized: venv={}",
+                        rt.venv_dir.display()
+                    );
                     let mut guard = runtime_state.runtime.lock().unwrap();
                     if guard.is_none() {
                         *guard = Some(rt.clone());

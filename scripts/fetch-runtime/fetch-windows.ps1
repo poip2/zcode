@@ -46,10 +46,11 @@ if (-not (Test-Path $PyDir)) {
         exit 1
     }
     Write-Host "==> Downloading $($Asset.browser_download_url)"
-    Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile "$env:TEMP\python-standalone.tar.gz"
+    $PyTarball = [System.IO.Path]::GetTempFileName()
+    Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $PyTarball
     New-Item -ItemType Directory -Force -Path $PyDir | Out-Null
-    tar -xzf "$env:TEMP\python-standalone.tar.gz" -C $PyDir --strip-components=1
-    Remove-Item "$env:TEMP\python-standalone.tar.gz" -Force
+    tar -xzf $PyTarball -C $PyDir --strip-components=1
+    Remove-Item $PyTarball -Force
 } else {
     Write-Host "==> python-build-standalone already present, skipping"
 }

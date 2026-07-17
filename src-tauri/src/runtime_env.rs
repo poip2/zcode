@@ -64,7 +64,9 @@ pub async fn ensure_agent_venv(app: &AppHandle) -> Result<AgentRuntime, String> 
 
     if !venv_valid {
         if venv_dir.exists() {
-            let _ = std::fs::remove_dir_all(&venv_dir);
+            if let Err(e) = std::fs::remove_dir_all(&venv_dir) {
+                eprintln!("[zcode] Failed to remove broken venv: {e}");
+            }
         }
         let uv = embedded_uv(app)?;
         let python = embedded_python(app)?;

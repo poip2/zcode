@@ -160,32 +160,54 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        if cfg!(windows) {
-            "Execute a shell command in the current working directory. Runs via PowerShell on \
-             Windows (pwsh if available, else Windows PowerShell) — use PowerShell syntax, not \
-             bash. Examples:\n\
-             - list files incl. hidden: Get-ChildItem -Force\n\
-             - find by name: Get-ChildItem -Recurse -Filter *.py\n\
-             - grep-like search: Select-String -Path *.txt -Pattern 'TODO'\n\
-             - filter processes: Get-Process | Where-Object { $_.ProcessName -like '*python*' }\n\
-             - set env var: $env:FOO = 'bar'\n\
-             - chain commands: use ; not &&\n\
-             Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
-             (whichever is hit first). If truncated, full output is saved to a temp file. \
-             Optionally provide a timeout in seconds. \
-             A bundled, isolated Python (managed by uv) and Bun runtime are available on \
-             PATH: use `uv pip install <package>` (not `pip install`) for Python \
-             packages, and `bun add` / `bun run` (not `npm` / `node`) for \
-             JavaScript/TypeScript."
+        if self.augmented_path.is_some() {
+            if cfg!(windows) {
+                "Execute a shell command in the current working directory. Runs via PowerShell on \
+                 Windows (pwsh if available, else Windows PowerShell) — use PowerShell syntax, not \
+                 bash. Examples:\n\
+                 - list files incl. hidden: Get-ChildItem -Force\n\
+                 - find by name: Get-ChildItem -Recurse -Filter *.py\n\
+                 - grep-like search: Select-String -Path *.txt -Pattern 'TODO'\n\
+                 - filter processes: Get-Process | Where-Object { $_.ProcessName -like '*python*' }\n\
+                 - set env var: $env:FOO = 'bar'\n\
+                 - chain commands: use ; not &&\n\
+                 Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
+                 (whichever is hit first). If truncated, full output is saved to a temp file. \
+                 Optionally provide a timeout in seconds. \
+                 A bundled, isolated Python (managed by uv) and Bun runtime are available on \
+                 PATH: use `uv pip install <package>` (not `pip install`) for Python \
+                 packages, and `bun add` / `bun run` (not `npm` / `node`) for \
+                 JavaScript/TypeScript."
+            } else {
+                "Execute a bash command in the current working directory. Returns stdout and stderr. \
+                 Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
+                 truncated, full output is saved to a temp file. Optionally provide a timeout in \
+                 seconds. \
+                 A bundled, isolated Python (managed by uv) and Bun runtime are available on \
+                 PATH: use `uv pip install <package>` (not `pip install`) for Python \
+                 packages, and `bun add` / `bun run` (not `npm` / `node`) for \
+                 JavaScript/TypeScript."
+            }
         } else {
-            "Execute a bash command in the current working directory. Returns stdout and stderr. \
-             Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
-             truncated, full output is saved to a temp file. Optionally provide a timeout in \
-             seconds. \
-             A bundled, isolated Python (managed by uv) and Bun runtime are available on \
-             PATH: use `uv pip install <package>` (not `pip install`) for Python \
-             packages, and `bun add` / `bun run` (not `npm` / `node`) for \
-             JavaScript/TypeScript."
+            if cfg!(windows) {
+                "Execute a shell command in the current working directory. Runs via PowerShell on \
+                 Windows (pwsh if available, else Windows PowerShell) — use PowerShell syntax, not \
+                 bash. Examples:\n\
+                 - list files incl. hidden: Get-ChildItem -Force\n\
+                 - find by name: Get-ChildItem -Recurse -Filter *.py\n\
+                 - grep-like search: Select-String -Path *.txt -Pattern 'TODO'\n\
+                 - filter processes: Get-Process | Where-Object { $_.ProcessName -like '*python*' }\n\
+                 - set env var: $env:FOO = 'bar'\n\
+                 - chain commands: use ; not &&\n\
+                 Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
+                 (whichever is hit first). If truncated, full output is saved to a temp file. \
+                 Optionally provide a timeout in seconds."
+            } else {
+                "Execute a bash command in the current working directory. Returns stdout and stderr. \
+                 Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
+                 truncated, full output is saved to a temp file. Optionally provide a timeout in \
+                 seconds."
+            }
         }
     }
 

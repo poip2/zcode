@@ -293,18 +293,9 @@ impl Agent {
     // Core Loop
     // ========================================================================
 
-    /// Replace any ContentBlock::Image entries in a ToolResult message with text placeholders.
-    fn age_out_image(msg: &mut Message) {
-        let tr = match msg {
-            Message::ToolResult(tr) => tr,
-            _ => return,
-        };
-        let has_image = tr.content.iter().any(|b| matches!(b, ContentBlock::Image(_)));
-        if !has_image {
-            return;
-        }
-        let new_content: Vec<ContentBlock> = tr
-            .content
+    /// Replace any ContentBlock::Image in content with text placeholders.
+    fn replace_images_with_placeholders(content: &[ContentBlock]) -> Vec<ContentBlock> {
+        content
             .iter()
             .map(|block| match block {
                 ContentBlock::Image(img) => {
@@ -316,9 +307,21 @@ impl Agent {
                 }
                 other => other.clone(),
             })
-            .collect();
+            .collect()
+    }
+
+    /// Replace any ContentBlock::Image entries in a ToolResult message with text placeholders.
+    fn age_out_image(msg: &mut Message) {
+        let tr = match msg {
+            Message::ToolResult(tr) => tr,
+            _ => return,
+        };
+        let has_image = tr.content.iter().any(|b| matches!(b, ContentBlock::Image(_)));
+        if !has_image {
+            return;
+        }
         let new_tr = ToolResultMessage {
-            content: new_content,
+            content: Self::replace_images_with_placeholders(&tr.content),
             tool_call_id: tr.tool_call_id.clone(),
             tool_name: tr.tool_name.clone(),
             details: tr.details.clone(),
@@ -808,20 +811,8 @@ impl Agent {
                     }
 
                     // TurnEnd event uses text placeholder (frontend doesn't need base64).
-                    let placeholder_content: Vec<ContentBlock> = result
-                        .content
-                        .iter()
-                        .map(|block| match block {
-                            ContentBlock::Image(img) => {
-                                let size_kb = img.data.len() / 1024;
-                                ContentBlock::Text(TextContent::new(format!(
-                                    "[已读取图片: {}, {}KB]",
-                                    img.mime_type, size_kb
-                                )))
-                            }
-                            other => other.clone(),
-                        })
-                        .collect();
+                    let placeholder_content =
+                        Self::replace_images_with_placeholders(&result.content);
 
                     tool_messages.push(Message::tool_result(ToolResultMessage {
                         tool_call_id: tc.id.clone(),

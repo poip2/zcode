@@ -25,12 +25,24 @@ struct BashInput {
 
 pub struct BashTool {
     cwd: PathBuf,
+    augmented_path: Option<String>,
+    venv_dir: Option<PathBuf>,
 }
 
 impl BashTool {
     pub fn new(cwd: &Path) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            augmented_path: None,
+            venv_dir: None,
+        }
+    }
+
+    pub fn with_runtime(cwd: &Path, augmented_path: String, venv_dir: PathBuf) -> Self {
+        Self {
+            cwd: cwd.to_path_buf(),
+            augmented_path: Some(augmented_path),
+            venv_dir: Some(venv_dir),
         }
     }
 }
@@ -82,18 +94,24 @@ fn kill_process_tree(pid: u32) {
 }
 
 #[cfg(windows)]
-fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
+fn spawn_shell(cwd: &Path, command: &str, augmented_path: Option<&str>, venv_dir: Option<&Path>) -> std::io::Result<Child> {
     let wrapped = wrap_windows_command(command);
     let mut last_err = None;
     for shell in WINDOWS_SHELLS {
-        match TokioCommand::new(shell)
-            .args(["-NoProfile", "-NonInteractive", "-Command", &wrapped])
+        let mut cmd = TokioCommand::new(shell);
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &wrapped])
             .current_dir(cwd)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW — suppress console flash
-            .spawn()
+            .creation_flags(0x08000000); // CREATE_NO_WINDOW — suppress console flash
+        if let Some(path) = augmented_path {
+            cmd.env("PATH", path);
+        }
+        if let Some(venv) = venv_dir {
+            cmd.env("VIRTUAL_ENV", venv.to_str().unwrap_or(""));
+        }
+        match cmd.spawn()
         {
             Ok(child) => return Ok(child),
             Err(e) if e.kind() == ErrorKind::NotFound => {
@@ -112,9 +130,9 @@ fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
 }
 
 #[cfg(not(windows))]
-fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
-    TokioCommand::new("bash")
-        .arg("-c")
+fn spawn_shell(cwd: &Path, command: &str, augmented_path: Option<&str>, venv_dir: Option<&Path>) -> std::io::Result<Child> {
+    let mut cmd = TokioCommand::new("bash");
+    cmd.arg("-c")
         .arg(command)
         .current_dir(cwd)
         .stdin(Stdio::null())
@@ -122,8 +140,14 @@ fn spawn_shell(cwd: &Path, command: &str) -> std::io::Result<Child> {
         .stderr(Stdio::piped())
         // New process group so a timeout kill takes out the whole subtree
         // (pipelines, backgrounded children), not just the bash process.
-        .process_group(0)
-        .spawn()
+        .process_group(0);
+    if let Some(path) = augmented_path {
+        cmd.env("PATH", path);
+    }
+    if let Some(venv) = venv_dir {
+        cmd.env("VIRTUAL_ENV", venv.to_str().unwrap_or(""));
+    }
+    cmd.spawn()
 }
 
 #[async_trait]
@@ -148,12 +172,20 @@ impl Tool for BashTool {
              - chain commands: use ; not &&\n\
              Returns stdout and stderr. Output is truncated to last 500 lines or 50KB \
              (whichever is hit first). If truncated, full output is saved to a temp file. \
-             Optionally provide a timeout in seconds."
+             Optionally provide a timeout in seconds. \
+             A bundled, isolated Python (managed by uv) and Bun runtime are available on \
+             PATH: use `uv pip install <package>` (not `pip install`) for Python \
+             packages, and `bun add` / `bun run` (not `npm` / `node`) for \
+             JavaScript/TypeScript."
         } else {
             "Execute a bash command in the current working directory. Returns stdout and stderr. \
              Output is truncated to last 500 lines or 50KB (whichever is hit first). If \
              truncated, full output is saved to a temp file. Optionally provide a timeout in \
-             seconds."
+             seconds. \
+             A bundled, isolated Python (managed by uv) and Bun runtime are available on \
+             PATH: use `uv pip install <package>` (not `pip install`) for Python \
+             packages, and `bun add` / `bun run` (not `npm` / `node`) for \
+             JavaScript/TypeScript."
         }
     }
 
@@ -194,7 +226,7 @@ impl Tool for BashTool {
 
         let timeout_secs = input.timeout.unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
-        let child = spawn_shell(&self.cwd, &input.command)
+        let child = spawn_shell(&self.cwd, &input.command, self.augmented_path.as_deref(), self.venv_dir.as_deref())
             .map_err(|e| Error::tool("shell", format!("Failed to execute command: {e}")))?;
 
         let pid = child.id();

@@ -17,6 +17,7 @@
 //! - Read-only tools (read, grep, find, ls) execute immediately.
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
+use crate::runtime_env::{self, RuntimeState};
 use crate::error::Result as AgentResult;
 use crate::model::{
     AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent,
@@ -611,6 +612,8 @@ fn build_guarded_registry(
     session_id: &str,
     shared_current_file: Arc<std::sync::Mutex<Option<String>>>,
     shared_cwd: Arc<std::sync::Mutex<PathBuf>>,
+    augmented_path: Option<&str>,
+    venv_dir: Option<&Path>,
 ) -> ToolRegistry {
     use crate::tools::{
         bash::BashTool, edit::EditTool, find::FindTool, grep::GrepTool, ls::LsTool, read::ReadTool,
@@ -621,7 +624,13 @@ fn build_guarded_registry(
     for name in tool_names {
         let tool: Box<dyn Tool> = match *name {
             "read" => Box::new(ReadTool::new(cwd)),
-            "shell" => Box::new(BashTool::new(cwd)),
+            "shell" => {
+                if let (Some(path), Some(venv)) = (augmented_path, venv_dir) {
+                    Box::new(BashTool::with_runtime(cwd, path.to_string(), venv.to_path_buf()))
+                } else {
+                    Box::new(BashTool::new(cwd))
+                }
+            }
             "edit" => Box::new(EditTool::new(cwd)),
             "write" => Box::new(WriteTool::new(cwd)),
             "grep" => Box::new(GrepTool::new(cwd)),
@@ -845,6 +854,7 @@ pub async fn close_session(
 pub async fn start_agent_turn(
     app: AppHandle,
     state: tauri::State<'_, SessionManager>,
+    runtime_state: tauri::State<'_, RuntimeState>,
     session_id: String,
     user_message: String,
     allowed_tools: Vec<String>,
@@ -915,6 +925,25 @@ pub async fn start_agent_turn(
     } else {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     };
+
+    // --- Ensure bundled runtime (Python + uv + Bun) is initialized ---
+    let runtime_opt: Option<runtime_env::AgentRuntime> = {
+        let needs_init = runtime_state.runtime.lock().unwrap().is_none();
+        if needs_init {
+            match runtime_env::ensure_agent_venv(&app).await {
+                Ok(rt) => {
+                    eprintln!("[zcode] Bundled runtime initialized: venv={}", rt.venv_dir.display());
+                    *runtime_state.runtime.lock().unwrap() = Some(rt);
+                }
+                Err(e) => {
+                    eprintln!("[zcode] WARNING: Failed to init bundled runtime: {e}");
+                }
+            }
+        }
+        runtime_state.runtime.lock().unwrap().clone()
+    };
+    let augmented_path: Option<String> = runtime_opt.as_ref().map(|rt| runtime_env::augmented_path(rt));
+    let runtime_venv_dir: Option<PathBuf> = runtime_opt.as_ref().map(|rt| rt.venv_dir.clone());
 
     // Build system prompt
     let user_config_dir = dirs::config_dir().map(|d| d.join("zcode"));
@@ -1020,6 +1049,8 @@ pub async fn start_agent_turn(
             &session_id,
             Arc::clone(&current_file_arc),
             Arc::clone(&cwd_arc),
+            augmented_path.as_deref(),
+            runtime_venv_dir.as_deref(),
         );
 
         let mut agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
@@ -1076,6 +1107,8 @@ pub async fn start_agent_turn(
     let rebuild_pending_approvals = Arc::clone(&pending_approvals_arc);
     let rebuild_current_file = Arc::clone(&current_file_arc);
     let rebuild_cwd = Arc::clone(&cwd_arc);
+    let rebuild_augmented_path = augmented_path.clone();
+    let rebuild_runtime_venv_dir = runtime_venv_dir.clone();
 
     let event_prefix = format!("agent://{}", session_id);
     let event_prefix_post = event_prefix.clone();
@@ -1319,6 +1352,8 @@ pub async fn start_agent_turn(
                     &rebuild_session_id,
                     rebuild_current_file,
                     rebuild_cwd,
+                    rebuild_augmented_path.as_deref(),
+                    rebuild_runtime_venv_dir.as_deref(),
                 );
                 let new_agent = Agent::new(rebuild_provider, tool_registry, rebuild_config);
 

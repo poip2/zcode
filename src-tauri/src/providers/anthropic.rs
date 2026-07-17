@@ -342,6 +342,7 @@ struct AnthropicImageSource<'a> {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum AnthropicToolResultContent<'a> {
     Text { text: &'a str },
+    Image { source: AnthropicImageSource<'a> },
 }
 
 #[derive(Debug, Serialize)]
@@ -730,18 +731,16 @@ fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
             });
             if is_tool_result_user {
                 if let Some(AnthropicMessage { content, .. }) = result.last_mut() {
-                    for block in &tr.content {
-                        content.push(AnthropicContent::ToolResult {
-                            tool_use_id: &tr.tool_call_id,
-                            content: vec![AnthropicToolResultContent::Text {
-                                text: match block {
-                                    ContentBlock::Text(t) => t.text.as_str(),
-                                    _ => "[non-text content]",
-                                },
-                            }],
-                            is_error: if tr.is_error { Some(true) } else { None },
-                        });
-                    }
+                    let blocks: Vec<AnthropicToolResultContent<'_>> = tr
+                        .content
+                        .iter()
+                        .map(block_to_tool_result_content)
+                        .collect();
+                    content.push(AnthropicContent::ToolResult {
+                        tool_use_id: &tr.tool_call_id,
+                        content: blocks,
+                        is_error: if tr.is_error { Some(true) } else { None },
+                    });
                 }
             } else {
                 result.push(convert_message_to_anthropic(msg));
@@ -773,23 +772,18 @@ fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {
             }
         }
         Message::ToolResult(result) => {
-            let content = result
+            let blocks: Vec<AnthropicToolResultContent<'_>> = result
                 .content
                 .iter()
-                .map(|block| AnthropicContent::ToolResult {
-                    tool_use_id: &result.tool_call_id,
-                    content: vec![AnthropicToolResultContent::Text {
-                        text: match block {
-                            ContentBlock::Text(t) => t.text.as_str(),
-                            _ => "[non-text content]",
-                        },
-                    }],
-                    is_error: if result.is_error { Some(true) } else { None },
-                })
+                .map(block_to_tool_result_content)
                 .collect();
             AnthropicMessage {
                 role: "user",
-                content,
+                content: vec![AnthropicContent::ToolResult {
+                    tool_use_id: &result.tool_call_id,
+                    content: blocks,
+                    is_error: if result.is_error { Some(true) } else { None },
+                }],
             }
         }
         Message::Custom(c) => {
@@ -819,6 +813,22 @@ fn convert_user_content(content: &UserContent) -> Vec<AnthropicContent<'_>> {
             .iter()
             .filter_map(convert_content_block_to_anthropic)
             .collect(),
+    }
+}
+
+fn block_to_tool_result_content(block: &ContentBlock) -> AnthropicToolResultContent<'_> {
+    match block {
+        ContentBlock::Text(t) => AnthropicToolResultContent::Text { text: &t.text },
+        ContentBlock::Image(img) => AnthropicToolResultContent::Image {
+            source: AnthropicImageSource {
+                r#type: "base64",
+                media_type: &img.mime_type,
+                data: &img.data,
+            },
+        },
+        _ => AnthropicToolResultContent::Text {
+            text: "[non-text content]",
+        },
     }
 }
 

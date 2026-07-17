@@ -146,6 +146,11 @@ pub struct Agent {
 
     /// Cached system prompt token count. Re-computed when the system prompt changes.
     cached_system_prompt_tokens: u64,
+
+    /// Indices in self.messages of ToolResults that still contain real
+    /// ContentBlock::Image blocks (not yet aged out into text placeholders).
+    /// Cleared on compaction (which reorders messages).
+    pending_image_indices: Vec<usize>,
 }
 
 impl Agent {
@@ -165,6 +170,7 @@ impl Agent {
             last_compaction_turn: None,
             consecutive_compaction_failures: 0,
             cached_system_prompt_tokens: system_prompt_tokens,
+            pending_image_indices: Vec::new(),
         }
     }
 
@@ -285,6 +291,45 @@ impl Agent {
     // Core Loop
     // ========================================================================
 
+    /// Replace any ContentBlock::Image entries in a ToolResult message with text placeholders.
+    fn age_out_image(msg: &mut Message) {
+        let tr = match msg {
+            Message::ToolResult(tr) => tr,
+            _ => return,
+        };
+        let has_image = tr.content.iter().any(|b| matches!(b, ContentBlock::Image(_)));
+        if !has_image {
+            return;
+        }
+        let new_content: Vec<ContentBlock> = tr
+            .content
+            .iter()
+            .map(|block| match block {
+                ContentBlock::Image(img) => {
+                    let size_kb = img.data.len() / 1024;
+                    ContentBlock::Text(TextContent::new(format!(
+                        "[已读取图片: {}, {}KB]",
+                        img.mime_type, size_kb
+                    )))
+                }
+                other => other.clone(),
+            })
+            .collect();
+        let new_tr = ToolResultMessage {
+            content: new_content,
+            tool_call_id: tr.tool_call_id.clone(),
+            tool_name: tr.tool_name.clone(),
+            details: tr.details.clone(),
+            is_error: tr.is_error,
+            timestamp: tr.timestamp,
+        };
+        *msg = Message::tool_result(new_tr);
+    }
+
+    fn result_has_image(content: &[ContentBlock]) -> bool {
+        content.iter().any(|b| matches!(b, ContentBlock::Image(_)))
+    }
+
     async fn run_loop(
         &mut self,
         prompts: Vec<Message>,
@@ -388,6 +433,7 @@ impl Agent {
                                 );
                                 self.last_compaction_turn = Some(current_turn);
                                 compaction::apply_compaction(&mut self.messages, &result);
+                                self.pending_image_indices.clear(); // indices invalid after compaction
                                 self.previous_summary = Some(result.summary.clone());
 
                                 // Track whether compaction actually reduced tokens below threshold.
@@ -562,6 +608,15 @@ impl Agent {
             self.messages.push(event_msg.clone());
             new_messages.push(event_msg.clone());
 
+            // Age out any pending image that was sent in this turn's stream call.
+            // The real base64 data was included in the request we just made;
+            // future turns only need the text placeholder.
+            for idx in self.pending_image_indices.drain(..) {
+                if let Some(msg) = self.messages.get_mut(idx) {
+                    Self::age_out_image(msg);
+                }
+            }
+
             if error_occurred {
                 on_event(AgentEvent::AgentEnd {
                     session_id: session_id.clone(),
@@ -691,9 +746,28 @@ impl Agent {
                         is_error,
                     });
 
-                    // Replace image blocks with text placeholders before storing in history.
-                    // Current turn already sent the real image to the provider.
-                    let history_content: Vec<ContentBlock> = result
+                    // Push tool result with real Image blocks to history.
+                    // The image will be sent to the provider next turn,
+                    // then aged out into a text placeholder immediately after.
+                    let has_image = Self::result_has_image(&result.content);
+
+                    let history_msg = Message::tool_result(ToolResultMessage {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        content: result.content.clone(),
+                        details: result.details.clone(),
+                        is_error,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    });
+
+                    let idx = self.messages.len();
+                    self.messages.push(history_msg);
+                    if has_image {
+                        self.pending_image_indices.push(idx);
+                    }
+
+                    // TurnEnd event uses text placeholder (frontend doesn't need base64).
+                    let placeholder_content: Vec<ContentBlock> = result
                         .content
                         .iter()
                         .map(|block| match block {
@@ -708,17 +782,14 @@ impl Agent {
                         })
                         .collect();
 
-                    let tool_result_msg = Message::tool_result(ToolResultMessage {
+                    tool_messages.push(Message::tool_result(ToolResultMessage {
                         tool_call_id: tc.id.clone(),
                         tool_name: tc.name.clone(),
-                        content: history_content,
+                        content: placeholder_content,
                         details: result.details,
                         is_error,
                         timestamp: chrono::Utc::now().timestamp_millis(),
-                    });
-
-                    self.messages.push(tool_result_msg.clone());
-                    tool_messages.push(tool_result_msg);
+                    }));
                 }
 
                 // 4. Loop back: provider sees tool results and responds

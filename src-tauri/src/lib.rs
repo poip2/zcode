@@ -9,6 +9,7 @@ pub mod providers;
 pub mod settings;
 pub mod skills;
 pub mod sse;
+pub mod runtime_env;
 pub mod tools;
 pub mod watcher;
 
@@ -32,6 +33,7 @@ pub fn run() {
             Ok(())
         })
         .manage(agent_command::SessionManager::new())
+        .manage(runtime_env::RuntimeState::default())
         .manage(watcher::WatcherState::default())
         .manage(watcher::SkillWatcherState::default())
         .invoke_handler(tauri::generate_handler![

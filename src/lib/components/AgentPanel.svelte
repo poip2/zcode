@@ -7,6 +7,7 @@
   import { getBaseDir, getDefaultDataDir } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
   import { skillsStore } from "$lib/stores/skills.svelte";
+  import { reloadOutputFiles } from "$lib/stores/workspaceFiles";
 
   type AgentSession = Awaited<ReturnType<typeof getAgentSession>>;
 
@@ -39,6 +40,8 @@
   let inputText = $state("");
   let aiSettings = $state<AIProviderSettings>({ baseUrl: "", model: "" });
   let pinnedPath = $state<string | null>(null);
+  let lastOutputFolder = $state<string | null>(null);
+  let wasSending = $state(false);
 
   let inputEl: HTMLTextAreaElement | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -217,6 +220,13 @@
     scrollToBottom();
   });
 
+  $effect(() => {
+    if (wasSending && !sending && lastOutputFolder) {
+      reloadOutputFiles(lastOutputFolder).catch(() => {});
+    }
+    wasSending = sending;
+  });
+
   function relativeTime(ts: number): string {
     const diff = Date.now() - ts;
     const mins = Math.floor(diff / 60000);
@@ -269,6 +279,7 @@
     try {
       const defaultDataDir = await getDefaultDataDir();
       const { pinFolder, scriptsFolder, sourcesFolder, outputFolder } = await resolveWorkspaceFolders(freshSettings, defaultDataDir);
+      lastOutputFolder = outputFolder;
 
       await session.send(text, {
         baseUrl: freshSettings.aiProvider.baseUrl,

@@ -15,7 +15,6 @@
     getDefaultDataDir,
   } from "$lib/tauri/files";
   import { startFileWatcher, stopFileWatcher } from "$lib/tauri/watcher";
-  import { recents } from "$lib/stores/recents";
   import { load as loadSettings, resolveWorkspaceFolders } from "$lib/stores/settings";
   import { reloadSourcesFiles } from "$lib/stores/workspaceFiles";
   
@@ -82,7 +81,6 @@
   onMount(() => {
     initRenderer();
     rendererReady = true;
-    recents.load();
 
     (window as any).__zcode_open = () => handleOpenDialog();
     (window as any).__zcode_open_path = (path: string) => {
@@ -99,7 +97,8 @@
           dragHover = true;
         } else if (event.payload.type === "drop") {
           dragHover = false;
-          handleDroppedPaths(event.payload.paths);
+          handleDroppedPaths(event.payload.paths).catch(err =>
+            console.error('Drag-drop error:', err));
         } else {
           dragHover = false;
         }

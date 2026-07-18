@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { get } from "svelte/store";
 import { document } from "../stores/document";
 import { type DirNode } from "../stores/folderTree";
-import { recents } from "../stores/recents";
 import { renderFull } from "../renderer/pipeline";
 import { markSaved } from "./watcher";
 
@@ -59,7 +58,6 @@ export async function loadFile(path: string): Promise<void> {
     });
 
     getCurrentWindow().setTitle(`${fileName} — zcode`).catch(() => {});
-    await recents.addRecent(absolutePath);
     invoke("start_watching", { path: absolutePath }).catch(() => {});
   } catch (err) {
     document.set({

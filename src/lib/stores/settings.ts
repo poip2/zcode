@@ -1,4 +1,5 @@
 import { Store } from "@tauri-apps/plugin-store";
+import { joinPath } from "$lib/tauri/files";
 
 const STORE_FILE = "zcode-settings.json";
 
@@ -16,6 +17,13 @@ export interface AIProviderSettings {
   maskedApiKey?: string;
   /** Auto-approve write/edit/shell operations without confirmation */
   autoApproveWrites?: boolean;
+}
+
+export interface WorkspaceFolders {
+  pinFolder: string;
+  scriptsFolder: string;
+  sourcesFolder: string;
+  outputFolder: string;
 }
 
 export interface AppSettings {
@@ -99,4 +107,13 @@ export function onSettingsChange(cb: ChangeListener): () => void {
 
 function _notifyListeners(_settings: AppSettings) {
   for (const cb of changeListeners) cb();
+}
+
+export async function resolveWorkspaceFolders(settings: AppSettings, dataDir: string): Promise<WorkspaceFolders> {
+  return {
+    pinFolder: settings.pinFolder || await joinPath(dataDir, "pin"),
+    scriptsFolder: settings.scriptsFolder || await joinPath(dataDir, "scripts"),
+    sourcesFolder: settings.sourcesFolder || await joinPath(dataDir, "sources"),
+    outputFolder: settings.outputFolder || await joinPath(dataDir, "output"),
+  };
 }

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
-  import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
-  import { getBaseDir, getDefaultDataDir, joinPath } from "$lib/tauri/files";
+  import { getBaseDir, getDefaultDataDir } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
   import { skillsStore } from "$lib/stores/skills.svelte";
 
@@ -268,10 +268,7 @@
     // Resolve folder paths: use settings values, or compute defaults
     try {
       const defaultDataDir = await getDefaultDataDir();
-      const pinFolder = freshSettings.pinFolder || await joinPath(defaultDataDir, "pin");
-      const scriptsFolder = freshSettings.scriptsFolder || await joinPath(defaultDataDir, "scripts");
-      const sourcesFolder = freshSettings.sourcesFolder || await joinPath(defaultDataDir, "sources");
-      const outputFolder = freshSettings.outputFolder || await joinPath(defaultDataDir, "output");
+      const { pinFolder, scriptsFolder, sourcesFolder, outputFolder } = await resolveWorkspaceFolders(freshSettings, defaultDataDir);
 
       await session.send(text, {
         baseUrl: freshSettings.aiProvider.baseUrl,

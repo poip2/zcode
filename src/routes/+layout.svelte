@@ -5,7 +5,7 @@
   import { skillsStore } from "$lib/stores/skills.svelte";
   import { startSkillsWatcher, stopSkillsWatcher, listenSkillsChanged } from "$lib/tauri/watcher";
   import { getBaseDir, getDefaultDataDir, joinPath, pathExists, createFolder } from "$lib/tauri/files";
-  import { load as loadSettings, save as saveSettings } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders } from "$lib/stores/settings";
   import "../app.css";
 
   let { children } = $props();
@@ -93,21 +93,12 @@
       // Write default paths to settings for any folder the user hasn't explicitly set
       const settings = await loadSettings();
       let changed = false;
-      if (!settings.pinFolder) {
-        settings.pinFolder = await joinPath(dataDir, "pin");
-        changed = true;
-      }
-      if (!settings.scriptsFolder) {
-        settings.scriptsFolder = await joinPath(dataDir, "scripts");
-        changed = true;
-      }
-      if (!settings.sourcesFolder) {
-        settings.sourcesFolder = await joinPath(dataDir, "sources");
-        changed = true;
-      }
-      if (!settings.outputFolder) {
-        settings.outputFolder = await joinPath(dataDir, "output");
-        changed = true;
+      if (!settings.pinFolder || !settings.scriptsFolder || !settings.sourcesFolder || !settings.outputFolder) {
+        const resolved = await resolveWorkspaceFolders(settings, dataDir);
+        if (!settings.pinFolder) { settings.pinFolder = resolved.pinFolder; changed = true; }
+        if (!settings.scriptsFolder) { settings.scriptsFolder = resolved.scriptsFolder; changed = true; }
+        if (!settings.sourcesFolder) { settings.sourcesFolder = resolved.sourcesFolder; changed = true; }
+        if (!settings.outputFolder) { settings.outputFolder = resolved.outputFolder; changed = true; }
       }
       if (changed) {
         await saveSettings(settings);

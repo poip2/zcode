@@ -148,6 +148,13 @@
     saveError = false;
     aiWarning = null;
 
+    if (!portableDataDir) {
+      try {
+        const d = await getDefaultDataDir();
+        await updateDefaultPaths(d);
+      } catch {}
+    }
+
     // Compute masked key if user typed a new one, otherwise reuse stored mask
     let maskedToStore: string | undefined;
     if (apiKeyDirty && draftApiKey.trim()) {

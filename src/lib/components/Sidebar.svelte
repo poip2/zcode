@@ -18,9 +18,8 @@
     pathExists,
     openInShell,
     getDefaultDataDir,
-    joinPath,
   } from "$lib/tauri/files";
-  import { load as loadSettings, onSettingsChange } from "$lib/stores/settings";
+  import { load as loadSettings, onSettingsChange, resolveWorkspaceFolders } from "$lib/stores/settings";
   import { sourcesFiles, outputFiles, reloadSourcesFiles, reloadOutputFiles } from "$lib/stores/workspaceFiles";
   import { isMarkdownExt } from "$lib/utils/fileTypes";
 
@@ -59,8 +58,9 @@
   async function reloadWorkspaceFiles() {
     const dataDir = await getDefaultDataDir();
     const s = await loadSettings();
-    sourcesFolderPath = s.sourcesFolder || await joinPath(dataDir, "sources");
-    outputFolderPath = s.outputFolder || await joinPath(dataDir, "output");
+    const resolved = await resolveWorkspaceFolders(s, dataDir);
+    sourcesFolderPath = resolved.sourcesFolder;
+    outputFolderPath = resolved.outputFolder;
     await reloadSourcesFiles(sourcesFolderPath);
     await reloadOutputFiles(outputFolderPath);
   }
@@ -425,7 +425,7 @@
                             <!-- depth-3 file -->
                             <button
                               class="tree-row tree-file depth-3"
-                              class:active={doc.filePath === deep.path && !hasFolderSelected}
+                              class:active={(doc.filePath === deep.path || $externalFile?.path === deep.path) && !hasFolderSelected}
                               onclick={() => handleFileClick(deep)}
                               data-tauri-drag-region="false"
                             >
@@ -445,7 +445,7 @@
                       <!-- depth-2 file -->
                       <button
                         class="tree-row tree-file depth-2"
-                        class:active={doc.filePath === leaf.path && !hasFolderSelected}
+                        class:active={(doc.filePath === leaf.path || $externalFile?.path === leaf.path) && !hasFolderSelected}
                         onclick={() => handleFileClick(leaf)}
                         data-tauri-drag-region="false"
                       >
@@ -465,7 +465,7 @@
                 <!-- depth-1 file -->
                 <button
                   class="tree-row tree-file depth-1"
-                  class:active={doc.filePath === sub.path && !hasFolderSelected}
+                  class:active={(doc.filePath === sub.path || $externalFile?.path === sub.path) && !hasFolderSelected}
                   onclick={() => handleFileClick(sub)}
                   data-tauri-drag-region="false"
                 >
@@ -485,7 +485,7 @@
           <!-- depth-0 file -->
           <button
             class="tree-row tree-file depth-0"
-            class:active={doc.filePath === child.path && !hasFolderSelected}
+            class:active={(doc.filePath === child.path || $externalFile?.path === child.path) && !hasFolderSelected}
             onclick={() => handleFileClick(child)}
             data-tauri-drag-region="false"
           >

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
-  import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
-  import { getBaseDir } from "$lib/tauri/files";
+  import { getBaseDir, getDefaultDataDir } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
   import { skillsStore } from "$lib/stores/skills.svelte";
+  import { reloadOutputFiles } from "$lib/stores/workspaceFiles";
 
   type AgentSession = Awaited<ReturnType<typeof getAgentSession>>;
 
@@ -39,6 +40,8 @@
   let inputText = $state("");
   let aiSettings = $state<AIProviderSettings>({ baseUrl: "", model: "" });
   let pinnedPath = $state<string | null>(null);
+  let lastOutputFolder = $state<string | null>(null);
+  let wasSending = $state(false);
 
   let inputEl: HTMLTextAreaElement | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -217,6 +220,13 @@
     scrollToBottom();
   });
 
+  $effect(() => {
+    if (wasSending && !sending && lastOutputFolder) {
+      reloadOutputFiles(lastOutputFolder).catch(() => {});
+    }
+    wasSending = sending;
+  });
+
   function relativeTime(ts: number): string {
     const diff = Date.now() - ts;
     const mins = Math.floor(diff / 60000);
@@ -265,13 +275,32 @@
       ? getBaseDir(doc.filePath)
       : (pinnedPath ?? undefined);
 
-    await session.send(text, {
-      baseUrl: freshSettings.aiProvider.baseUrl,
-      model: freshSettings.aiProvider.model,
-      cwd: derivedCwd,
-      currentFile: doc.filePath ?? undefined,
-      autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
-    });
+    // Resolve folder paths: use settings values, or compute defaults
+    try {
+      const defaultDataDir = await getDefaultDataDir();
+      const { pinFolder, scriptsFolder, sourcesFolder, outputFolder } = await resolveWorkspaceFolders(freshSettings, defaultDataDir);
+      lastOutputFolder = outputFolder;
+
+      await session.send(text, {
+        baseUrl: freshSettings.aiProvider.baseUrl,
+        model: freshSettings.aiProvider.model,
+        cwd: derivedCwd,
+        currentFile: doc.filePath ?? undefined,
+        autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
+        pinFolder,
+        scriptsFolder,
+        sourcesFolder,
+        outputFolder,
+      });
+    } catch {
+      await session.send(text, {
+        baseUrl: freshSettings.aiProvider.baseUrl,
+        model: freshSettings.aiProvider.model,
+        cwd: derivedCwd,
+        currentFile: doc.filePath ?? undefined,
+        autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
+      });
+    }
   }
 
   function handleStop() {

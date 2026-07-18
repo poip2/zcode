@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { document as docStore } from "$lib/stores/document";
+  import { externalFile } from "$lib/stores/externalFile";
   import { initRenderer, renderFull } from "$lib/renderer/pipeline";
   import {
     loadFile,
@@ -9,9 +10,15 @@
     getBaseDir,
     allowAssets,
     reloadCurrentFile,
+    openInShell,
+    copyFileToFolder,
+    getDefaultDataDir,
   } from "$lib/tauri/files";
   import { startFileWatcher, stopFileWatcher } from "$lib/tauri/watcher";
-  import { recents } from "$lib/stores/recents";
+  import { load as loadSettings, resolveWorkspaceFolders } from "$lib/stores/settings";
+  import { reloadSourcesFiles } from "$lib/stores/workspaceFiles";
+  
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -34,11 +41,46 @@
   let settingsOpen = $state(false);
   let agentPanelOpen = $state(false);
   let lastWatchedPath = $state<string | null>(null);
+  let dragHover = $state(false);
+  let unlistenDragDrop: (() => void) | undefined;
+  let unmounted = false;
+
+  async function handleDroppedPaths(paths: string[]) {
+    if (paths.length === 0) return;
+
+    const settings = await loadSettings();
+    const dataDir = await getDefaultDataDir();
+    const { sourcesFolder } = await resolveWorkspaceFolders(settings, dataDir);
+
+    let copiedCount = 0;
+    let copyErrors = 0;
+
+    for (const path of paths) {
+      try {
+        await copyFileToFolder(path, sourcesFolder);
+        copiedCount++;
+      } catch (err) {
+        console.error("Failed to copy file to sources:", err);
+        copyErrors++;
+      }
+    }
+
+    await reloadSourcesFiles(sourcesFolder);
+    const parts: string[] = [];
+    if (copiedCount > 0) {
+      parts.push(`Copied ${copiedCount} file${copiedCount === 1 ? "" : "s"} to Sources`);
+    }
+    if (copyErrors > 0) {
+      parts.push(`${copyErrors} cop${copyErrors === 1 ? "y" : "ies"} failed`);
+    }
+    if (parts.length > 0) {
+      flashStatus(parts.join(" — "));
+    }
+  }
 
   onMount(() => {
     initRenderer();
     rendererReady = true;
-    recents.load();
 
     (window as any).__zcode_open = () => handleOpenDialog();
     (window as any).__zcode_open_path = (path: string) => {
@@ -46,9 +88,31 @@
     };
 
     window.addEventListener("keydown", handleKeydown);
-    function handleDragOver(e: DragEvent) { e.preventDefault(); }
-    window.addEventListener("dragover", handleDragOver);
-    window.addEventListener("drop", handleDrop);
+
+    // Native Tauri drag-and-drop (cross-platform, replaces DOM drop events).
+    // Setup is async so we fire-and-store the unlisten promise for cleanup.
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "over") {
+          dragHover = true;
+        } else if (event.payload.type === "drop") {
+          dragHover = false;
+          handleDroppedPaths(event.payload.paths).catch(err =>
+            console.error('Drag-drop error:', err));
+        } else {
+          dragHover = false;
+        }
+      })
+      .then((fn) => {
+        if (unmounted) {
+          fn();
+        } else {
+          unlistenDragDrop = fn;
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to register drag-drop listener:", err);
+      });
 
     // Window resize listener for auto-collapse
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -66,10 +130,10 @@
     window.addEventListener("resize", handleResize);
 
     return () => {
+      unmounted = true;
       window.removeEventListener("keydown", handleKeydown);
-      window.removeEventListener("dragover", handleDragOver);
-      window.removeEventListener("drop", handleDrop);
       window.removeEventListener("resize", handleResize);
+      unlistenDragDrop?.();
       stopFileWatcher();
     };
   });
@@ -89,15 +153,6 @@
   async function handleOpenDialog() {
     const path = await openFileDialog();
     if (path) await loadFile(path);
-  }
-
-  async function handleDrop(e: DragEvent) {
-    e.preventDefault();
-    const file = e.dataTransfer?.files?.[0];
-    if (file) {
-      const path = (file as any).path;
-      if (path) await loadFile(path);
-    }
   }
 
   function toggleEdit() {
@@ -204,6 +259,13 @@
   });
 
   let doc = $derived($docStore);
+
+  // Clear externalFile when a markdown file is loaded
+  $effect(() => {
+    if (doc.filePath) {
+      externalFile.set(null);
+    }
+  });
 </script>
 
 <div class="app-root">
@@ -231,6 +293,15 @@
             <button class="retry-btn" onclick={handleOpenDialog}>Open a file</button>
           </div>
         </div>
+      {:else if $externalFile}
+        <div class="state-center">
+          <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="8" y1="2" x2="16" y2="2"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="8 14 12 18 16 14"/></svg>
+            <h2>This file type isn't previewable here</h2>
+            <p class="hint">{$externalFile.name}</p>
+            <button class="open-btn" onclick={() => openInShell($externalFile!.path)}>Open in default app</button>
+          </div>
+        </div>
       {:else if doc.filePath && isEditing}
         <Editor value={editContent} onChange={handleEditChange} />
       {:else if doc.filePath}
@@ -242,7 +313,7 @@
           <div class="empty-state">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             <h2>Open a Markdown file</h2>
-            <p class="hint">Press <kbd>⌘O</kbd> or drag a .md file here</p>
+            <p class="hint">Press <kbd>⌘O</kbd> or drop files here to copy to Sources</p>
             <button class="open-btn" onclick={handleOpenDialog}>Open File…</button>
           </div>
         </div>
@@ -277,6 +348,20 @@
 
   <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
 
+  {#if dragHover}
+    <div class="drag-overlay">
+      <div class="drag-hint">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <rect x="3" y="4" width="18" height="16" rx="2"/>
+          <line x1="8" y1="2" x2="16" y2="2"/>
+          <line x1="12" y1="11" x2="12" y2="17"/>
+          <polyline points="8 14 12 18 16 14"/>
+        </svg>
+        <p>Drop files to copy to Sources</p>
+      </div>
+    </div>
+  {/if}
+
 </div>
 
 <!-- Floating AI Agent (outside layout flow) -->
@@ -299,6 +384,43 @@
     display: flex;
     flex: 1;
     min-height: 0;
+  }
+
+  /* Drag overlay */
+  .drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(24, 21, 16, 0.12);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .drag-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    background: var(--zc-bg-card, #FDFDFB);
+    border: 2px dashed var(--zc-border, #E7E4DD);
+    border-radius: 12px;
+    padding: 32px 48px;
+    text-align: center;
+    color: var(--zc-text-primary, #1F1E1C);
+  }
+
+  .drag-hint svg {
+    color: var(--zc-text-tertiary, #A8A49D);
+  }
+
+  .drag-hint p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--zc-text-secondary, #8A8782);
+    margin: 0;
   }
 
   .main-pane {

@@ -33,14 +33,20 @@
   // ── Folder draft state ──
   let draftOutputFolder = $state<string | undefined>(undefined);
   let draftPinFolder = $state<string | undefined>(undefined);
+  let draftScriptsFolder = $state<string | undefined>(undefined);
+  let draftSourcesFolder = $state<string | undefined>(undefined);
   let portableDataDir = $state<string>("");
   let defaultOutputPath = $state<string>("");
   let defaultPinPath = $state<string>("");
+  let defaultScriptsPath = $state<string>("");
+  let defaultSourcesPath = $state<string>("");
 
   async function updateDefaultPaths(dir: string) {
     portableDataDir = dir;
     defaultOutputPath = await joinPath(dir, "output");
     defaultPinPath = await joinPath(dir, "pin");
+    defaultScriptsPath = await joinPath(dir, "scripts");
+    defaultSourcesPath = await joinPath(dir, "sources");
   }
 
   // ── AI draft state (populated from store on open, written back on Save) ──
@@ -100,6 +106,8 @@
       loadSettings().then((s) => {
         draftOutputFolder = s.outputFolder;
         draftPinFolder = s.pinFolder;
+        draftScriptsFolder = s.scriptsFolder;
+        draftSourcesFolder = s.sourcesFolder;
       });
       if (!portableDataDir) {
         getDefaultDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
@@ -140,6 +148,13 @@
     saveError = false;
     aiWarning = null;
 
+    if (!portableDataDir) {
+      try {
+        const d = await getDefaultDataDir();
+        await updateDefaultPaths(d);
+      } catch {}
+    }
+
     // Compute masked key if user typed a new one, otherwise reuse stored mask
     let maskedToStore: string | undefined;
     if (apiKeyDirty && draftApiKey.trim()) {
@@ -161,10 +176,24 @@
       autoApproveWrites: persistedAi.autoApproveWrites,
     };
 
+    // Resolve final folder paths: use draft values, or compute defaults from dataDir
+    const finalPinFolder = draftPinFolder || defaultPinPath || undefined;
+    const finalOutputFolder = draftOutputFolder || defaultOutputPath || undefined;
+    const finalScriptsFolder = draftScriptsFolder || defaultScriptsPath || undefined;
+    const finalSourcesFolder = draftSourcesFolder || defaultSourcesPath || undefined;
+
+    // Sync pinFolder to sidebar via pinnedFolder store BEFORE saveSettings
+    // so the onSettingsChange listener in the Sidebar sees the new value.
+    if (finalPinFolder) {
+      pinnedFolder.pin(finalPinFolder);
+    }
+
     const ok = await saveSettings({
       aiProvider: newAi,
-      outputFolder: draftOutputFolder || undefined,
-      pinFolder: draftPinFolder || undefined,
+      outputFolder: finalOutputFolder,
+      pinFolder: finalPinFolder,
+      scriptsFolder: finalScriptsFolder,
+      sourcesFolder: finalSourcesFolder,
     });
     if (!ok) {
       saveError = true;
@@ -204,6 +233,16 @@
     if (path) draftPinFolder = path;
   }
 
+  async function handleBrowseScripts() {
+    const path = await openFolderDialog();
+    if (path) draftScriptsFolder = path;
+  }
+
+  async function handleBrowseSources() {
+    const path = await openFolderDialog();
+    if (path) draftSourcesFolder = path;
+  }
+
   function defaultOutputFolder(): string {
     return portableDataDir ? defaultOutputPath : "(default: output)";
   }
@@ -212,12 +251,28 @@
     return portableDataDir ? defaultPinPath : "(default: pin)";
   }
 
+  function defaultScriptsFolderStr(): string {
+    return portableDataDir ? defaultScriptsPath : "(default: scripts)";
+  }
+
+  function defaultSourcesFolderStr(): string {
+    return portableDataDir ? defaultSourcesPath : "(default: sources)";
+  }
+
   function resolveOutputFolder(): string {
     return draftOutputFolder || defaultOutputFolder();
   }
 
   function resolvePinFolder(): string {
     return draftPinFolder || defaultPinFolder();
+  }
+
+  function resolveScriptsFolder(): string {
+    return draftScriptsFolder || defaultScriptsFolderStr();
+  }
+
+  function resolveSourcesFolder(): string {
+    return draftSourcesFolder || defaultSourcesFolderStr();
   }
 
   function handleBackdropClick(e: MouseEvent) {
@@ -298,6 +353,50 @@
               <button
                 class="settings-btn-clear"
                 onclick={() => (draftPinFolder = undefined)}
+                title="Reset to default"
+                data-tauri-drag-region="false"
+              >Reset</button>
+            {/if}
+          </div>
+
+          <div class="settings-section-title" style="margin-top: 20px;">Scripts Folder</div>
+          <p class="settings-section-desc">Where the agent writes scripts it creates to complete tasks (Python, JS, etc.). If not set, defaults to <code>{defaultScriptsFolderStr()}</code>.</p>
+          <div class="folder-field">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+            </svg>
+            <span class="folder-path" title={resolveScriptsFolder()}>{resolveScriptsFolder()}</span>
+            <button
+              class="settings-btn-secondary"
+              onclick={handleBrowseScripts}
+              data-tauri-drag-region="false"
+            >{draftScriptsFolder ? "Change…" : "Browse…"}</button>
+            {#if draftScriptsFolder}
+              <button
+                class="settings-btn-clear"
+                onclick={() => (draftScriptsFolder = undefined)}
+                title="Reset to default"
+                data-tauri-drag-region="false"
+              >Reset</button>
+            {/if}
+          </div>
+
+          <div class="settings-section-title" style="margin-top: 20px;">Sources Folder</div>
+          <p class="settings-section-desc">Staging area for existing files (Word, Excel, etc.) you want the agent to modify. Copy a file here before asking the agent to edit it. If not set, defaults to <code>{defaultSourcesFolderStr()}</code>.</p>
+          <div class="folder-field">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+            </svg>
+            <span class="folder-path" title={resolveSourcesFolder()}>{resolveSourcesFolder()}</span>
+            <button
+              class="settings-btn-secondary"
+              onclick={handleBrowseSources}
+              data-tauri-drag-region="false"
+            >{draftSourcesFolder ? "Change…" : "Browse…"}</button>
+            {#if draftSourcesFolder}
+              <button
+                class="settings-btn-clear"
+                onclick={() => (draftSourcesFolder = undefined)}
                 title="Reset to default"
                 data-tauri-drag-region="false"
               >Reset</button>

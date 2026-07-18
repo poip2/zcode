@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { get } from "svelte/store";
 import { document } from "../stores/document";
 import { type DirNode } from "../stores/folderTree";
-import { recents } from "../stores/recents";
 import { renderFull } from "../renderer/pipeline";
 import { markSaved } from "./watcher";
 
@@ -59,7 +58,6 @@ export async function loadFile(path: string): Promise<void> {
     });
 
     getCurrentWindow().setTitle(`${fileName} — zcode`).catch(() => {});
-    await recents.addRecent(absolutePath);
     invoke("start_watching", { path: absolutePath }).catch(() => {});
   } catch (err) {
     document.set({
@@ -145,6 +143,10 @@ export async function listDirTree(rootPath: string): Promise<DirNode> {
   return invoke<DirNode>("read_dir_tree", { root: rootPath });
 }
 
+export async function listFolderFlat(folder: string): Promise<DirNode[]> {
+  return invoke<DirNode[]>("list_folder_flat", { folder });
+}
+
 export async function createMarkdownFile(dir: string, name: string): Promise<string> {
   return invoke<string>("create_markdown_file", { dir, name });
 }
@@ -165,6 +167,15 @@ export async function getDefaultDataDir(): Promise<string> {
 /** Join two path components with the platform-native separator. */
 export async function joinPath(base: string, child: string): Promise<string> {
   return invoke<string>("join_path", { base, child });
+}
+
+/**
+ * Copy a single file into a destination folder. Never overwrites — if a
+ * same-name file already exists the copy is renamed with a (1), (2), … suffix.
+ * Returns the absolute path of the newly created copy.
+ */
+export async function copyFileToFolder(sourcePath: string, destFolder: string): Promise<string> {
+  return invoke<string>("copy_file_to_folder", { sourcePath, destFolder });
 }
 
 /** Open a path in the system file manager (creates the directory if needed). */

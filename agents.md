@@ -33,7 +33,7 @@ agent.rs          ←── 主循环：输入 → Provider 调用 → 工具执
 ### `agent_command.rs` — 会话管理
 
 **命令**：
-- `start_agent_turn` — 启动 agent 会话，编排多轮工具调用
+- `start_agent_turn` — 启动 agent 会话，编排多轮工具调用（v0.8 新增 `pin_folder`/`scripts_folder`/`sources_folder`/`output_folder` 参数）
 - `approve_tool_call` — 批准危险工具执行（oneshot 通道）
 
 **关键设计**：
@@ -43,6 +43,7 @@ agent.rs          ←── 主循环：输入 → Provider 调用 → 工具执
 - **CWD 智能推导**（v0.5）：优先当前文件目录 → 回退钉选文件夹
 - **内置运行时初始化**：`start_agent_turn` 中调用 `ensure_agent_venv` 初始化捆绑的 Python + uv + Bun 运行时，结果缓存于 `RuntimeState`。若运行时未下载或初始化失败，返回友好错误并提示手动运行 fetch 脚本
 - **工具注册表增强**：`build_guarded_registry` 接受 `augmented_path` 和 `venv_dir`，将注入了内置运行时的 PATH 传递给 `BashTool`
+- **工作区文件夹注入**（v0.8）：`build_system_prompt` 接受 `pin_folder`/`scripts_folder`/`sources_folder`/`output_folder` 参数，动态注入 **Workspace Folders** 段落到 system prompt（含各文件夹路径和使用规则）
 - **事件类型**：Token、ToolCall、ToolResult、ApprovalRequired、Error、Done、CompactionStarted、CompactionFinished
 
 ---
@@ -272,6 +273,7 @@ callAIProvider(baseUrl, model, prompt, providerName?): Promise<string>
 // Agent 会话
 startAgentTurn(args: StartAgentTurnArgs): Promise<void>
   // 启动 agent 多轮对话，v0.6 新增 contextWindowTokens 字段显式传递窗口大小
+  // v0.8 新增 pinFolder/scriptsFolder/sourcesFolder/outputFolder 工作区路径字段
 ```
 
 ### +page.svelte — Agent 面板集成
@@ -279,6 +281,12 @@ startAgentTurn(args: StartAgentTurnArgs): Promise<void>
 - `agentPanelOpen` 状态 — 控制 agent 面板开关
 - 标题栏按钮切换 agent 面板
 - `$effect` 监听 docStore.filePath → 同步当前文件路径到 agent 上下文
+
+### AgentPanel — 发送前工作区解析
+
+- 每次发送消息前调用 `resolveWorkspaceFolders` 解析四个工作区文件夹路径（从 settings 值或计算默认值）
+- 将解析后的 `pinFolder`/`scriptsFolder`/`sourcesFolder`/`outputFolder` 传入 `session.send()`
+- 发送完成后若 `outputFolder` 非空，自动调用 `reloadOutputFiles` 刷新侧边栏 Output 列表
 
 ### 事件监听（前端接收后端流事件）
 
@@ -309,6 +317,15 @@ startAgentTurn(args: StartAgentTurnArgs): Promise<void>
   - 眼睛图标切换密码/明文
   - keychain 不可用时显示警告横幅但不阻塞保存
 - 保存/取消按钮，保存失败有错误提示
+
+### Workspace Folders Tab
+
+- **Pin Folder**：markdown 笔记文件夹，首字段。支持 Browse…/Change…/Reset
+- **Scripts Folder**（v0.8 新增）：agent 编写的脚本存放位置，默认 `{dataDir}/scripts`
+- **Sources Folder**（v0.8 新增）：非 md 文件暂存区（拖放文件自动复制到此），默认 `{dataDir}/sources`
+- **Output Folder**：agent 生成的非 md 输出位置，默认 `{dataDir}/output`
+- 所有文件夹字段支持 Browse… 选择、Change… 修改、Reset 恢复默认
+- 保存时自动同步 pinFolder 到侧边栏 pinnedFolder store
 
 ### Skills Tab
 

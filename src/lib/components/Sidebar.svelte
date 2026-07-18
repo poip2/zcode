@@ -7,8 +7,8 @@
   import { get } from "svelte/store";
   import { document as docStore } from "$lib/stores/document";
   import { folderTree, type DirNode } from "$lib/stores/folderTree";
-  import { recents } from "$lib/stores/recents";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
+  import { externalFile } from "$lib/stores/externalFile";
   import {
     loadFile,
     openFolderDialog,
@@ -18,9 +18,10 @@
     pathExists,
     openInShell,
     getDefaultDataDir,
-    joinPath,
   } from "$lib/tauri/files";
-  import { load as loadSettings } from "$lib/stores/settings";
+  import { load as loadSettings, onSettingsChange, resolveWorkspaceFolders } from "$lib/stores/settings";
+  import { sourcesFiles, outputFiles, reloadSourcesFiles, reloadOutputFiles } from "$lib/stores/workspaceFiles";
+  import { isMarkdownExt } from "$lib/utils/fileTypes";
 
   // New file/folder inline editing
   let newItemMode = $state<null | "file" | "folder">(null);
@@ -28,39 +29,52 @@
   let newItemError = $state("");
   let newItemInput: HTMLInputElement | undefined = $state();
 
-  let recentExpanded = $state(true);
+  let sourcesExpanded = $state(false);
+  let outputExpanded = $state(false);
+  let sourcesFolderPath = $state<string>("");
   let outputFolderPath = $state<string>("");
+
+  // Currently selected folder for "new file/folder" target
+  let selectedFolder = $state<string | null>(null);
+
+  function selectFolder(path: string) {
+    selectedFolder = path;
+  }
 
   let doc = $derived($docStore);
   let ft = $derived($folderTree);
   let expanded = $derived(folderTree.expanded);
   let pinnedPath = $derived($pinnedFolder);
+  let hasFolderSelected = $derived(selectedFolder !== null);
 
-  let recentList = $state<{ path: string; name: string; openedAt: number }[]>([]);
-  const unsubRecents = recents.subscribe((list) => {
-    recentList = list;
+  // Clear folder selection whenever a markdown file is opened (via any path:
+  // sidebar click, ⌘O dialog, drag-and-drop, etc.)
+  $effect(() => {
+    if (doc.filePath) {
+      selectedFolder = null;
+    }
   });
 
-  onDestroy(() => {
-    unsubRecents();
-  });
+  async function reloadWorkspaceFiles() {
+    const dataDir = await getDefaultDataDir();
+    const s = await loadSettings();
+    const resolved = await resolveWorkspaceFolders(s, dataDir);
+    sourcesFolderPath = resolved.sourcesFolder;
+    outputFolderPath = resolved.outputFolder;
+    await reloadSourcesFiles(sourcesFolderPath);
+    await reloadOutputFiles(outputFolderPath);
+  }
 
   onMount(async () => {
-    recents.load();
     await pinnedFolder.load();
+    await reloadWorkspaceFiles();
 
-    // Resolve output folder path
-    getDefaultDataDir().then((dataDir) => {
-      loadSettings().then(async (s) => {
-        outputFolderPath = s.outputFolder || await joinPath(dataDir, "output");
-      });
-    });
     if (!autoLoadDone) {
-      autoLoadDone = true;
       const p = $pinnedFolder;
       if (p) {
         const exists = await pathExists(p).catch(() => false);
         if (exists) {
+          autoLoadDone = true;
           const current = get(folderTree);
           if (current.rootPath === p && current.tree !== null) return;
           folderTree.setRoot(p);
@@ -75,6 +89,14 @@
       }
     }
   });
+
+  onDestroy(onSettingsChange(() => {
+    const p = get(pinnedFolder);
+    if (p && p !== ft.rootPath) {
+      openFolderPath(p).catch(() => {});
+    }
+    reloadWorkspaceFiles().catch(() => {});
+  }));
 
   function startNew(mode: "file" | "folder") {
     newItemMode = mode;
@@ -99,14 +121,22 @@
       return;
     }
 
-    const dir = ft.rootPath;
+    const dir = selectedFolder ?? ft.rootPath;
     if (!dir) return;
+
+    // Ensure the target folder is expanded so the user sees the new item
+    if (selectedFolder && !folderTree.expanded.isExpanded(selectedFolder)) {
+      folderTree.expanded.toggle(selectedFolder);
+    }
 
     try {
       if (newItemMode === "file") {
         const createdPath = await createMarkdownFile(dir, name);
         await refreshTree();
-        await loadFile(createdPath);
+        // Only auto-open md files
+        if (isMarkdownExt(name)) {
+          await loadFile(createdPath);
+        }
         cancelNew();
       } else {
         await createFolder(dir, name);
@@ -166,7 +196,24 @@
   }
 
   function handleFileClick(node: DirNode) {
-    loadFile(node.path);
+    selectedFolder = null;
+    if (isMarkdownExt(node.name)) {
+      externalFile.set(null);
+      loadFile(node.path);
+    } else {
+      externalFile.set({ path: node.path, name: node.name });
+      // Clear any active markdown document to avoid confusion
+      docStore.set({
+        filePath: null,
+        fileName: null,
+        content: "",
+        renderedHtml: "",
+        frontmatter: null,
+        wordCount: 0,
+        loading: false,
+        error: null,
+      });
+    }
   }
 
   function toggleDir(path: string) {
@@ -278,7 +325,7 @@
         {#if child.is_dir}
           {@const open = $expanded.has(key)}
           {@const hasKids = child.children && child.children.length > 0}
-          <div class="tree-row depth-0">
+          <div class="tree-row depth-0" class:selected={selectedFolder === child.path}>
             {#if hasKids}
               <button
                 class="tree-chevron"
@@ -294,12 +341,14 @@
             {:else}
               <span class="tree-chevron-placeholder"></span>
             {/if}
-            <span class="tree-icon">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
-                <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-              </svg>
-            </span>
-            <span class="tree-label">{child.name}</span>
+            <button class="tree-folder-label" onclick={() => selectFolder(child.path)} data-tauri-drag-region="false">
+              <span class="tree-icon">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+                  <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+                </svg>
+              </span>
+              <span class="tree-label">{child.name}</span>
+            </button>
           </div>
           {#if hasKids && open}
             {#each child.children as sub}
@@ -307,7 +356,7 @@
                 {@const subKey = sub.path}
                 {@const subOpen = $expanded.has(subKey)}
                 {@const subHasKids = sub.children && sub.children.length > 0}
-                <div class="tree-row depth-1">
+                <div class="tree-row depth-1" class:selected={selectedFolder === sub.path}>
                   {#if subHasKids}
                     <button
                       class="tree-chevron"
@@ -323,12 +372,14 @@
                   {:else}
                     <span class="tree-chevron-placeholder"></span>
                   {/if}
-                  <span class="tree-icon">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
-                      <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-                    </svg>
-                  </span>
-                  <span class="tree-label">{sub.name}</span>
+                  <button class="tree-folder-label" onclick={() => selectFolder(sub.path)} data-tauri-drag-region="false">
+                    <span class="tree-icon">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+                        <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+                      </svg>
+                    </span>
+                    <span class="tree-label">{sub.name}</span>
+                  </button>
                 </div>
                 {#if subHasKids && subOpen}
                   {#each sub.children as leaf}
@@ -336,7 +387,7 @@
                       {@const leafKey = leaf.path}
                       {@const leafOpen = $expanded.has(leafKey)}
                       {@const leafHasKids = leaf.children && leaf.children.length > 0}
-                      <div class="tree-row depth-2">
+                      <div class="tree-row depth-2" class:selected={selectedFolder === leaf.path}>
                         {#if leafHasKids}
                           <button
                             class="tree-chevron"
@@ -352,34 +403,39 @@
                         {:else}
                           <span class="tree-chevron-placeholder"></span>
                         {/if}
-                        <span class="tree-icon">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
-                            <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-                          </svg>
-                        </span>
-                        <span class="tree-label">{leaf.name}</span>
+                        <button class="tree-folder-label" onclick={() => selectFolder(leaf.path)} data-tauri-drag-region="false">
+                          <span class="tree-icon">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+                              <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+                            </svg>
+                          </span>
+                          <span class="tree-label">{leaf.name}</span>
+                        </button>
                       </div>
                       {#if leafHasKids && leafOpen}
                         {#each leaf.children as deep}
                           {#if deep.is_dir}
                             <!-- depth-3 empty dir (max depth reached) -->
-                            <div class="tree-row depth-3">
+                            <div class="tree-row depth-3" class:selected={selectedFolder === deep.path}>
                               <span class="tree-chevron-placeholder"></span>
-                              <span class="tree-icon">
-                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
-                                  <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-                                </svg>
-                              </span>
-                              <span class="tree-label">{deep.name}</span>
+                              <button class="tree-folder-label" onclick={() => selectFolder(deep.path)} data-tauri-drag-region="false">
+                                <span class="tree-icon">
+                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+                                    <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+                                  </svg>
+                                </span>
+                                <span class="tree-label">{deep.name}</span>
+                              </button>
                             </div>
                           {:else}
                             <!-- depth-3 file -->
                             <button
                               class="tree-row tree-file depth-3"
-                              class:active={doc.filePath === deep.path}
+                              class:active={(doc.filePath === deep.path || $externalFile?.path === deep.path) && !hasFolderSelected}
                               onclick={() => handleFileClick(deep)}
                               data-tauri-drag-region="false"
                             >
+                              <span class="tree-chevron-placeholder"></span>
                               <span class="tree-icon file-icon">
                                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                                   <path d="M10 2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6z"/>
@@ -395,10 +451,11 @@
                       <!-- depth-2 file -->
                       <button
                         class="tree-row tree-file depth-2"
-                        class:active={doc.filePath === leaf.path}
+                        class:active={(doc.filePath === leaf.path || $externalFile?.path === leaf.path) && !hasFolderSelected}
                         onclick={() => handleFileClick(leaf)}
                         data-tauri-drag-region="false"
                       >
+                        <span class="tree-chevron-placeholder"></span>
                         <span class="tree-icon file-icon">
                           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                             <path d="M10 2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6z"/>
@@ -414,10 +471,11 @@
                 <!-- depth-1 file -->
                 <button
                   class="tree-row tree-file depth-1"
-                  class:active={doc.filePath === sub.path}
+                  class:active={(doc.filePath === sub.path || $externalFile?.path === sub.path) && !hasFolderSelected}
                   onclick={() => handleFileClick(sub)}
                   data-tauri-drag-region="false"
                 >
+                  <span class="tree-chevron-placeholder"></span>
                   <span class="tree-icon file-icon">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                       <path d="M10 2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6z"/>
@@ -433,10 +491,11 @@
           <!-- depth-0 file -->
           <button
             class="tree-row tree-file depth-0"
-            class:active={doc.filePath === child.path}
+            class:active={(doc.filePath === child.path || $externalFile?.path === child.path) && !hasFolderSelected}
             onclick={() => handleFileClick(child)}
             data-tauri-drag-region="false"
           >
+            <span class="tree-chevron-placeholder"></span>
             <span class="tree-icon file-icon">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                 <path d="M10 2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6z"/>
@@ -454,32 +513,72 @@
     {/if}
   </div>
 
-  <!-- Divider + Recent section -->
-  {#if recentList.length > 0}
+  <!-- Sources section -->
+  {#if $sourcesFiles.length > 0}
     <div class="section-divider"></div>
-    <div class="recent-section">
+    <div class="collapsible-section">
       <button
-        class="recent-header"
-        onclick={() => (recentExpanded = !recentExpanded)}
+        class="section-header"
+        onclick={() => (sourcesExpanded = !sourcesExpanded)}
         data-tauri-drag-region="false"
       >
         <svg
           width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-          stroke-width="1.5" class="chevron-svg" class:rotated={recentExpanded}
+          stroke-width="1.5" class="chevron-svg" class:rotated={sourcesExpanded}
         >
           <polyline points="6,3 11,8 6,13"/>
         </svg>
-        <span class="recent-label">Recent</span>
+        <span class="section-label">Sources</span>
       </button>
-      {#if recentExpanded}
-        <div class="recent-list">
-          {#each recentList as item}
+      {#if sourcesExpanded}
+        <div class="section-list">
+          {#each $sourcesFiles as item}
             <button
               class="tree-row tree-file depth-0"
-              class:active={doc.filePath === item.path}
-              onclick={() => loadFile(item.path)}
+              onclick={() => openInShell(item.path)}
               data-tauri-drag-region="false"
             >
+              <span class="tree-chevron-placeholder"></span>
+              <span class="tree-icon file-icon">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+                  <path d="M10 2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6z"/>
+                  <polyline points="10,2 10,6 14,6"/>
+                </svg>
+              </span>
+              <span class="tree-label" title={item.path}>{item.name}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Output section -->
+  {#if $outputFiles.length > 0}
+    <div class="section-divider"></div>
+    <div class="collapsible-section">
+      <button
+        class="section-header"
+        onclick={() => (outputExpanded = !outputExpanded)}
+        data-tauri-drag-region="false"
+      >
+        <svg
+          width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+          stroke-width="1.5" class="chevron-svg" class:rotated={outputExpanded}
+        >
+          <polyline points="6,3 11,8 6,13"/>
+        </svg>
+        <span class="section-label">Output</span>
+      </button>
+      {#if outputExpanded}
+        <div class="section-list">
+          {#each $outputFiles as item}
+            <button
+              class="tree-row tree-file depth-0"
+              onclick={() => openInShell(item.path)}
+              data-tauri-drag-region="false"
+            >
+              <span class="tree-chevron-placeholder"></span>
               <span class="tree-icon file-icon">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
                   <path d="M10 2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6z"/>
@@ -687,6 +786,27 @@
     font-weight: 600;
   }
 
+  .tree-row.selected {
+    background: var(--zc-bg-chrome, #F4F2ED);
+    outline: 1px solid var(--zc-border, #E7E4DD);
+    outline-offset: -1px;
+  }
+
+  .tree-folder-label {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+  }
+
   .tree-file {
     cursor: pointer;
   }
@@ -739,9 +859,6 @@
     margin-right: 4px;
   }
 
-  .file-icon {
-    margin-left: 20px;
-  }
 
   .tree-label {
     overflow: hidden;
@@ -757,14 +874,14 @@
     flex-shrink: 0;
   }
 
-  /* Recent section */
-  .recent-section {
+  /* Collapsible section (Sources / Output) */
+  .collapsible-section {
     flex-shrink: 0;
     max-height: 180px;
     overflow-y: auto;
   }
 
-  .recent-header {
+  .section-header {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -781,15 +898,15 @@
     font-family: inherit;
   }
 
-  .recent-header:hover {
+  .section-header:hover {
     color: var(--zc-text-secondary, #8A8782);
   }
 
-  .recent-label {
+  .section-label {
     margin-left: 2px;
   }
 
-  .recent-list {
+  .section-list {
     padding-bottom: 4px;
   }
 

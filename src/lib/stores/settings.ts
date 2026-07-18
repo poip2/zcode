@@ -1,4 +1,5 @@
 import { Store } from "@tauri-apps/plugin-store";
+import { joinPath } from "$lib/tauri/files";
 
 const STORE_FILE = "zcode-settings.json";
 
@@ -18,12 +19,23 @@ export interface AIProviderSettings {
   autoApproveWrites?: boolean;
 }
 
+export interface WorkspaceFolders {
+  pinFolder: string;
+  scriptsFolder: string;
+  sourcesFolder: string;
+  outputFolder: string;
+}
+
 export interface AppSettings {
   aiProvider: AIProviderSettings;
   /** Folder for generated non-md files (word, pdf, etc.). Default: {dataDir}/output */
   outputFolder?: string;
   /** Default pin folder when none is explicitly selected. Default: {dataDir}/pin */
   pinFolder?: string;
+  /** Folder for agent-written scripts (python, js, etc.). Default: {dataDir}/scripts */
+  scriptsFolder?: string;
+  /** Staging area for existing non-md files the user wants the agent to modify. Default: {dataDir}/sources */
+  sourcesFolder?: string;
 }
 
 const DEFAULTS: AppSettings = {
@@ -54,6 +66,8 @@ export async function load(): Promise<AppSettings> {
         aiProvider: { ...DEFAULTS.aiProvider, ...(saved.aiProvider ?? {}) },
         outputFolder: saved.outputFolder,
         pinFolder: saved.pinFolder,
+        scriptsFolder: saved.scriptsFolder,
+        sourcesFolder: saved.sourcesFolder,
       };
     }
   } catch {
@@ -74,8 +88,32 @@ export async function save(settings: AppSettings): Promise<boolean> {
     const store = await getSettingsStore();
     await store.set("settings", settings);
     await store.save();
+    _notifyListeners(settings);
     return true;
   } catch {
     return false;
   }
+}
+
+type ChangeListener = () => void;
+let changeListeners: ChangeListener[] = [];
+
+export function onSettingsChange(cb: ChangeListener): () => void {
+  changeListeners.push(cb);
+  return () => {
+    changeListeners = changeListeners.filter((l) => l !== cb);
+  };
+}
+
+function _notifyListeners(_settings: AppSettings) {
+  for (const cb of changeListeners) cb();
+}
+
+export async function resolveWorkspaceFolders(settings: AppSettings, dataDir: string): Promise<WorkspaceFolders> {
+  return {
+    pinFolder: settings.pinFolder || await joinPath(dataDir, "pin"),
+    scriptsFolder: settings.scriptsFolder || await joinPath(dataDir, "scripts"),
+    sourcesFolder: settings.sourcesFolder || await joinPath(dataDir, "sources"),
+    outputFolder: settings.outputFolder || await joinPath(dataDir, "output"),
+  };
 }

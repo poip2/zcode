@@ -9,6 +9,15 @@ use tauri::{AppHandle, Manager};
 
 const MAX_TREE_DEPTH: u32 = 3;
 
+/// File extensions rendered as markdown by the frontend.
+const MARKDOWN_EXTS: &[&str] = &["md", "markdown", "mdown", "mkd"];
+
+/// File extensions shown in the tree but opened externally (not rendered as markdown).
+const DISPLAYABLE_EXTS: &[&str] = &[
+    "docx", "doc", "xlsx", "xls", "pptx", "ppt", "pdf", "csv", "txt", "json", "xml", "yaml", "yml",
+    "toml", "html",
+];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DirNode {
     pub name: String,
@@ -132,8 +141,8 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
                 children.push(subnode);
             }
         } else if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd" {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if MARKDOWN_EXTS.contains(&ext) || DISPLAYABLE_EXTS.contains(&ext) {
                     let fname = path
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -329,6 +338,112 @@ pub fn join_path(base: String, child: String) -> Result<String, String> {
         .ok_or_else(|| "Joined path is not valid UTF-8".to_string())
 }
 
+/// List all files (not directories) in a single directory.
+/// Non-recursive, no extension filter — returns every visible file.
+#[tauri::command]
+pub fn list_folder_flat(folder: String) -> Result<Vec<DirNode>, String> {
+    let dir = Path::new(&folder);
+    if !dir.is_dir() {
+        return Err(format!("Not a directory: {}", folder));
+    }
+    let entries = fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {e}"))?;
+    let mut files: Vec<DirNode> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(fname) = path.file_name() {
+            if fname.to_string_lossy().starts_with('.') {
+                continue;
+            }
+        }
+        let fname = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        files.push(DirNode {
+            name: fname,
+            path: path.to_string_lossy().to_string(),
+            is_dir: false,
+            modified,
+            children: None,
+        });
+    }
+    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(files)
+}
+
+/// Copy a single file into a destination folder. Never overwrites — if a
+/// same-name file already exists the copy is renamed with a (1), (2), … suffix.
+#[tauri::command]
+pub fn copy_file_to_folder(source_path: String, dest_folder: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let source = Path::new(&source_path);
+    let dest_dir = Path::new(&dest_folder);
+
+    fs::create_dir_all(dest_dir).map_err(|e| format!("Failed to prepare destination: {e}"))?;
+
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| "Source path has no file name".to_string())?;
+
+    let mut dest_path = dest_dir.join(file_name);
+    if dest_path.exists() {
+        let stem = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let ext = source.extension().and_then(|s| s.to_str());
+        let mut n = 1;
+        const MAX_ATTEMPTS: u32 = 10_000;
+        loop {
+            if n > MAX_ATTEMPTS {
+                return Err(format!(
+                    "Too many name collisions in destination folder (tried {MAX_ATTEMPTS} names)"
+                ));
+            }
+            let candidate_name = match ext {
+                Some(e) => format!("{stem} ({n}).{e}"),
+                None => format!("{stem} ({n})"),
+            };
+            let candidate = dest_dir.join(candidate_name);
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                Ok(_) => {
+                    dest_path = candidate;
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => {
+                    return Err(format!("Failed to create destination file: {e}"));
+                }
+            }
+            n += 1;
+        }
+    }
+
+    if let Err(e) = fs::copy(source, &dest_path) {
+        let _ = std::fs::remove_file(&dest_path);
+        return Err(format!("Failed to copy file: {e}"));
+    }
+    dest_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Destination path is not valid UTF-8".to_string())
+}
+
 /// Open a file or folder path in the system file manager.
 #[tauri::command]
 pub fn open_in_shell(path: String) -> Result<(), String> {
@@ -495,4 +610,169 @@ pub fn allow_assets(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
             .map_err(|e| format!("Failed to allow asset {}: {}", p, e))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// Test copy_file_to_folder: basic copy into empty dir
+    #[test]
+    fn test_copy_file_to_folder_basic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("source.txt");
+        std::fs::write(&src, "hello world").unwrap();
+
+        let dest_dir = tmp.path().join("dest");
+        std::fs::create_dir(&dest_dir).unwrap();
+
+        let result = copy_file_to_folder(
+            src.to_str().unwrap().to_string(),
+            dest_dir.to_str().unwrap().to_string(),
+        );
+        assert!(
+            result.is_ok(),
+            "copy_file_to_folder failed: {:?}",
+            result.err()
+        );
+        let dest_path = result.unwrap();
+
+        assert!(Path::new(&dest_path).exists());
+        let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    /// Test copy_file_to_folder: never overwrite — rename with suffix
+    #[test]
+    fn test_copy_file_to_folder_no_overwrite() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("doc.pdf");
+        std::fs::write(&src, "pdf content").unwrap();
+
+        let dest_dir = tmp.path().join("sources");
+        std::fs::create_dir(&dest_dir).unwrap();
+        std::fs::write(dest_dir.join("doc.pdf"), "pre-existing").unwrap();
+
+        let result = copy_file_to_folder(
+            src.to_str().unwrap().to_string(),
+            dest_dir.to_str().unwrap().to_string(),
+        );
+        assert!(result.is_ok());
+        let dest_path = result.unwrap();
+
+        assert_ne!(
+            dest_path,
+            dest_dir.join("doc.pdf").to_str().unwrap().to_string()
+        );
+        assert!(dest_path.contains("doc ("));
+        let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "pdf content");
+
+        let pre_existing = std::fs::read_to_string(dest_dir.join("doc.pdf")).unwrap();
+        assert_eq!(pre_existing, "pre-existing");
+    }
+
+    /// Test copy_file_to_folder: creates dest dir if needed
+    #[test]
+    fn test_copy_file_to_folder_creates_dest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("data.csv");
+        std::fs::write(&src, "a,b,c").unwrap();
+
+        let dest_dir = tmp.path().join("nonexistent").join("sub");
+
+        let result = copy_file_to_folder(
+            src.to_str().unwrap().to_string(),
+            dest_dir.to_str().unwrap().to_string(),
+        );
+        assert!(
+            result.is_ok(),
+            "copy_file_to_folder failed: {:?}",
+            result.err()
+        );
+        let dest_path = result.unwrap();
+        assert!(Path::new(&dest_path).exists());
+        let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "a,b,c");
+    }
+
+    /// Test list_folder_flat: lists files, not dirs, sorted case-insensitively
+    #[test]
+    fn test_list_folder_flat_basic() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("b.txt"), "b").unwrap();
+        std::fs::write(tmp.path().join("a.txt"), "a").unwrap();
+        std::fs::create_dir(tmp.path().join("subdir")).unwrap();
+        std::fs::write(tmp.path().join(".hidden"), "hidden").unwrap();
+
+        let result = list_folder_flat(tmp.path().to_str().unwrap().to_string());
+        assert!(result.is_ok());
+        let files = result.unwrap();
+
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "a.txt");
+        assert_eq!(files[1].name, "b.txt");
+        assert!(files[0].path.ends_with("a.txt"));
+        assert!(files[1].path.ends_with("b.txt"));
+        assert!(!files[0].is_dir);
+        assert!(!files[1].is_dir);
+    }
+
+    /// Test list_folder_flat: empty directory
+    #[test]
+    fn test_list_folder_flat_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = list_folder_flat(tmp.path().to_str().unwrap().to_string());
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    /// Test list_folder_flat: not a directory
+    #[test]
+    fn test_list_folder_flat_not_a_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("notadir.txt");
+        std::fs::write(&file, "content").unwrap();
+
+        let result = list_folder_flat(file.to_str().unwrap().to_string());
+        assert!(result.is_err());
+    }
+
+    /// Test copy_file_to_folder: source doesn't exist
+    #[test]
+    fn test_copy_file_to_folder_source_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest_dir = tmp.path().join("dest");
+        std::fs::create_dir(&dest_dir).unwrap();
+
+        let result = copy_file_to_folder(
+            "/nonexistent/file.txt".to_string(),
+            dest_dir.to_str().unwrap().to_string(),
+        );
+        assert!(result.is_err());
+    }
+
+    /// Test copy_file_to_folder: incremental counter on many collisions
+    #[test]
+    fn test_copy_file_to_folder_many_collisions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("report.xlsx");
+        std::fs::write(&src, "data").unwrap();
+
+        let dest_dir = tmp.path().join("sources");
+        std::fs::create_dir(&dest_dir).unwrap();
+
+        std::fs::write(dest_dir.join("report.xlsx"), "v0").unwrap();
+        std::fs::write(dest_dir.join("report (1).xlsx"), "v1").unwrap();
+        std::fs::write(dest_dir.join("report (2).xlsx"), "v2").unwrap();
+
+        let result = copy_file_to_folder(
+            src.to_str().unwrap().to_string(),
+            dest_dir.to_str().unwrap().to_string(),
+        );
+        assert!(result.is_ok());
+        let dest_path = result.unwrap();
+        assert!(dest_path.contains("report (3)"));
+    }
 }

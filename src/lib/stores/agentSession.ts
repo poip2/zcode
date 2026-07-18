@@ -215,6 +215,10 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
       currentFile?: string;
       cwd?: string;
       autoApproveWrites?: boolean;
+      pinFolder?: string;
+      scriptsFolder?: string;
+      sourcesFolder?: string;
+      outputFolder?: string;
     },
   ) {
     const s = get(state);
@@ -253,6 +257,10 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
       currentFile: settings.currentFile,
       cwd: settings.cwd,
       autoApproveWrites: settings.autoApproveWrites,
+      pinFolder: settings.pinFolder,
+      scriptsFolder: settings.scriptsFolder,
+      sourcesFolder: settings.sourcesFolder,
+      outputFolder: settings.outputFolder,
     };
 
     try {

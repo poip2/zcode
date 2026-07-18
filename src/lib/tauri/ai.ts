@@ -67,6 +67,14 @@ export interface StartAgentTurnArgs {
   autoApproveWrites?: boolean;
   /** Explicit context window size in tokens. If omitted, guessed from model name. */
   contextWindowTokens?: number;
+  /** Workspace folder for user markdown notes. */
+  pinFolder?: string;
+  /** Workspace folder for agent-written scripts. */
+  scriptsFolder?: string;
+  /** Workspace folder for files the user wants the agent to modify. */
+  sourcesFolder?: string;
+  /** Workspace folder for script-generated non-md output. */
+  outputFolder?: string;
 }
 
 export async function startAgentTurn(args: StartAgentTurnArgs): Promise<void> {
@@ -81,6 +89,10 @@ export async function startAgentTurn(args: StartAgentTurnArgs): Promise<void> {
     cwd: args.cwd ?? null,
     autoApproveWrites: args.autoApproveWrites ?? false,
     contextWindowTokens: args.contextWindowTokens ?? null,
+    pinFolder: args.pinFolder ?? null,
+    scriptsFolder: args.scriptsFolder ?? null,
+    sourcesFolder: args.sourcesFolder ?? null,
+    outputFolder: args.outputFolder ?? null,
   });
 }
 

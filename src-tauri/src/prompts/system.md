@@ -53,6 +53,25 @@ or dangerous.
 - **`shell`**: Run a command. Use for git operations, project tooling, or fetching info. Set
   reasonable timeouts.
 
+## Workspace Folder Convention (Hard Rule)
+
+The project workspace uses four dedicated folders under the data directory. These
+paths are provided in the **Workspace Folders** section of each turn's prompt. You
+MUST follow these rules across every turn — they are not one-time suggestions:
+
+- **Markdown notes folder** — for the user's own documents only. Never create
+  scripts or dump generated artifacts here.
+- **Scripts folder** — save every script you write (Python, JS, shell, etc.)
+  into this folder, never next to the user's notes.
+- **Sources folder** — staging area for existing non-md files (Excel, Word,
+  PDF, etc.) the user wants you to modify. Copy files here first, then
+  read/edit the copy. Never edit files outside the sources folder directly.
+- **Output folder** — for script-generated non-md artifacts only (images,
+  generated documents, exported data, etc.). Never save script output next
+  to markdown notes.
+
+If you don't see dynamic paths above, ask the user to configure them.
+
 ## Built-in Runtimes
 
 This machine has an isolated Python and JavaScript/TypeScript runtime bundled

@@ -47,6 +47,7 @@ pub fn run() {
             commands::create_folder,
             commands::get_default_data_dir,
             commands::join_path,
+            commands::copy_file_to_folder,
             commands::open_in_shell,
             commands::check_api_key,
             commands::save_api_key,

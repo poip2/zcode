@@ -4,7 +4,8 @@
   import { document as docStore } from "$lib/stores/document";
   import { skillsStore } from "$lib/stores/skills.svelte";
   import { startSkillsWatcher, stopSkillsWatcher, listenSkillsChanged } from "$lib/tauri/watcher";
-  import { getBaseDir } from "$lib/tauri/files";
+  import { getBaseDir, getDefaultDataDir, joinPath, pathExists, createFolder } from "$lib/tauri/files";
+  import { load as loadSettings, save as saveSettings } from "$lib/stores/settings";
   import "../app.css";
 
   let { children } = $props();
@@ -74,8 +75,46 @@
     };
   });
 
-  onMount(() => {
+  onMount(async () => {
     pinnedFolder.load();
+
+    // Auto-create the four workspace folders (idempotent — only creates if missing)
+    try {
+      const dataDir = await getDefaultDataDir();
+      const folders = ["pin", "scripts", "sources", "output"];
+      for (const name of folders) {
+        const fullPath = await joinPath(dataDir, name);
+        const exists = await pathExists(fullPath);
+        if (!exists) {
+          await createFolder(dataDir, name);
+        }
+      }
+
+      // Write default paths to settings for any folder the user hasn't explicitly set
+      const settings = await loadSettings();
+      let changed = false;
+      if (!settings.pinFolder) {
+        settings.pinFolder = await joinPath(dataDir, "pin");
+        changed = true;
+      }
+      if (!settings.scriptsFolder) {
+        settings.scriptsFolder = await joinPath(dataDir, "scripts");
+        changed = true;
+      }
+      if (!settings.sourcesFolder) {
+        settings.sourcesFolder = await joinPath(dataDir, "sources");
+        changed = true;
+      }
+      if (!settings.outputFolder) {
+        settings.outputFolder = await joinPath(dataDir, "output");
+        changed = true;
+      }
+      if (changed) {
+        await saveSettings(settings);
+      }
+    } catch {
+      // Best-effort — don't block app startup on folder creation failures
+    }
   });
 </script>
 

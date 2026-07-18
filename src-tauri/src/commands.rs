@@ -9,6 +9,15 @@ use tauri::{AppHandle, Manager};
 
 const MAX_TREE_DEPTH: u32 = 3;
 
+/// File extensions rendered as markdown by the frontend.
+const MARKDOWN_EXTS: &[&str] = &["md", "markdown", "mdown", "mkd"];
+
+/// File extensions shown in the tree but opened externally (not rendered as markdown).
+const DISPLAYABLE_EXTS: &[&str] = &[
+    "docx", "doc", "xlsx", "xls", "pptx", "ppt", "pdf", "csv",
+    "txt", "json", "xml", "yaml", "yml", "toml", "html",
+];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DirNode {
     pub name: String,
@@ -132,8 +141,8 @@ fn build_dir_node(dir: &Path, depth: u32) -> Option<DirNode> {
                 children.push(subnode);
             }
         } else if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd" {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if MARKDOWN_EXTS.contains(&ext) || DISPLAYABLE_EXTS.contains(&ext) {
                     let fname = path
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -327,6 +336,52 @@ pub fn join_path(base: String, child: String) -> Result<String, String> {
         .to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "Joined path is not valid UTF-8".to_string())
+}
+
+/// Copy a single file into a destination folder. Never overwrites — if a
+/// same-name file already exists the copy is renamed with a (1), (2), … suffix.
+#[tauri::command]
+pub fn copy_file_to_folder(source_path: String, dest_folder: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let source = Path::new(&source_path);
+    let dest_dir = Path::new(&dest_folder);
+
+    fs::create_dir_all(dest_dir)
+        .map_err(|e| format!("Failed to prepare destination: {e}"))?;
+
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| "Source path has no file name".to_string())?;
+
+    let mut dest_path = dest_dir.join(file_name);
+    if dest_path.exists() {
+        let stem = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let ext = source.extension().and_then(|s| s.to_str());
+        let mut n = 1;
+        loop {
+            let candidate_name = match ext {
+                Some(e) => format!("{stem} ({n}).{e}"),
+                None => format!("{stem} ({n})"),
+            };
+            let candidate = dest_dir.join(candidate_name);
+            if !candidate.exists() {
+                dest_path = candidate;
+                break;
+            }
+            n += 1;
+        }
+    }
+
+    fs::copy(source, &dest_path).map_err(|e| format!("Failed to copy file: {e}"))?;
+    dest_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Destination path is not valid UTF-8".to_string())
 }
 
 /// Open a file or folder path in the system file manager.

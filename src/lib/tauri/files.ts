@@ -167,6 +167,15 @@ export async function joinPath(base: string, child: string): Promise<string> {
   return invoke<string>("join_path", { base, child });
 }
 
+/**
+ * Copy a single file into a destination folder. Never overwrites — if a
+ * same-name file already exists the copy is renamed with a (1), (2), … suffix.
+ * Returns the absolute path of the newly created copy.
+ */
+export async function copyFileToFolder(sourcePath: string, destFolder: string): Promise<string> {
+  return invoke<string>("copy_file_to_folder", { sourcePath, destFolder });
+}
+
 /** Open a path in the system file manager (creates the directory if needed). */
 export async function openInShell(path: string): Promise<void> {
   return invoke("open_in_shell", { path });

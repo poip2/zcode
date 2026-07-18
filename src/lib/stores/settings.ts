@@ -24,6 +24,10 @@ export interface AppSettings {
   outputFolder?: string;
   /** Default pin folder when none is explicitly selected. Default: {dataDir}/pin */
   pinFolder?: string;
+  /** Folder for agent-written scripts (python, js, etc.). Default: {dataDir}/scripts */
+  scriptsFolder?: string;
+  /** Staging area for existing non-md files the user wants the agent to modify. Default: {dataDir}/sources */
+  sourcesFolder?: string;
 }
 
 const DEFAULTS: AppSettings = {
@@ -54,6 +58,8 @@ export async function load(): Promise<AppSettings> {
         aiProvider: { ...DEFAULTS.aiProvider, ...(saved.aiProvider ?? {}) },
         outputFolder: saved.outputFolder,
         pinFolder: saved.pinFolder,
+        scriptsFolder: saved.scriptsFolder,
+        sourcesFolder: saved.sourcesFolder,
       };
     }
   } catch {

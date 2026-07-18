@@ -1,5 +1,7 @@
 import { writable } from "svelte/store";
 import { getStore } from "./sharedStore";
+import { load as loadSettings } from "./settings";
+import { getDefaultDataDir, joinPath } from "$lib/tauri/files";
 
 const STORE_KEY = "pinnedFolder";
 
@@ -15,9 +17,30 @@ async function ensureLoaded() {
     const saved = await store.get<string>(STORE_KEY);
     if (saved) {
       pinnedPath.set(saved);
+      return;
     }
   } catch {
-    // Ignore load errors — start with no pin
+    // Ignore load errors
+  }
+
+  // Fallback: use settings.pinFolder if set
+  try {
+    const settings = await loadSettings();
+    if (settings.pinFolder) {
+      pinnedPath.set(settings.pinFolder);
+      return;
+    }
+  } catch {
+    // Ignore settings load errors
+  }
+
+  // Last resort: compute default pin path from dataDir
+  try {
+    const dataDir = await getDefaultDataDir();
+    const defaultPin = await joinPath(dataDir, "pin");
+    pinnedPath.set(defaultPin);
+  } catch {
+    // Ignore path resolution errors — start with no pin
   }
 }
 

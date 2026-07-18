@@ -4,7 +4,7 @@
   import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
-  import { getBaseDir } from "$lib/tauri/files";
+  import { getBaseDir, getDefaultDataDir, joinPath } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
   import { skillsStore } from "$lib/stores/skills.svelte";
 
@@ -265,13 +265,34 @@
       ? getBaseDir(doc.filePath)
       : (pinnedPath ?? undefined);
 
-    await session.send(text, {
-      baseUrl: freshSettings.aiProvider.baseUrl,
-      model: freshSettings.aiProvider.model,
-      cwd: derivedCwd,
-      currentFile: doc.filePath ?? undefined,
-      autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
-    });
+    // Resolve folder paths: use settings values, or compute defaults
+    try {
+      const defaultDataDir = await getDefaultDataDir();
+      const pinFolder = freshSettings.pinFolder || await joinPath(defaultDataDir, "pin");
+      const scriptsFolder = freshSettings.scriptsFolder || await joinPath(defaultDataDir, "scripts");
+      const sourcesFolder = freshSettings.sourcesFolder || await joinPath(defaultDataDir, "sources");
+      const outputFolder = freshSettings.outputFolder || await joinPath(defaultDataDir, "output");
+
+      await session.send(text, {
+        baseUrl: freshSettings.aiProvider.baseUrl,
+        model: freshSettings.aiProvider.model,
+        cwd: derivedCwd,
+        currentFile: doc.filePath ?? undefined,
+        autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
+        pinFolder,
+        scriptsFolder,
+        sourcesFolder,
+        outputFolder,
+      });
+    } catch {
+      await session.send(text, {
+        baseUrl: freshSettings.aiProvider.baseUrl,
+        model: freshSettings.aiProvider.model,
+        cwd: derivedCwd,
+        currentFile: doc.filePath ?? undefined,
+        autoApproveWrites: freshSettings.aiProvider.autoApproveWrites ?? autoApproveWrites,
+      });
+    }
   }
 
   function handleStop() {

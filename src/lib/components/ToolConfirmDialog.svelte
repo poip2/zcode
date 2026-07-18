@@ -163,7 +163,7 @@
 
 <style>
   .confirm-overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
     background: rgba(24, 21, 16, 0.4);
     display: flex;
@@ -179,7 +179,7 @@
     box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
     width: 100%;
     max-width: 480px;
-    max-height: 80vh;
+    max-height: min(80vh, calc(100vh - 32px));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -222,6 +222,7 @@
     padding: 12px 16px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
   }
 
   .detail-row {

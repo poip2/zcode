@@ -281,6 +281,33 @@
     }
   }
 
+  /**
+   * Extract the first human-readable sentence from a skill description.
+   * The full description is prompt text for AI models; the first sentence
+   * is usually a plain-language summary, followed by keyword-dense trigger
+   * conditions. We stop at the first sentence-ending punctuation or newline.
+   */
+  function firstSentence(desc: string): string {
+    if (!desc) return "";
+
+    // Strip surrounding quotes (straight/curly) if the whole text is wrapped
+    let text = desc.trim();
+    const quoteChars = ['"', '"', '"', "'", "'"];
+    if (quoteChars.includes(text[0]) && quoteChars.includes(text[text.length - 1])) {
+      text = text.slice(1, -1).trim();
+    }
+
+    // Find the earliest sentence terminator: . ! ? 。！？ or newline
+    const match = text.search(/[。！？.!?\n]/);
+
+    if (match === -1) {
+      return text.length > 80 ? text.slice(0, 80).trim() + "…" : text;
+    }
+
+    const sentence = text.slice(0, match + 1).trim();
+    return sentence.length > 100 ? sentence.slice(0, 100).trim() + "…" : sentence;
+  }
+
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -518,10 +545,20 @@
       <!-- Section: Skills -->
       {#if activeTab === "skills"}
         <section class="settings-section">
-          <div class="settings-section-title">Skills</div>
+          <div class="settings-section-title-row">
+            <div class="settings-section-title">Skills</div>
+            <span
+              class="info-icon"
+              title="Skill files are automatically discovered from .zcode/skills/<name>/SKILL.md and ~/.config/zcode/skills/<name>/SKILL.md."
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="16" x2="12" y2="11"/>
+                <circle cx="12" cy="8" r="0.5" fill="currentColor"/>
+              </svg>
+            </span>
+          </div>
           <p class="settings-section-desc">
-            Skill files are automatically discovered from <code>.zcode/skills/&lt;name&gt;/SKILL.md</code>
-            and <code>~/.config/zcode/skills/&lt;name&gt;/SKILL.md</code>.
             Toggle a skill on or off below. Changes take effect on the next conversation turn.
           </p>
 
@@ -533,21 +570,23 @@
           {:else}
             {#each skillsStore.all as skill (skill.name)}
               <div class="skill-row">
-                <div class="skill-info">
+                <div class="skill-header">
                   <span class="skill-name">{skill.name}</span>
                   <span class="skill-source" class:source-builtin={skill.source === "builtin"} class:source-project={skill.source === "project"} class:source-user={skill.source === "user"}>
                     {skill.source}
                   </span>
-                  <p class="skill-desc">{skill.description}</p>
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      checked={skill.active}
+                      onchange={(e) => skillsStore.toggle(skill.name, e.currentTarget.checked, deriveCwd())}
+                    />
+                    <span class="switch-slider"></span>
+                  </label>
                 </div>
-                <label class="switch">
-                  <input
-                    type="checkbox"
-                    checked={skill.active}
-                    onchange={(e) => skillsStore.toggle(skill.name, e.currentTarget.checked, deriveCwd())}
-                  />
-                  <span class="switch-slider"></span>
-                </label>
+                <p class="skill-desc" title={skill.description}>
+                  {firstSentence(skill.description)}
+                </p>
               </div>
             {/each}
           {/if}
@@ -686,6 +725,27 @@
     color: var(--zc-text-secondary, #8A8782);
     margin-bottom: 12px;
     line-height: 1.5;
+  }
+
+  .settings-section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 4px;
+  }
+
+  .settings-section-title-row .settings-section-title {
+    margin-bottom: 0;
+  }
+
+  .info-icon {
+    display: inline-flex;
+    color: var(--zc-text-tertiary, #A8A49D);
+    cursor: default;
+  }
+
+  .info-icon:hover {
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   .settings-label {
@@ -868,8 +928,8 @@
   /* ── Skills ── */
   .skill-row {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 3px;
     padding: 9px 0;
     border-bottom: 1px solid var(--zc-border-soft, #ECE9E2);
   }
@@ -878,10 +938,10 @@
     border-bottom: none;
   }
 
-  .skill-info {
+  .skill-header {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: 8px;
     min-width: 0;
   }
 
@@ -889,6 +949,9 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--zc-text-primary, #1F1E1C);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .skill-source {
@@ -896,8 +959,7 @@
     font-weight: 500;
     padding: 1px 5px;
     border-radius: 3px;
-    align-self: flex-start;
-    margin-top: 1px;
+    flex-shrink: 0;
   }
 
   .skill-source.source-builtin {
@@ -920,6 +982,10 @@
     color: var(--zc-text-tertiary, #A8A49D);
     margin: 0;
     line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
   }
 
   .skills-empty {

@@ -764,6 +764,18 @@ fn build_system_prompt(
 
     prompt.push('\n');
 
+    // --- Dynamic: shell environment ---
+    prompt.push_str("## Shell Environment\n\n");
+    if cfg!(windows) {
+        prompt.push_str(include_str!("prompts/windows_shell.md"));
+    } else {
+        prompt.push_str(
+            "The `shell` tool runs commands through a POSIX shell (bash/sh) on \
+             this Unix-like system.\n",
+        );
+    }
+    prompt.push('\n');
+
     // --- Dynamic: workspace folders ---
     if pin_folder.is_some()
         || scripts_folder.is_some()

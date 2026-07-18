@@ -34,6 +34,8 @@ interface SessionState {
   turnCount: number;
   /** Pending tool confirmation (Phase 3) */
   toolConfirmation: ToolConfirmation | null;
+  /** Last tool-result completion, for UI to react to file changes */
+  lastToolCompletion: { toolName: string; isError: boolean; ts: number } | null;
 }
 
 export interface SessionMeta {
@@ -59,6 +61,7 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
     error: null,
     turnCount: 0,
     toolConfirmation: null,
+    lastToolCompletion: null,
   });
 
   let unlisteners: UnlistenFn[] = [];
@@ -146,7 +149,7 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
           }
           return m;
         });
-        return { ...s, messages: msgs, activeToolCall: null };
+        return { ...s, messages: msgs, activeToolCall: null, lastToolCompletion: { toolName, isError, ts: Date.now() } };
       });
     });
 
@@ -307,6 +310,7 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
       error: null,
       turnCount: 0,
       toolConfirmation: null,
+      lastToolCompletion: null,
     });
     cleanup();
     // Also clear the persisted session on disk

@@ -76,12 +76,15 @@ use std::io::ErrorKind;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+#[cfg(windows)]
+use crate::tools::CREATE_NO_WINDOW;
+
 /// Kill a process tree. On Windows uses taskkill /T, on Unix uses kill -9 -pid.
 #[cfg(windows)]
 fn kill_process_tree(pid: u32) {
     let _ = std::process::Command::new("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .creation_flags(CREATE_NO_WINDOW)
         .status();
 }
 
@@ -109,7 +112,7 @@ fn spawn_shell(
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .creation_flags(0x08000000); // CREATE_NO_WINDOW — suppress console flash
+            .creation_flags(CREATE_NO_WINDOW);
         if let Some(path) = augmented_path {
             cmd.env("PATH", path);
         }

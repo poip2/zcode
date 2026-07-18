@@ -16,6 +16,12 @@ use std::process::Stdio;
 use std::sync::OnceLock;
 use tokio::process::Command as TokioCommand;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+use crate::tools::CREATE_NO_WINDOW;
+
 /// Input parameters for the find tool.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,12 +49,13 @@ fn find_fd_binary() -> Option<&'static str> {
         ["fd", "fdfind"]
             .iter()
             .find(|name| {
-                std::process::Command::new(name)
-                    .arg("--version")
+                let mut cmd = std::process::Command::new(name);
+                cmd.arg("--version")
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .is_ok()
+                    .stderr(Stdio::null());
+                #[cfg(windows)]
+                cmd.creation_flags(CREATE_NO_WINDOW);
+                cmd.status().is_ok()
             })
             .copied()
     })
@@ -144,11 +151,14 @@ impl Tool for FindTool {
         args.push("--".into());
         args.push(search_dir.display().to_string());
 
-        let output = TokioCommand::new(fd_cmd)
-            .args(&args)
+        let mut cmd = TokioCommand::new(fd_cmd);
+        cmd.args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd
             .output()
             .await
             .map_err(|e| Error::tool("find", format!("Failed to run fd: {e}")))?;

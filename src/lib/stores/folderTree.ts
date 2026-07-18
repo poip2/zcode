@@ -1,4 +1,5 @@
 import { writable, get } from "svelte/store";
+import { listDirTree } from "$lib/tauri/files";
 
 export interface DirNode {
   name: string;
@@ -42,6 +43,17 @@ function createFolderTreeStore() {
 
     setError(error: string | null) {
       state.update((s) => ({ ...s, error, loading: false }));
+    },
+
+    async refresh() {
+      const current = get(state);
+      if (!current.rootPath) return;
+      try {
+        const tree = await listDirTree(current.rootPath);
+        state.update((s) => ({ ...s, tree, loading: false, error: null }));
+      } catch (err) {
+        state.update((s) => ({ ...s, error: `Failed to read folder: ${err}`, loading: false }));
+      }
     },
 
     // Expanded paths

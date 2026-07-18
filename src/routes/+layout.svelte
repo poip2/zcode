@@ -76,7 +76,7 @@
   });
 
   onMount(async () => {
-    pinnedFolder.load();
+    await pinnedFolder.load();
 
     // Auto-create the four workspace folders (idempotent — only creates if missing)
     try {

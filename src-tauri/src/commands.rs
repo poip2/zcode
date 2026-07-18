@@ -435,7 +435,10 @@ pub fn copy_file_to_folder(source_path: String, dest_folder: String) -> Result<S
         }
     }
 
-    fs::copy(source, &dest_path).map_err(|e| format!("Failed to copy file: {e}"))?;
+    if let Err(e) = fs::copy(source, &dest_path) {
+        let _ = std::fs::remove_file(&dest_path);
+        return Err(format!("Failed to copy file: {e}"));
+    }
     dest_path
         .to_str()
         .map(|s| s.to_string())

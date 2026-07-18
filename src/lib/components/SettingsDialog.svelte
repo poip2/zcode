@@ -182,6 +182,12 @@
     const finalScriptsFolder = draftScriptsFolder || defaultScriptsPath || undefined;
     const finalSourcesFolder = draftSourcesFolder || defaultSourcesPath || undefined;
 
+    // Sync pinFolder to sidebar via pinnedFolder store BEFORE saveSettings
+    // so the onSettingsChange listener in the Sidebar sees the new value.
+    if (finalPinFolder) {
+      pinnedFolder.pin(finalPinFolder);
+    }
+
     const ok = await saveSettings({
       aiProvider: newAi,
       outputFolder: finalOutputFolder,
@@ -192,11 +198,6 @@
     if (!ok) {
       saveError = true;
       return;
-    }
-
-    // Sync pinFolder to sidebar via pinnedFolder store
-    if (finalPinFolder) {
-      pinnedFolder.pin(finalPinFolder);
     }
 
     // Update persisted state

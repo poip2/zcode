@@ -14,8 +14,8 @@ const MARKDOWN_EXTS: &[&str] = &["md", "markdown", "mdown", "mkd"];
 
 /// File extensions shown in the tree but opened externally (not rendered as markdown).
 const DISPLAYABLE_EXTS: &[&str] = &[
-    "docx", "doc", "xlsx", "xls", "pptx", "ppt", "pdf", "csv",
-    "txt", "json", "xml", "yaml", "yml", "toml", "html",
+    "docx", "doc", "xlsx", "xls", "pptx", "ppt", "pdf", "csv", "txt", "json", "xml", "yaml", "yml",
+    "toml", "html",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -390,8 +390,7 @@ pub fn copy_file_to_folder(source_path: String, dest_folder: String) -> Result<S
     let source = Path::new(&source_path);
     let dest_dir = Path::new(&dest_folder);
 
-    fs::create_dir_all(dest_dir)
-        .map_err(|e| format!("Failed to prepare destination: {e}"))?;
+    fs::create_dir_all(dest_dir).map_err(|e| format!("Failed to prepare destination: {e}"))?;
 
     let file_name = source
         .file_name()
@@ -632,7 +631,11 @@ mod tests {
             src.to_str().unwrap().to_string(),
             dest_dir.to_str().unwrap().to_string(),
         );
-        assert!(result.is_ok(), "copy_file_to_folder failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "copy_file_to_folder failed: {:?}",
+            result.err()
+        );
         let dest_path = result.unwrap();
 
         assert!(Path::new(&dest_path).exists());
@@ -658,7 +661,10 @@ mod tests {
         assert!(result.is_ok());
         let dest_path = result.unwrap();
 
-        assert_ne!(dest_path, dest_dir.join("doc.pdf").to_str().unwrap().to_string());
+        assert_ne!(
+            dest_path,
+            dest_dir.join("doc.pdf").to_str().unwrap().to_string()
+        );
         assert!(dest_path.contains("doc ("));
         let content = std::fs::read_to_string(&dest_path).unwrap();
         assert_eq!(content, "pdf content");
@@ -680,7 +686,11 @@ mod tests {
             src.to_str().unwrap().to_string(),
             dest_dir.to_str().unwrap().to_string(),
         );
-        assert!(result.is_ok(), "copy_file_to_folder failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "copy_file_to_folder failed: {:?}",
+            result.err()
+        );
         let dest_path = result.unwrap();
         assert!(Path::new(&dest_path).exists());
         let content = std::fs::read_to_string(&dest_path).unwrap();

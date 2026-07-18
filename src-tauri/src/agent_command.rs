@@ -765,14 +765,20 @@ fn build_system_prompt(
     prompt.push('\n');
 
     // --- Dynamic: workspace folders ---
-    if pin_folder.is_some() || scripts_folder.is_some() || sources_folder.is_some() || output_folder.is_some() {
+    if pin_folder.is_some()
+        || scripts_folder.is_some()
+        || sources_folder.is_some()
+        || output_folder.is_some()
+    {
         prompt.push_str("## Workspace Folders\n\n");
         prompt.push_str("This project uses a fixed four-folder convention:\n");
         if let Some(p) = pin_folder {
             prompt.push_str(&format!("- Markdown notes folder: `{p}`\n"));
         }
         if let Some(p) = scripts_folder {
-            prompt.push_str(&format!("- Scripts folder (for scripts you write to complete tasks): `{p}`\n"));
+            prompt.push_str(&format!(
+                "- Scripts folder (for scripts you write to complete tasks): `{p}`\n"
+            ));
         }
         if let Some(p) = sources_folder {
             prompt.push_str(&format!("- Sources folder (staging area for existing non-md files the user wants you to edit): `{p}`\n"));
@@ -781,7 +787,9 @@ fn build_system_prompt(
             prompt.push_str(&format!("- Output folder (script-generated non-md artifacts only, e.g. images, generated docs): `{p}`\n"));
         }
         prompt.push_str("\nRules:\n");
-        prompt.push_str("- Save any script you write into the scripts folder, not next to the user's notes.\n");
+        prompt.push_str(
+            "- Save any script you write into the scripts folder, not next to the user's notes.\n",
+        );
         prompt.push_str("- Any non-md file produced by a script (image, generated document, etc.) belongs in the output folder. Never save script output next to markdown notes.\n");
         prompt.push_str("- If the user asks you to modify an existing non-markdown file (Excel, Word, PDF, etc.) that lives outside the sources folder, first copy it into the sources folder, then read/edit the copy there. Do not edit files outside the sources folder directly.\n");
         prompt.push_str("- The markdown notes folder is for the user's own documents — don't create scripts or dump generated artifacts there.\n");

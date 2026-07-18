@@ -3,7 +3,7 @@
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { folderTree } from "$lib/stores/folderTree";
   import { document as docStore } from "$lib/stores/document";
-  import { openFolderDialog, listDirTree, getBaseDir, getPortableDataDir, joinPath } from "$lib/tauri/files";
+  import { openFolderDialog, listDirTree, getBaseDir, getDefaultDataDir, joinPath } from "$lib/tauri/files";
   import { saveApiKey, maskApiKey, checkApiKey } from "$lib/tauri/ai";
   import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { skillsStore } from "$lib/stores/skills.svelte";
@@ -74,7 +74,7 @@
     persistedAi = { ...s.aiProvider };
 
     // Get portable data dir (exe location) for default folder paths
-    getPortableDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
+    getDefaultDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
   });
 
   onDestroy(() => {
@@ -102,7 +102,7 @@
         draftPinFolder = s.pinFolder;
       });
       if (!portableDataDir) {
-        getPortableDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
+        getDefaultDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
       }
 
       // Query real keychain state — the store's maskedApiKey is just a hint

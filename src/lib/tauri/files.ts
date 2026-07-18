@@ -157,14 +157,9 @@ export async function pathExists(path: string): Promise<boolean> {
   return invoke<boolean>("path_exists", { path });
 }
 
-/** Get the app data directory from the Rust backend (for computing default folder paths). */
-export async function getAppDataDir(): Promise<string> {
-  return invoke<string>("get_app_data_dir");
-}
-
-/** Get the directory containing the executable (portable data dir for pin/output defaults). */
-export async function getPortableDataDir(): Promise<string> {
-  return invoke<string>("get_portable_data_dir");
+/** Get the default data directory for pin/output folders. Platform-specific logic in Rust. */
+export async function getDefaultDataDir(): Promise<string> {
+  return invoke<string>("get_default_data_dir");
 }
 
 /** Join two path components with the platform-native separator. */

@@ -51,7 +51,9 @@ fn find_rg_binary() -> Option<&'static str> {
             .iter()
             .find(|name| {
                 let mut cmd = std::process::Command::new(name);
-                cmd.arg("--version").stdout(Stdio::null()).stderr(Stdio::null());
+                cmd.arg("--version")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
                 #[cfg(windows)]
                 cmd.creation_flags(CREATE_NO_WINDOW);
                 cmd.status().is_ok()

@@ -3,9 +3,6 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::process::Command as TokioCommand;
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
 #[derive(Debug, Clone)]
 pub struct AgentRuntime {
     pub venv_dir: PathBuf,

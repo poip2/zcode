@@ -19,6 +19,9 @@ use tokio::process::Command as TokioCommand;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+#[cfg(windows)]
+use crate::tools::CREATE_NO_WINDOW;
+
 /// Input parameters for the grep tool.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

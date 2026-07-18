@@ -76,6 +76,9 @@ use std::io::ErrorKind;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+#[cfg(windows)]
+use crate::tools::CREATE_NO_WINDOW;
+
 /// Kill a process tree. On Windows uses taskkill /T, on Unix uses kill -9 -pid.
 #[cfg(windows)]
 fn kill_process_tree(pid: u32) {

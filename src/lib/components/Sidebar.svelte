@@ -70,11 +70,11 @@
     await reloadWorkspaceFiles();
 
     if (!autoLoadDone) {
-      autoLoadDone = true;
       const p = $pinnedFolder;
       if (p) {
         const exists = await pathExists(p).catch(() => false);
         if (exists) {
+          autoLoadDone = true;
           const current = get(folderTree);
           if (current.rootPath === p && current.tree !== null) return;
           folderTree.setRoot(p);

@@ -417,9 +417,19 @@ pub fn copy_file_to_folder(source_path: String, dest_folder: String) -> Result<S
                 None => format!("{stem} ({n})"),
             };
             let candidate = dest_dir.join(candidate_name);
-            if !candidate.exists() {
-                dest_path = candidate;
-                break;
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                Ok(_) => {
+                    dest_path = candidate;
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => {
+                    return Err(format!("Failed to create destination file: {e}"));
+                }
             }
             n += 1;
         }

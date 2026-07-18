@@ -276,6 +276,36 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
         .ok_or_else(|| "App data dir is not valid UTF-8".to_string())
 }
 
+/// Return the directory containing the executable (portable data dir).
+/// Falls back to app_data_dir if the exe path can't be resolved.
+#[tauri::command]
+pub fn get_portable_data_dir(app: AppHandle) -> Result<String, String> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            if let Some(s) = parent.to_str() {
+                return Ok(s.to_string());
+            }
+        }
+    }
+    // Fallback to app_data_dir
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {e}"))?
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "App data dir is not valid UTF-8".to_string())
+}
+
+/// Join two path components with the platform-native separator.
+#[tauri::command]
+pub fn join_path(base: String, child: String) -> Result<String, String> {
+    let joined = std::path::Path::new(&base).join(&child);
+    joined
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Joined path is not valid UTF-8".to_string())
+}
+
 /// Open a file or folder path in the system file manager.
 #[tauri::command]
 pub fn open_in_shell(path: String) -> Result<(), String> {

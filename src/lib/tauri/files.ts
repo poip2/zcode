@@ -162,6 +162,16 @@ export async function getAppDataDir(): Promise<string> {
   return invoke<string>("get_app_data_dir");
 }
 
+/** Get the directory containing the executable (portable data dir for pin/output defaults). */
+export async function getPortableDataDir(): Promise<string> {
+  return invoke<string>("get_portable_data_dir");
+}
+
+/** Join two path components with the platform-native separator. */
+export async function joinPath(base: string, child: string): Promise<string> {
+  return invoke<string>("join_path", { base, child });
+}
+
 /** Open a path in the system file manager (creates the directory if needed). */
 export async function openInShell(path: string): Promise<void> {
   return invoke("open_in_shell", { path });

@@ -46,6 +46,8 @@ pub fn run() {
             commands::create_markdown_file,
             commands::create_folder,
             commands::get_app_data_dir,
+            commands::get_portable_data_dir,
+            commands::join_path,
             commands::open_in_shell,
             commands::check_api_key,
             commands::save_api_key,

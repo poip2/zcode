@@ -186,13 +186,7 @@
   }
 
   async function refreshTree() {
-    if (!ft.rootPath) return;
-    try {
-      const tree = await listDirTree(ft.rootPath);
-      folderTree.setTree(tree);
-    } catch (err) {
-      folderTree.setError(`Failed to read folder: ${err}`);
-    }
+    await folderTree.refresh();
   }
 
   function handleFileClick(node: DirNode) {

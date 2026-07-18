@@ -7,7 +7,8 @@
   import { getBaseDir, getDefaultDataDir } from "$lib/tauri/files";
   import ToolConfirmDialog from "$lib/components/ToolConfirmDialog.svelte";
   import { skillsStore } from "$lib/stores/skills.svelte";
-  import { reloadOutputFiles } from "$lib/stores/workspaceFiles";
+  import { reloadOutputFiles, reloadSourcesFiles } from "$lib/stores/workspaceFiles";
+  import { folderTree } from "$lib/stores/folderTree";
 
   type AgentSession = Awaited<ReturnType<typeof getAgentSession>>;
 
@@ -41,7 +42,9 @@
   let aiSettings = $state<AIProviderSettings>({ baseUrl: "", model: "" });
   let pinnedPath = $state<string | null>(null);
   let lastOutputFolder = $state<string | null>(null);
+  let lastSourcesFolder = $state<string | null>(null);
   let wasSending = $state(false);
+  let lastToolCompletion = $state<{ toolName: string; isError: boolean; ts: number } | null>(null);
 
   let inputEl: HTMLTextAreaElement | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -93,6 +96,7 @@
         error = s.error;
         activeToolCall = s.activeToolCall;
         toolConfirmation = s.toolConfirmation;
+        lastToolCompletion = s.lastToolCompletion;
       });
 
       loading = false;
@@ -132,6 +136,7 @@
       error = s.error;
       activeToolCall = s.activeToolCall;
       toolConfirmation = s.toolConfirmation;
+      lastToolCompletion = s.lastToolCompletion;
     });
 
     sessionId = key;
@@ -161,6 +166,7 @@
         error = s.error;
         activeToolCall = s.activeToolCall;
         toolConfirmation = s.toolConfirmation;
+        lastToolCompletion = s.lastToolCompletion;
       });
       sessionId = key;
     }
@@ -227,6 +233,24 @@
     wasSending = sending;
   });
 
+  // Debounced file list refresh on every tool completion
+  let refreshDebounce: ReturnType<typeof setTimeout> | null = null;
+  function scheduleFileListRefresh() {
+    if (refreshDebounce) clearTimeout(refreshDebounce);
+    refreshDebounce = setTimeout(() => {
+      folderTree.refresh().catch(() => {});
+      if (lastSourcesFolder) reloadSourcesFiles(lastSourcesFolder).catch(() => {});
+      if (lastOutputFolder) reloadOutputFiles(lastOutputFolder).catch(() => {});
+    }, 300);
+  }
+
+  $effect(() => {
+    const completion = lastToolCompletion;
+    if (completion && ["write", "edit", "shell"].includes(completion.toolName) && !completion.isError) {
+      scheduleFileListRefresh();
+    }
+  });
+
   function relativeTime(ts: number): string {
     const diff = Date.now() - ts;
     const mins = Math.floor(diff / 60000);
@@ -280,6 +304,7 @@
       const defaultDataDir = await getDefaultDataDir();
       const { pinFolder, scriptsFolder, sourcesFolder, outputFolder } = await resolveWorkspaceFolders(freshSettings, defaultDataDir);
       lastOutputFolder = outputFolder;
+      lastSourcesFolder = sourcesFolder;
 
       await session.send(text, {
         baseUrl: freshSettings.aiProvider.baseUrl,

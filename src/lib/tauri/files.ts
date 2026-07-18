@@ -145,6 +145,10 @@ export async function listDirTree(rootPath: string): Promise<DirNode> {
   return invoke<DirNode>("read_dir_tree", { root: rootPath });
 }
 
+export async function listFolderFlat(folder: string): Promise<DirNode[]> {
+  return invoke<DirNode[]>("list_folder_flat", { folder });
+}
+
 export async function createMarkdownFile(dir: string, name: string): Promise<string> {
   return invoke<string>("create_markdown_file", { dir, name });
 }

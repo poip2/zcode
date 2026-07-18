@@ -80,8 +80,23 @@ export async function save(settings: AppSettings): Promise<boolean> {
     const store = await getSettingsStore();
     await store.set("settings", settings);
     await store.save();
+    _notifyListeners(settings);
     return true;
   } catch {
     return false;
   }
+}
+
+type ChangeListener = () => void;
+let changeListeners: ChangeListener[] = [];
+
+export function onSettingsChange(cb: ChangeListener): () => void {
+  changeListeners.push(cb);
+  return () => {
+    changeListeners = changeListeners.filter((l) => l !== cb);
+  };
+}
+
+function _notifyListeners(_settings: AppSettings) {
+  for (const cb of changeListeners) cb();
 }

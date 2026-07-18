@@ -3,11 +3,10 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { document as docStore } from "$lib/stores/document";
   import { folderTree, type DirNode } from "$lib/stores/folderTree";
-  import { recents } from "$lib/stores/recents";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { externalFile } from "$lib/stores/externalFile";
   import {
@@ -21,7 +20,7 @@
     getDefaultDataDir,
     joinPath,
   } from "$lib/tauri/files";
-  import { load as loadSettings } from "$lib/stores/settings";
+  import { load as loadSettings, onSettingsChange } from "$lib/stores/settings";
   import { sourcesFiles, outputFiles, reloadSourcesFiles, reloadOutputFiles } from "$lib/stores/workspaceFiles";
   import { isMarkdownExt } from "$lib/utils/fileTypes";
 
@@ -57,19 +56,19 @@
     }
   });
 
-  onMount(async () => {
-    recents.load();
-    await pinnedFolder.load();
+  async function reloadWorkspaceFiles() {
+    const dataDir = await getDefaultDataDir();
+    const s = await loadSettings();
+    sourcesFolderPath = s.sourcesFolder || await joinPath(dataDir, "sources");
+    outputFolderPath = s.outputFolder || await joinPath(dataDir, "output");
+    await reloadSourcesFiles(sourcesFolderPath);
+    await reloadOutputFiles(outputFolderPath);
+  }
 
-    // Resolve sources & output folder paths, then load flat file lists
-    getDefaultDataDir().then((dataDir) => {
-      loadSettings().then(async (s) => {
-        sourcesFolderPath = s.sourcesFolder || await joinPath(dataDir, "sources");
-        outputFolderPath = s.outputFolder || await joinPath(dataDir, "output");
-        await reloadSourcesFiles(sourcesFolderPath);
-        await reloadOutputFiles(outputFolderPath);
-      });
-    });
+  onMount(async () => {
+    await pinnedFolder.load();
+    await reloadWorkspaceFiles();
+
     if (!autoLoadDone) {
       autoLoadDone = true;
       const p = $pinnedFolder;
@@ -90,6 +89,8 @@
       }
     }
   });
+
+  onDestroy(onSettingsChange(() => { reloadWorkspaceFiles(); }));
 
   function startNew(mode: "file" | "folder") {
     newItemMode = mode;

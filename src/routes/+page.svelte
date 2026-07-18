@@ -45,6 +45,7 @@
   let lastWatchedPath = $state<string | null>(null);
   let dragHover = $state(false);
   let unlistenDragDrop: (() => void) | undefined;
+  let unmounted = false;
 
   async function handleDroppedPaths(paths: string[]) {
     if (paths.length === 0) return;
@@ -56,6 +57,7 @@
 
     let openedMarkdown = false;
     let copiedCount = 0;
+    let copyErrors = 0;
 
     for (const path of paths) {
       if (isMarkdownExt(path)) {
@@ -69,17 +71,23 @@
           copiedCount++;
         } catch (err) {
           console.error("Failed to copy file to sources:", err);
+          copyErrors++;
         }
       }
     }
 
-    if (copiedCount > 0) {
+    if (copiedCount > 0 || copyErrors > 0) {
       await reloadSourcesFiles(sourcesFolder);
-      flashStatus(
-        copiedCount === 1
-          ? "Copied to Sources"
-          : `Copied ${copiedCount} files to Sources`,
-      );
+      const parts: string[] = [];
+      if (copiedCount > 0) {
+        parts.push(
+          copiedCount === 1 ? "Copied 1 file to Sources" : `Copied ${copiedCount} files to Sources`,
+        );
+      }
+      if (copyErrors > 0) {
+        parts.push(copyErrors === 1 ? "1 copy failed" : `${copyErrors} copies failed`);
+      }
+      flashStatus(parts.join(" — "));
     }
   }
 
@@ -109,7 +117,14 @@
         }
       })
       .then((fn) => {
-        unlistenDragDrop = fn;
+        if (unmounted) {
+          fn();
+        } else {
+          unlistenDragDrop = fn;
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to register drag-drop listener:", err);
       });
 
     // Window resize listener for auto-collapse
@@ -128,6 +143,7 @@
     window.addEventListener("resize", handleResize);
 
     return () => {
+      unmounted = true;
       window.removeEventListener("keydown", handleKeydown);
       window.removeEventListener("resize", handleResize);
       unlistenDragDrop?.();

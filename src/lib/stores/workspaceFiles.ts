@@ -1,5 +1,5 @@
 import { writable } from "svelte/store";
-import { listDirTree } from "$lib/tauri/files";
+import { listFolderFlat } from "$lib/tauri/files";
 import type { DirNode } from "$lib/stores/folderTree";
 
 export const sourcesFiles = writable<DirNode[]>([]);
@@ -8,8 +8,7 @@ export const outputFiles = writable<DirNode[]>([]);
 async function loadFlatFiles(path: string): Promise<DirNode[]> {
   if (!path) return [];
   try {
-    const tree = await listDirTree(path);
-    return (tree.children ?? []).filter((c) => !c.is_dir);
+    return await listFolderFlat(path);
   } catch {
     return [];
   }

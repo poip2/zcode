@@ -338,6 +338,48 @@ pub fn join_path(base: String, child: String) -> Result<String, String> {
         .ok_or_else(|| "Joined path is not valid UTF-8".to_string())
 }
 
+/// List all files (not directories) in a single directory.
+/// Non-recursive, no extension filter — returns every visible file.
+#[tauri::command]
+pub fn list_folder_flat(folder: String) -> Result<Vec<DirNode>, String> {
+    let dir = Path::new(&folder);
+    if !dir.is_dir() {
+        return Err(format!("Not a directory: {}", folder));
+    }
+    let entries = fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {e}"))?;
+    let mut files: Vec<DirNode> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(fname) = path.file_name() {
+            if fname.to_string_lossy().starts_with('.') {
+                continue;
+            }
+        }
+        let fname = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        files.push(DirNode {
+            name: fname,
+            path: path.to_string_lossy().to_string(),
+            is_dir: false,
+            modified,
+            children: None,
+        });
+    }
+    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(files)
+}
+
 /// Copy a single file into a destination folder. Never overwrites — if a
 /// same-name file already exists the copy is renamed with a (1), (2), … suffix.
 #[tauri::command]
@@ -363,7 +405,13 @@ pub fn copy_file_to_folder(source_path: String, dest_folder: String) -> Result<S
             .unwrap_or("file");
         let ext = source.extension().and_then(|s| s.to_str());
         let mut n = 1;
+        const MAX_ATTEMPTS: u32 = 10_000;
         loop {
+            if n > MAX_ATTEMPTS {
+                return Err(format!(
+                    "Too many name collisions in destination folder (tried {MAX_ATTEMPTS} names)"
+                ));
+            }
             let candidate_name = match ext {
                 Some(e) => format!("{stem} ({n}).{e}"),
                 None => format!("{stem} ({n})"),

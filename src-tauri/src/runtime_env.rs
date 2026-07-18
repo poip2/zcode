@@ -98,7 +98,7 @@ pub async fn ensure_agent_venv(app: &AppHandle) -> Result<AgentRuntime, String> 
         let mut cmd = TokioCommand::new(&uv);
         cmd.arg("venv").arg(&venv_dir).arg("--python").arg(&python);
         #[cfg(windows)]
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(crate::tools::CREATE_NO_WINDOW);
 
         let output = tokio::time::timeout(Duration::from_secs(120), cmd.output())
             .await

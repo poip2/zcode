@@ -53,7 +53,7 @@ fn find_rg_binary() -> Option<&'static str> {
                 let mut cmd = std::process::Command::new(name);
                 cmd.arg("--version").stdout(Stdio::null()).stderr(Stdio::null());
                 #[cfg(windows)]
-                cmd.creation_flags(0x08000000);
+                cmd.creation_flags(CREATE_NO_WINDOW);
                 cmd.status().is_ok()
             })
             .copied()
@@ -177,7 +177,7 @@ impl Tool for GrepTool {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         #[cfg(windows)]
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(CREATE_NO_WINDOW);
         let output = cmd
             .output()
             .await

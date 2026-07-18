@@ -90,7 +90,13 @@
     }
   });
 
-  onDestroy(onSettingsChange(() => { reloadWorkspaceFiles(); }));
+  onDestroy(onSettingsChange(() => {
+    const p = get(pinnedFolder);
+    if (p && p !== ft.rootPath) {
+      openFolderPath(p).catch(() => {});
+    }
+    reloadWorkspaceFiles().catch(() => {});
+  }));
 
   function startNew(mode: "file" | "folder") {
     newItemMode = mode;

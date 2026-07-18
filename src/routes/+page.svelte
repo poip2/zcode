@@ -13,13 +13,12 @@
     openInShell,
     copyFileToFolder,
     getDefaultDataDir,
-    joinPath,
   } from "$lib/tauri/files";
   import { startFileWatcher, stopFileWatcher } from "$lib/tauri/watcher";
   import { recents } from "$lib/stores/recents";
-  import { load as loadSettings } from "$lib/stores/settings";
+  import { load as loadSettings, resolveWorkspaceFolders } from "$lib/stores/settings";
   import { reloadSourcesFiles } from "$lib/stores/workspaceFiles";
-  import { isMarkdownExt } from "$lib/utils/fileTypes";
+  
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
@@ -52,41 +51,30 @@
 
     const settings = await loadSettings();
     const dataDir = await getDefaultDataDir();
-    const sourcesFolder =
-      settings.sourcesFolder || (await joinPath(dataDir, "sources"));
+    const { sourcesFolder } = await resolveWorkspaceFolders(settings, dataDir);
 
-    let openedMarkdown = false;
     let copiedCount = 0;
     let copyErrors = 0;
 
     for (const path of paths) {
-      if (isMarkdownExt(path)) {
-        if (!openedMarkdown) {
-          await loadFile(path);
-          openedMarkdown = true;
-        }
-      } else {
-        try {
-          await copyFileToFolder(path, sourcesFolder);
-          copiedCount++;
-        } catch (err) {
-          console.error("Failed to copy file to sources:", err);
-          copyErrors++;
-        }
+      try {
+        await copyFileToFolder(path, sourcesFolder);
+        copiedCount++;
+      } catch (err) {
+        console.error("Failed to copy file to sources:", err);
+        copyErrors++;
       }
     }
 
-    if (copiedCount > 0 || copyErrors > 0) {
-      await reloadSourcesFiles(sourcesFolder);
-      const parts: string[] = [];
-      if (copiedCount > 0) {
-        parts.push(
-          copiedCount === 1 ? "Copied 1 file to Sources" : `Copied ${copiedCount} files to Sources`,
-        );
-      }
-      if (copyErrors > 0) {
-        parts.push(copyErrors === 1 ? "1 copy failed" : `${copyErrors} copies failed`);
-      }
+    await reloadSourcesFiles(sourcesFolder);
+    const parts: string[] = [];
+    if (copiedCount > 0) {
+      parts.push(`Copied ${copiedCount} file${copiedCount === 1 ? "" : "s"} to Sources`);
+    }
+    if (copyErrors > 0) {
+      parts.push(`${copyErrors} cop${copyErrors === 1 ? "y" : "ies"} failed`);
+    }
+    if (parts.length > 0) {
       flashStatus(parts.join(" — "));
     }
   }
@@ -370,7 +358,7 @@
           <line x1="12" y1="11" x2="12" y2="17"/>
           <polyline points="8 14 12 18 16 14"/>
         </svg>
-        <p>Drop to open .md files<br>or copy other files to Sources</p>
+        <p>Drop files to copy to Sources</p>
       </div>
     </div>
   {/if}

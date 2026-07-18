@@ -17,7 +17,8 @@
     createFolder,
     pathExists,
     openInShell,
-    getAppDataDir,
+    getDefaultDataDir,
+    joinPath,
   } from "$lib/tauri/files";
   import { load as loadSettings } from "$lib/stores/settings";
 
@@ -49,9 +50,9 @@
     await pinnedFolder.load();
 
     // Resolve output folder path
-    getAppDataDir().then((dataDir) => {
-      loadSettings().then((s) => {
-        outputFolderPath = s.outputFolder || `${dataDir}/output`;
+    getDefaultDataDir().then((dataDir) => {
+      loadSettings().then(async (s) => {
+        outputFolderPath = s.outputFolder || await joinPath(dataDir, "output");
       });
     });
     if (!autoLoadDone) {

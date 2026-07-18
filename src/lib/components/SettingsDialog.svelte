@@ -3,7 +3,7 @@
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { folderTree } from "$lib/stores/folderTree";
   import { document as docStore } from "$lib/stores/document";
-  import { openFolderDialog, listDirTree, getBaseDir, getAppDataDir } from "$lib/tauri/files";
+  import { openFolderDialog, listDirTree, getBaseDir, getDefaultDataDir, joinPath } from "$lib/tauri/files";
   import { saveApiKey, maskApiKey, checkApiKey } from "$lib/tauri/ai";
   import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
   import { skillsStore } from "$lib/stores/skills.svelte";
@@ -33,7 +33,15 @@
   // ── Folder draft state ──
   let draftOutputFolder = $state<string | undefined>(undefined);
   let draftPinFolder = $state<string | undefined>(undefined);
-  let appDataDir = $state<string>("");
+  let portableDataDir = $state<string>("");
+  let defaultOutputPath = $state<string>("");
+  let defaultPinPath = $state<string>("");
+
+  async function updateDefaultPaths(dir: string) {
+    portableDataDir = dir;
+    defaultOutputPath = await joinPath(dir, "output");
+    defaultPinPath = await joinPath(dir, "pin");
+  }
 
   // ── AI draft state (populated from store on open, written back on Save) ──
   let draftBaseUrl = $state("");
@@ -65,8 +73,8 @@
     const s = await loadSettings();
     persistedAi = { ...s.aiProvider };
 
-    // Get app data dir for default folder paths
-    getAppDataDir().then((d) => { appDataDir = d; }).catch(() => {});
+    // Get portable data dir (exe location) for default folder paths
+    getDefaultDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
   });
 
   onDestroy(() => {
@@ -93,8 +101,8 @@
         draftOutputFolder = s.outputFolder;
         draftPinFolder = s.pinFolder;
       });
-      if (!appDataDir) {
-        getAppDataDir().then((d) => { appDataDir = d; }).catch(() => {});
+      if (!portableDataDir) {
+        getDefaultDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
       }
 
       // Query real keychain state — the store's maskedApiKey is just a hint
@@ -197,11 +205,11 @@
   }
 
   function defaultOutputFolder(): string {
-    return appDataDir ? `${appDataDir}/output` : "(default: output)";
+    return portableDataDir ? defaultOutputPath : "(default: output)";
   }
 
   function defaultPinFolder(): string {
-    return appDataDir ? `${appDataDir}/pin` : "(default: pin)";
+    return portableDataDir ? defaultPinPath : "(default: pin)";
   }
 
   function resolveOutputFolder(): string {

@@ -265,9 +265,7 @@ fn validate_simple_name(name: &str) -> Result<(), String> {
 // App paths
 // ============================================================================
 
-/// Return the app data directory so the frontend can compute default folder paths.
-#[tauri::command]
-pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
+fn app_data_dir(app: &AppHandle) -> Result<String, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {e}"))?
@@ -276,13 +274,73 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
         .ok_or_else(|| "App data dir is not valid UTF-8".to_string())
 }
 
+/// Check whether a directory is writable by creating a temp file and removing it.
+/// This is more reliable than checking permission bits (some mount scenarios lie).
+#[cfg(target_os = "windows")]
+fn is_dir_writable(dir: &std::path::Path) -> bool {
+    let test_file = dir.join(".zcode_write_test");
+    match std::fs::File::create(&test_file) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&test_file);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Default data directory for pin/output folders.
+///
+/// Windows: prefers the exe's parent directory (portable mode).
+/// Falls back to `app_data_dir()` if the exe dir is not writable
+/// (e.g. installed under Program Files).
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn get_default_data_dir(app: AppHandle) -> Result<String, String> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            if is_dir_writable(parent) {
+                return parent
+                    .to_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| "Exe parent dir is not valid UTF-8".to_string());
+            }
+        }
+    }
+    app_data_dir(&app)
+}
+
+/// Default data directory for pin/output folders.
+///
+/// macOS / Linux: always use the system-standard app data directory.
+/// Portable mode is not a concept on these platforms.
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn get_default_data_dir(app: AppHandle) -> Result<String, String> {
+    app_data_dir(&app)
+}
+
+/// Join two path components with the platform-native separator.
+#[tauri::command]
+pub fn join_path(base: String, child: String) -> Result<String, String> {
+    let joined = std::path::Path::new(&base).join(&child);
+    joined
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Joined path is not valid UTF-8".to_string())
+}
+
 /// Open a file or folder path in the system file manager.
 #[tauri::command]
 pub fn open_in_shell(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
-    // Create the directory if it doesn't exist (for default output/pin folders)
+    // Create the directory if it doesn't exist (for default output/pin folders).
+    // Propagate the error so the frontend can surface it to the user — the
+    // default-path logic already avoids unwritable exe dirs, so a failure here
+    // means something unusual (e.g. the user pointed at a removed external drive).
     if !p.exists() {
-        std::fs::create_dir_all(p).map_err(|e| format!("Failed to create directory: {e}"))?;
+        if let Err(e) = std::fs::create_dir_all(p) {
+            return Err(format!("Failed to create directory: {e}"));
+        }
     }
     open::that(p).map_err(|e| format!("Failed to open: {e}"))
 }

@@ -298,6 +298,7 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   function stop() {
     stopped = true;
     state.update((s) => ({ ...s, sending: false }));
+    invoke("close_session", { sessionKey: sessionId }).catch(() => {});
   }
 
   async function reset() {
@@ -373,8 +374,7 @@ export async function getAgentSession(sessionId: string, preloadedMessages?: Cha
 }
 
 export async function resolveSessionKey(cwd: string | null): Promise<string> {
-  if (!cwd) return "scratch";
-  return await invoke<string>("resolve_session_key", { cwd });
+  return await invoke<string>("resolve_session_key", { cwd: cwd ?? "scratch" });
 }
 
 /** Close a session completely — kill listeners, remove from map, notify Rust.

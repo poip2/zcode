@@ -1134,7 +1134,9 @@ pub async fn start_agent_turn(
     let current_file_arc: Arc<std::sync::Mutex<Option<String>>>;
     let cwd_arc: Arc<std::sync::Mutex<PathBuf>>;
 
+    let cancelled_flag: Arc<AtomicBool>;
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
+        cancelled_flag = Arc::clone(&sd.cancelled);
         sd.auto_approve
             .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
         auto_approve_arc = Arc::clone(&sd.auto_approve);
@@ -1167,6 +1169,8 @@ pub async fn start_agent_turn(
         pending_approvals_arc = Arc::new(Mutex::new(HashMap::new()));
         current_file_arc = Arc::new(std::sync::Mutex::new(current_file.clone()));
         cwd_arc = Arc::new(std::sync::Mutex::new(work_dir.clone()));
+
+        cancelled_flag = Arc::new(AtomicBool::new(false));
 
         // Build guarded tool registry
         let tool_names: Vec<&str> = allowed_tools_for_rebuild
@@ -1224,7 +1228,7 @@ pub async fn start_agent_turn(
                 auto_approve: Arc::clone(&auto_approve_arc),
                 current_file: Arc::clone(&current_file_arc),
                 cwd: Arc::clone(&cwd_arc),
-                cancelled: Arc::new(AtomicBool::new(false)),
+                cancelled: Arc::clone(&cancelled_flag),
             },
         );
 
@@ -1266,9 +1270,13 @@ pub async fn start_agent_turn(
         >::new()));
         let run_task = tokio::spawn({
             let skill_names = Arc::clone(&skill_names);
+            let cancelled = Arc::clone(&cancelled_flag);
             async move {
                 let result = agent
                 .run(user_message, move |event| {
+                    if cancelled.load(Ordering::Relaxed) {
+                        return;
+                    }
                     let a = app_t.clone();
                     let pfx = &event_prefix;
 
@@ -1390,6 +1398,10 @@ pub async fn start_agent_turn(
 
         match run_task.await {
             Ok((result, agent)) => {
+                if cancelled_flag.load(Ordering::Relaxed) {
+                    eprintln!("[zcode] agent_task: cancelled, skipping post-processing for session={session_id_t}");
+                    return;
+                }
                 match &result {
                     Ok(msg) => {
                         eprintln!(

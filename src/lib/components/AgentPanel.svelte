@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
+  import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, closeAgentSession, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
   import { invoke } from "@tauri-apps/api/core";
   import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
@@ -167,12 +167,13 @@
     showHistory = false;
     // Create a brand-new session key for the current folder.
     // The old session continues running in the background — we don't kill it.
+    const effectiveCwd = workspaceCwd ?? "scratch";
     let newKey: string;
     try {
-      newKey = await invoke<string>("new_session_key", { cwd: workspaceCwd ?? "" });
+      newKey = await invoke<string>("new_session_key", { cwd: effectiveCwd });
     } catch {
       // Fallback: resolve normally (Rust will create a new key if none exists)
-      newKey = await resolveSessionKey(workspaceCwd);
+      newKey = await resolveSessionKey(effectiveCwd);
     }
     session = await getAgentSession(newKey);
     unsubMessages?.();
@@ -221,6 +222,7 @@
     unsubMessages?.();
     unsubPinned?.();
     unsubDoc?.();
+    closeAgentSession(sessionId);
   });
 
   // ------------------------------------------------------------------

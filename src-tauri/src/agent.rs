@@ -839,22 +839,6 @@ impl Agent {
                     return Ok(stop);
                 }
 
-                // Soft nudge at 40 iterations: insert a hint to wrap up
-                if iterations == 40 {
-                    let hint = Message::Custom(CustomMessage {
-                        content: "[System note: You've been running tool calls for a while. \
-                                  If you're close to done, please wrap up and provide your \
-                                  final response. If you still have work to do, continue but \
-                                  aim to finish soon.]"
-                            .to_string(),
-                        custom_type: "system_note".to_string(),
-                        display: false,
-                        details: None,
-                        timestamp: chrono::Utc::now().timestamp_millis(),
-                    });
-                    self.messages.push(hint);
-                }
-
                 // 3. Execute tool calls
                 if is_cancelled() {
                     eprintln!("[zcode] agent::run_loop: cancelled before tool execution");
@@ -949,6 +933,23 @@ impl Agent {
                 }
 
                 // 4. Loop back: provider sees tool results and responds
+
+                // Soft nudge at 40 iterations (placed here, after tool results,
+                // to avoid breaking tool_use→tool_result pairing).
+                if iterations == 40 {
+                    let hint = Message::Custom(CustomMessage {
+                        content: "[System note: You've been running tool calls for a while. \
+                                  If you're close to done, please wrap up and provide your \
+                                  final response. If you still have work to do, continue but \
+                                  aim to finish soon.]"
+                            .to_string(),
+                        custom_type: "system_note".to_string(),
+                        display: false,
+                        details: None,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    });
+                    self.messages.push(hint);
+                }
             }
 
             let event_msg = Message::assistant(assistant_msg.clone());

@@ -32,10 +32,9 @@ pub struct Skill {
 
 /// Add new built-in skills here. Each entry is (dir_name, SKILL.md_content).
 /// The file lives under `src-tauri/skills/<dir_name>/SKILL.md`.
-const BUILTIN_SKILLS: &[(&str, &str)] = &[(
-    "skill-creator",
-    include_str!("../skills/skill-creator/SKILL.md"),
-)];
+const BUILTIN_SKILLS: &[(&str, &str)] = &[
+    ("skill-creator", include_str!("../skills/skill-creator/SKILL.md")),
+];
 
 /// Load skills from project and user directories.
 /// Loading order determines priority: project > user > builtin.

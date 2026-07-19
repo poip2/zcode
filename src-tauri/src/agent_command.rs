@@ -1104,6 +1104,20 @@ pub async fn start_agent_turn(
         work_dir.display()
     );
 
+    // Register workspace roots so file tools can access sources/scripts/output
+    // which live alongside (not inside) the pin folder.
+    let mut workspace_roots: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(p) = &sources_folder {
+        workspace_roots.push(std::path::PathBuf::from(p));
+    }
+    if let Some(p) = &scripts_folder {
+        workspace_roots.push(std::path::PathBuf::from(p));
+    }
+    if let Some(p) = &output_folder {
+        workspace_roots.push(std::path::PathBuf::from(p));
+    }
+    crate::tools::set_workspace_roots(workspace_roots);
+
     // Build provider
     eprintln!("[zcode] start_agent_turn: building provider (name={name})...");
     let provider =

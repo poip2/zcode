@@ -716,13 +716,19 @@ impl StreamState {
 /// Build Anthropic messages, collapsing consecutive ToolResult messages into a
 /// single user message. Anthropic requires all tool_result blocks to appear in
 /// the same user message immediately after an assistant message with tool_use.
+///
+/// After conversion, a repair pass strips any dangling tool_use blocks that
+/// lack a matching tool_result in the immediately following user message.
+/// This guards against edge cases (system notes between results, DeepSeek's
+/// stricter validation, etc.) that could break the tool_use/tool_result pairing.
 fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
     let mut result: Vec<AnthropicMessage<'_>> = Vec::new();
 
     for msg in messages {
         if let Message::ToolResult(tr) = msg {
-            // If the previous message in the output is already a user message,
-            // append this tool_result into it (collapse consecutive results).
+            // If the previous message in the output is already a user message
+            // with tool_results, append this tool_result into it (collapse
+            // consecutive results from the same assistant turn).
             let is_tool_result_user = result.last().is_some_and(|m| {
                 m.role == "user"
                     && m.content
@@ -750,7 +756,68 @@ fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
         }
     }
 
+    // Repair pass: strip tool_use blocks that lack a matching tool_result
+    // in the immediately following user message.
+    repair_dangling_tool_uses(&mut result);
+
     result
+}
+
+/// Strip tool_use content blocks from any assistant message whose tool_uses
+/// are not matched by a following user message containing the corresponding
+/// tool_results. Some API providers (DeepSeek) reject requests with dangling
+/// tool_use blocks.
+fn repair_dangling_tool_uses(messages: &mut [AnthropicMessage<'_>]) {
+    let len = messages.len();
+    for i in 0..len {
+        if messages[i].role != "assistant" {
+            continue;
+        }
+
+        let tool_use_ids: Vec<&str> = messages[i]
+            .content
+            .iter()
+            .filter_map(|c| {
+                if let AnthropicContent::ToolUse { id, .. } = c {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if tool_use_ids.is_empty() {
+            continue;
+        }
+
+        // Scan forward for the next user message (not just i+1) to
+        // tolerate intermediate non-user messages inserted by compaction
+        // or other pre-processing.
+        let all_resolved = messages[i + 1..]
+            .iter()
+            .find(|m| m.role == "user")
+            .map(|user_msg| {
+                let result_ids: Vec<&str> = user_msg
+                    .content
+                    .iter()
+                    .filter_map(|c| {
+                        if let AnthropicContent::ToolResult { tool_use_id, .. } = c {
+                            Some(*tool_use_id)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                tool_use_ids.iter().all(|id| result_ids.contains(id))
+            })
+            .unwrap_or(false);
+
+        if !all_resolved {
+            messages[i]
+                .content
+                .retain(|c| !matches!(c, AnthropicContent::ToolUse { .. }));
+        }
+    }
 }
 
 fn convert_message_to_anthropic(message: &Message) -> AnthropicMessage<'_> {

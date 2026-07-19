@@ -14,7 +14,8 @@ use crate::error::{Error, Result};
 use crate::model::ContentBlock;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 // ============================================================================
 // Tool Trait
@@ -203,7 +204,24 @@ pub fn canonicalize_safe(path: &std::path::Path) -> std::path::PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Ensure a path is within the CWD scope.
+// ============================================================================
+// Workspace roots whitelist (global, set once per agent session)
+// ============================================================================
+
+/// Extra directories that file tools are allowed to access beyond cwd.
+/// Set at agent startup to include sources/, scripts/, output/ folders
+/// which live alongside (not inside) the pin folder.
+static WORKSPACE_ROOTS: RwLock<Vec<PathBuf>> = RwLock::new(Vec::new());
+
+/// Register additional roots that tools may read/write outside of cwd.
+pub fn set_workspace_roots(roots: Vec<PathBuf>) {
+    if let Ok(mut w) = WORKSPACE_ROOTS.write() {
+        *w = roots;
+    }
+}
+
+/// Ensure a path is within the CWD scope, an allowed workspace root,
+/// or a known skill directory.
 pub fn enforce_cwd_scope(
     path: &std::path::Path,
     cwd: &Path,
@@ -212,16 +230,45 @@ pub fn enforce_cwd_scope(
     let canonical = canonicalize_safe(path);
     let cwd_canonical = canonicalize_safe(cwd);
 
-    if !canonical.starts_with(&cwd_canonical) {
-        return Err(Error::tool(
-            tool,
-            format!(
-                "Path '{}' is outside the working directory. All file access is restricted to the current project.",
-                path.display()
-            ),
-        ));
+    if canonical.starts_with(&cwd_canonical) {
+        return Ok(canonical);
     }
-    Ok(canonical)
+
+    // Check workspace roots (sources, scripts, output — siblings of pin)
+    if let Ok(roots) = WORKSPACE_ROOTS.read() {
+        for root in roots.iter() {
+            let root_canonical = canonicalize_safe(root);
+            if canonical.starts_with(&root_canonical) {
+                return Ok(canonical);
+            }
+        }
+    }
+
+    // Allow access to skill directories (user-level and pi agent)
+    if let Some(home) = dirs::home_dir() {
+        let skills_dirs: Vec<std::path::PathBuf> = if let Some(config_dir) = dirs::config_dir() {
+            vec![config_dir.join("zcode/skills"), home.join(".agents/skills")]
+        } else {
+            vec![
+                home.join(".config/zcode/skills"),
+                home.join(".agents/skills"),
+            ]
+        };
+        for skills_dir in &skills_dirs {
+            let skills_canonical = canonicalize_safe(skills_dir);
+            if canonical.starts_with(&skills_canonical) {
+                return Ok(canonical);
+            }
+        }
+    }
+
+    Err(Error::tool(
+        tool,
+        format!(
+            "Path '{}' is outside the working directory. All file access is restricted to the current project.",
+            path.display()
+        ),
+    ))
 }
 
 // ============================================================================

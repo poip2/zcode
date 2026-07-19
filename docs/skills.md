@@ -117,3 +117,33 @@ When your agent creates skills for the user, follow these rules:
 5. **Keep skill bodies focused** — under 500 lines ideally. One skill = one purpose.
 
 See the `skill-creator` skill (`~/.config/zcode/skills/skill-creator/SKILL.md`) for the agent-side guide.
+
+## Built-in skills
+
+zcode ships with one built-in skill compiled into the binary:
+
+| Skill | Description |
+|-------|-------------|
+| `skill-creator` | Guide for creating new skills + installing skills from GitHub repos |
+
+To add a new built-in skill:
+1. Create `src-tauri/skills/<name>/SKILL.md`
+2. Add to `BUILTIN_SKILLS` array in `src-tauri/src/skills.rs`
+
+## Installing skills from GitHub
+
+Use `scripts/install-skill.sh` (Mac/Linux) or `scripts/install-skill.ps1` (Windows):
+
+```bash
+# Install a skill globally
+./scripts/install-skill.sh https://github.com/anthropics/skills.git xlsx --global
+
+# Install to current project
+./scripts/install-skill.sh https://github.com/anthropics/skills.git xlsx --project
+
+# Install to pi agent skills
+./scripts/install-skill.sh https://github.com/anthropics/skills.git xlsx --agents
+```
+
+The script uses `git clone --depth 1` + `sparse-checkout` (~3-10s) instead of
+slow HTTP per-file downloads (~20s+ with API rate limits).

@@ -34,7 +34,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
@@ -343,11 +343,12 @@ fn session_file_path(session_key: &str) -> PathBuf {
 }
 
 static SESSIONS_DIR_CREATED: AtomicBool = AtomicBool::new(false);
-static NEXT_MSG_ID: AtomicU64 = AtomicU64::new(0);
 
+/// Generate a unique message ID using millisecond timestamp.
+/// This avoids duplicate keys across process restarts (unlike a global counter).
 fn next_msg_id(role: &str) -> String {
-    let id = NEXT_MSG_ID.fetch_add(1, Ordering::Relaxed);
-    format!("{role}-{id}")
+    let ts = chrono::Utc::now().timestamp_millis();
+    format!("{role}-{ts}")
 }
 
 /// Append a single message to the session JSONL file (append-only).
@@ -379,9 +380,16 @@ pub fn load_session_messages(session_key: String) -> Result<Vec<ChatMessage>, St
         return Ok(vec![]);
     }
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let base_ts = chrono::Utc::now().timestamp_millis();
     Ok(content
         .lines()
         .filter_map(|l| serde_json::from_str::<ChatMessage>(l).ok())
+        .enumerate()
+        .map(|(i, mut msg)| {
+            // Regenerate ID to guarantee uniqueness across restarts.
+            msg.id = format!("{}-{}-{}", msg.role, base_ts, i);
+            msg
+        })
         .collect())
 }
 

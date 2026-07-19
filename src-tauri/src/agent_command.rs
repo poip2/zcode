@@ -344,10 +344,10 @@ fn session_file_path(session_key: &str) -> PathBuf {
 
 static SESSIONS_DIR_CREATED: AtomicBool = AtomicBool::new(false);
 
-/// Generate a unique message ID using millisecond timestamp.
+/// Generate a unique message ID using microsecond timestamp.
 /// This avoids duplicate keys across process restarts (unlike a global counter).
 fn next_msg_id(role: &str) -> String {
-    let ts = chrono::Utc::now().timestamp_millis();
+    let ts = chrono::Utc::now().timestamp_micros();
     format!("{role}-{ts}")
 }
 

@@ -287,14 +287,14 @@ pub fn list_sessions(cwd: Option<String>) -> Result<Vec<SessionMeta>, String> {
 }
 
 /// Compute a folder-based prefix from a workspace directory path.
-/// Uses dunce::canonicalize + sha256(first 12 chars).
+/// Uses dunce::canonicalize + sha256(first 16 chars).
 fn compute_folder_prefix(dir: &str) -> String {
     let path = Path::new(dir);
     let canonical = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hex = format!("{:x}", hasher.finalize());
-    hex[..12].to_string()
+    hex[..16].to_string()
 }
 
 /// Find the latest existing session key for a folder prefix.
@@ -1411,6 +1411,7 @@ pub async fn start_agent_turn(
             Ok((result, agent)) => {
                 if cancel_token.is_cancelled() {
                     eprintln!("[zcode] agent_task: cancelled, skipping post-processing for session={session_id_t}");
+                    rebuild_pending_approvals.lock().await.clear();
                     return;
                 }
                 match &result {

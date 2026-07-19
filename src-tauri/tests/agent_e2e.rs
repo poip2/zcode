@@ -49,29 +49,35 @@ async fn test_agent_basic_chat() -> Result<()> {
     let mut agent = Agent::new(provider, tools, config);
 
     let result = agent
-        .run("Say hello in exactly 3 words.", move |ev| {
-            let label = match &ev {
-                AgentEvent::AgentStart { .. } => "[AgentStart]".into(),
-                AgentEvent::AgentEnd { error, .. } => format!("[AgentEnd error={:?}]", error),
-                AgentEvent::TurnStart { turn_index, .. } => format!("[TurnStart #{turn_index}]"),
-                AgentEvent::TurnEnd { .. } => "[TurnEnd]".into(),
-                AgentEvent::MessageUpdate { delta, .. } => delta.clone(),
-                AgentEvent::ToolStart { tool_name, .. } => format!("[Tool: {tool_name}]"),
-                AgentEvent::ToolEnd {
-                    tool_name,
-                    is_error,
-                    ..
-                } => {
-                    format!("[ToolEnd: {tool_name} err={is_error}]")
+        .run(
+            "Say hello in exactly 3 words.",
+            move |ev| {
+                let label = match &ev {
+                    AgentEvent::AgentStart { .. } => "[AgentStart]".into(),
+                    AgentEvent::AgentEnd { error, .. } => format!("[AgentEnd error={:?}]", error),
+                    AgentEvent::TurnStart { turn_index, .. } => {
+                        format!("[TurnStart #{turn_index}]")
+                    }
+                    AgentEvent::TurnEnd { .. } => "[TurnEnd]".into(),
+                    AgentEvent::MessageUpdate { delta, .. } => delta.clone(),
+                    AgentEvent::ToolStart { tool_name, .. } => format!("[Tool: {tool_name}]"),
+                    AgentEvent::ToolEnd {
+                        tool_name,
+                        is_error,
+                        ..
+                    } => {
+                        format!("[ToolEnd: {tool_name} err={is_error}]")
+                    }
+                    _ => format!("[{:?}]", std::mem::discriminant(&ev)),
+                };
+                if !label.is_empty() && !label.starts_with('[') {
+                    print!("{label}");
+                } else {
+                    eprintln!("{label}");
                 }
-                _ => format!("[{:?}]", std::mem::discriminant(&ev)),
-            };
-            if !label.is_empty() && !label.starts_with('[') {
-                print!("{label}");
-            } else {
-                eprintln!("{label}");
-            }
-        }, CancellationToken::new())
+            },
+            CancellationToken::new(),
+        )
         .await;
 
     match &result {

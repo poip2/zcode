@@ -279,7 +279,8 @@ impl Agent {
             content: UserContent::Text(user_input.into()),
             timestamp: chrono::Utc::now().timestamp_millis(),
         });
-        self.run_loop(vec![msg], Arc::new(on_event), cancel_token).await
+        self.run_loop(vec![msg], Arc::new(on_event), cancel_token)
+            .await
     }
 
     /// Run the agent with a pre-built message list.
@@ -289,7 +290,8 @@ impl Agent {
         on_event: impl Fn(AgentEvent) + Send + Sync + 'static,
         cancel_token: CancellationToken,
     ) -> Result<AssistantMessage> {
-        self.run_loop(messages, Arc::new(on_event), cancel_token).await
+        self.run_loop(messages, Arc::new(on_event), cancel_token)
+            .await
     }
 
     // ========================================================================
@@ -445,7 +447,9 @@ impl Agent {
                     if is_cancelled() {
                         eprintln!("[zcode] agent::run_loop: cancelled before compaction");
                         let model = self.provider.model_id().to_string();
-                        let partial = last_assistant.clone().unwrap_or_else(|| Self::cancelled_message(&model));
+                        let partial = last_assistant
+                            .clone()
+                            .unwrap_or_else(|| Self::cancelled_message(&model));
                         on_event(AgentEvent::AgentEnd {
                             session_id: session_id.clone(),
                             messages: new_messages,
@@ -491,8 +495,7 @@ impl Agent {
                                 ) => r,
                             }
                         };
-                        match compact_result
-                        {
+                        match compact_result {
                             Ok(Some(result)) => {
                                 eprintln!(
                                     "[zcode] agent::run_loop: compaction applied, {} msgs → {} keyst",
@@ -616,7 +619,7 @@ impl Agent {
                     }
                     let model = self.provider.model_id().to_string();
                     let partial = assistant_arc
-                        .map(|a| Arc::unwrap_or_clone(a))
+                        .map(Arc::unwrap_or_clone)
                         .or_else(|| last_assistant.clone())
                         .unwrap_or_else(|| Self::cancelled_message(&model));
                     on_event(AgentEvent::AgentEnd {

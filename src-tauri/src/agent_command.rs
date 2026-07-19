@@ -961,9 +961,7 @@ pub async fn close_session(
 /// Cancel ALL active sessions and clear the session map.
 /// Called when the Agent panel is closed or the app exits.
 #[tauri::command]
-pub async fn close_all_sessions(
-    state: tauri::State<'_, SessionManager>,
-) -> Result<(), String> {
+pub async fn close_all_sessions(state: tauri::State<'_, SessionManager>) -> Result<(), String> {
     let mut map = state.sessions.lock().await;
     for (key, sd) in map.iter() {
         eprintln!("[zcode] close_all_sessions: cancelling {key}");

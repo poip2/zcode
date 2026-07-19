@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, closeAgentSession, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
+  import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, closeAllSessions, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
   import { invoke } from "@tauri-apps/api/core";
   import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
@@ -222,7 +222,7 @@
     unsubMessages?.();
     unsubPinned?.();
     unsubDoc?.();
-    closeAgentSession(sessionId);
+    closeAllSessions();
   });
 
   // ------------------------------------------------------------------

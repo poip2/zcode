@@ -7,6 +7,7 @@ use futures::stream::{self, Stream};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::model::{
@@ -301,7 +302,7 @@ async fn test_agent_image_aging_mechanism() -> Result<()> {
                 AgentEvent::AgentEnd { .. } => eprintln!("[AgentEnd]"),
                 _ => {}
             }
-        })
+        }, CancellationToken::new())
         .await;
 
     match &result {
@@ -389,7 +390,7 @@ async fn test_tool_result_with_image_in_history() -> Result<()> {
                 eprintln!("[AgentEnd error={:?}]", error)
             }
             _ => {}
-        })
+        }, CancellationToken::new())
         .await;
 
     assert!(result.is_ok(), "Agent should complete: {:?}", result.err());

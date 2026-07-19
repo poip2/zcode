@@ -8,6 +8,7 @@ use futures::stream::{self, Stream};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::model::{
@@ -170,7 +171,7 @@ async fn test_agent_loop_with_mock_provider() -> Result<()> {
             };
             eprintln!("{label}");
             events_clone.lock().unwrap().push(label);
-        })
+        }, CancellationToken::new())
         .await;
 
     let msg = result?;

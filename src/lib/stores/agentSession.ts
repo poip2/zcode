@@ -65,7 +65,6 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   });
 
   let unlisteners: UnlistenFn[] = [];
-  let stopped = false;
 
   function cleanup() {
     for (const unlisten of unlisteners) {
@@ -244,8 +243,6 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
       toolConfirmation: null,
     }));
 
-    stopped = false;
-
     if (unlisteners.length === 0) {
       await setupListeners();
     }
@@ -296,13 +293,11 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   }
 
   function stop() {
-    stopped = true;
     state.update((s) => ({ ...s, sending: false }));
     invoke("close_session", { sessionKey: sessionId }).catch(() => {});
   }
 
   async function reset() {
-    stopped = false;
     state.set({
       messages: [],
       streamingText: "",
@@ -390,5 +385,18 @@ export function closeAgentSession(sessionId: string) {
   }
   invoke("close_session", { sessionKey: sessionId }).catch((err) => {
     console.error("Failed to close Rust-side session:", err);
+  });
+}
+
+/** Close ALL active sessions — cancel running tasks, clean up listeners.
+ *  Call this when the Agent panel is destroyed or the app exits. */
+export function closeAllSessions() {
+  for (const [id, session] of sessions) {
+    session.cleanup();
+  }
+  sessions.clear();
+  activeSessionId = null;
+  invoke("close_all_sessions").catch((err) => {
+    console.error("Failed to close all Rust-side sessions:", err);
   });
 }

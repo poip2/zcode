@@ -4,6 +4,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::provider::StreamOptions;
@@ -70,7 +71,7 @@ async fn test_agent_basic_chat() -> Result<()> {
             } else {
                 eprintln!("{label}");
             }
-        })
+        }, CancellationToken::new())
         .await;
 
     match &result {
@@ -157,6 +158,7 @@ async fn test_agent_with_tools() -> Result<()> {
                     _ => {}
                 }
             },
+            CancellationToken::new(),
         )
         .await;
 

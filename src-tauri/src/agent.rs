@@ -21,6 +21,7 @@ use crate::tools::{ToolOutput, ToolRegistry};
 use futures::StreamExt;
 use serde::Serialize;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 // ============================================================================
 // Agent Events
@@ -272,12 +273,13 @@ impl Agent {
         &mut self,
         user_input: impl Into<String>,
         on_event: impl Fn(AgentEvent) + Send + Sync + 'static,
+        cancel_token: CancellationToken,
     ) -> Result<AssistantMessage> {
         let msg = Message::User(UserMessage {
             content: UserContent::Text(user_input.into()),
             timestamp: chrono::Utc::now().timestamp_millis(),
         });
-        self.run_loop(vec![msg], Arc::new(on_event)).await
+        self.run_loop(vec![msg], Arc::new(on_event), cancel_token).await
     }
 
     /// Run the agent with a pre-built message list.
@@ -285,8 +287,9 @@ impl Agent {
         &mut self,
         messages: Vec<Message>,
         on_event: impl Fn(AgentEvent) + Send + Sync + 'static,
+        cancel_token: CancellationToken,
     ) -> Result<AssistantMessage> {
-        self.run_loop(messages, Arc::new(on_event)).await
+        self.run_loop(messages, Arc::new(on_event), cancel_token).await
     }
 
     // ========================================================================
@@ -338,10 +341,27 @@ impl Agent {
         content.iter().any(|b| matches!(b, ContentBlock::Image(_)))
     }
 
+    /// Create a placeholder assistant message for early cancellation returns.
+    fn cancelled_message(model: &str) -> AssistantMessage {
+        AssistantMessage {
+            content: vec![ContentBlock::Text(TextContent::new(
+                "[Session cancelled]".to_string(),
+            ))],
+            api: String::new(),
+            provider: String::new(),
+            model: model.to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Error,
+            error_message: Some("Session cancelled by user".to_string()),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        }
+    }
+
     async fn run_loop(
         &mut self,
         prompts: Vec<Message>,
         on_event: Arc<dyn Fn(AgentEvent) + Send + Sync + 'static>,
+        cancel_token: CancellationToken,
     ) -> Result<AssistantMessage> {
         let session_id = self
             .config
@@ -377,9 +397,22 @@ impl Agent {
             new_messages.push(prompt);
         }
 
+        let is_cancelled = || cancel_token.is_cancelled();
+
         let mut has_more_tool_calls = true;
 
         while has_more_tool_calls {
+            if is_cancelled() {
+                eprintln!("[zcode] agent::run_loop: cancelled before turn");
+                let model = self.provider.model_id().to_string();
+                let partial = last_assistant.unwrap_or_else(|| Self::cancelled_message(&model));
+                on_event(AgentEvent::AgentEnd {
+                    session_id: session_id.clone(),
+                    messages: new_messages,
+                    error: Some("Session cancelled".to_string()),
+                });
+                return Ok(partial);
+            }
             let current_turn = turn_index;
             on_event(AgentEvent::TurnStart {
                 session_id: session_id.clone(),
@@ -409,6 +442,17 @@ impl Agent {
                         last = self.last_compaction_turn
                     );
                 } else {
+                    if is_cancelled() {
+                        eprintln!("[zcode] agent::run_loop: cancelled before compaction");
+                        let model = self.provider.model_id().to_string();
+                        let partial = last_assistant.clone().unwrap_or_else(|| Self::cancelled_message(&model));
+                        on_event(AgentEvent::AgentEnd {
+                            session_id: session_id.clone(),
+                            messages: new_messages,
+                            error: Some("Session cancelled".to_string()),
+                        });
+                        return Ok(partial);
+                    }
                     let estimated = compaction::estimate_total_tokens(
                         &self.messages,
                         self.cached_system_prompt_tokens,
@@ -423,15 +467,31 @@ impl Agent {
                         });
 
                         let provider = Arc::clone(&self.provider);
-                        match compaction::maybe_compact(
-                            &self.messages,
-                            self.previous_summary.as_deref(),
-                            provider,
-                            settings,
-                            Some(estimated),
-                            self.cached_system_prompt_tokens,
-                        )
-                        .await
+                        let compact_result = {
+                            let token = cancel_token.clone();
+                            tokio::select! {
+                                _ = token.cancelled() => {
+                                    eprintln!("[zcode] agent::run_loop: cancelled during compaction");
+                                    let model = self.provider.model_id().to_string();
+                                    let partial = last_assistant.clone().unwrap_or_else(|| Self::cancelled_message(&model));
+                                    on_event(AgentEvent::AgentEnd {
+                                        session_id: session_id.clone(),
+                                        messages: new_messages,
+                                        error: Some("Session cancelled".to_string()),
+                                    });
+                                    return Ok(partial);
+                                }
+                                r = compaction::maybe_compact(
+                                    &self.messages,
+                                    self.previous_summary.as_deref(),
+                                    provider,
+                                    settings,
+                                    Some(estimated),
+                                    self.cached_system_prompt_tokens,
+                                ) => r,
+                            }
+                        };
+                        match compact_result
                         {
                             Ok(Some(result)) => {
                                 eprintln!(
@@ -480,7 +540,23 @@ impl Agent {
             let context = self.build_context();
             let stream_options = self.config.stream_options.clone();
 
-            let stream_result = self.provider.stream(&context, &stream_options).await;
+            let stream_result = {
+                let token = cancel_token.clone();
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        eprintln!("[zcode] agent::run_loop: cancelled before LLM call");
+                        let model = self.provider.model_id().to_string();
+                        let partial = last_assistant.clone().unwrap_or_else(|| Self::cancelled_message(&model));
+                        on_event(AgentEvent::AgentEnd {
+                            session_id: session_id.clone(),
+                            messages: new_messages,
+                            error: Some("Session cancelled".to_string()),
+                        });
+                        return Ok(partial);
+                    }
+                    r = self.provider.stream(&context, &stream_options) => r,
+                }
+            };
 
             let mut stream = match stream_result {
                 Ok(s) => {
@@ -530,6 +606,26 @@ impl Agent {
             let mut error_occurred = false;
 
             while let Some(event) = stream.next().await {
+                if is_cancelled() {
+                    eprintln!("[zcode] agent::run_loop: cancelled during stream");
+                    // Use whatever partial text was accumulated
+                    if let Some(ref msg) = assistant_arc {
+                        on_event(AgentEvent::MessageEnd {
+                            message: Message::Assistant(Arc::clone(msg)),
+                        });
+                    }
+                    let model = self.provider.model_id().to_string();
+                    let partial = assistant_arc
+                        .map(|a| Arc::unwrap_or_clone(a))
+                        .or_else(|| last_assistant.clone())
+                        .unwrap_or_else(|| Self::cancelled_message(&model));
+                    on_event(AgentEvent::AgentEnd {
+                        session_id: session_id.clone(),
+                        messages: new_messages,
+                        error: Some("Session cancelled".to_string()),
+                    });
+                    return Ok(partial);
+                }
                 match event {
                     Ok(StreamEvent::TextDelta { delta, .. }) => {
                         // Accumulate into in-progress assistant message
@@ -757,6 +853,17 @@ impl Agent {
                 }
 
                 // 3. Execute tool calls
+                if is_cancelled() {
+                    eprintln!("[zcode] agent::run_loop: cancelled before tool execution");
+                    let model = self.provider.model_id().to_string();
+                    let partial = last_assistant.unwrap_or_else(|| Self::cancelled_message(&model));
+                    on_event(AgentEvent::AgentEnd {
+                        session_id: session_id.clone(),
+                        messages: new_messages,
+                        error: Some("Session cancelled".to_string()),
+                    });
+                    return Ok(partial);
+                }
                 for tc in &tool_calls {
                     on_event(AgentEvent::ToolStart {
                         tool_call_id: tc.id.clone(),
@@ -765,16 +872,27 @@ impl Agent {
                     });
 
                     let result = match self.tools.get(&tc.name) {
-                        Some(tool) => tool
-                            .execute(&tc.id, tc.arguments.clone(), None)
-                            .await
-                            .unwrap_or_else(|e| ToolOutput {
-                                content: vec![ContentBlock::Text(TextContent::new(format!(
-                                    "Tool error: {e}"
-                                )))],
-                                details: None,
-                                is_error: true,
-                            }),
+                        Some(tool) => {
+                            let token = cancel_token.clone();
+                            tokio::select! {
+                                _ = token.cancelled() => ToolOutput {
+                                    content: vec![ContentBlock::Text(TextContent::new(
+                                        "Tool execution cancelled".to_string(),
+                                    ))],
+                                    details: None,
+                                    is_error: true,
+                                },
+                                r = tool.execute(&tc.id, tc.arguments.clone(), None) => {
+                                    r.unwrap_or_else(|e| ToolOutput {
+                                        content: vec![ContentBlock::Text(TextContent::new(format!(
+                                            "Tool error: {e}"
+                                        )))],
+                                        details: None,
+                                        is_error: true,
+                                    })
+                                }
+                            }
+                        }
                         None => ToolOutput {
                             content: vec![ContentBlock::Text(TextContent::new(format!(
                                 "Unknown tool: {}",

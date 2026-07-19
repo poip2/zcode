@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
+use tokio_util::sync::CancellationToken;
 
 // ============================================================================
 // Frontend-facing event types (lightweight, serializable)
@@ -132,8 +133,8 @@ pub(crate) struct SessionData {
     pub(crate) current_file: Arc<std::sync::Mutex<Option<String>>>,
     /// Working directory (updated each turn from the frontend).
     pub(crate) cwd: Arc<std::sync::Mutex<PathBuf>>,
-    /// Cancellation flag — when true the tokio task should bail out early.
-    pub(crate) cancelled: Arc<AtomicBool>,
+    /// Cancellation token — fired when the session should stop.
+    pub(crate) cancellation_token: CancellationToken,
 }
 
 // ============================================================================
@@ -951,9 +952,24 @@ pub async fn close_session(
 ) -> Result<(), String> {
     let mut map = state.sessions.lock().await;
     if let Some(sd) = map.get(&session_key) {
-        sd.cancelled.store(true, Ordering::Relaxed);
+        sd.cancellation_token.cancel();
     }
     map.remove(&session_key);
+    Ok(())
+}
+
+/// Cancel ALL active sessions and clear the session map.
+/// Called when the Agent panel is closed or the app exits.
+#[tauri::command]
+pub async fn close_all_sessions(
+    state: tauri::State<'_, SessionManager>,
+) -> Result<(), String> {
+    let mut map = state.sessions.lock().await;
+    for (key, sd) in map.iter() {
+        eprintln!("[zcode] close_all_sessions: cancelling {key}");
+        sd.cancellation_token.cancel();
+    }
+    map.clear();
     Ok(())
 }
 
@@ -1132,9 +1148,9 @@ pub async fn start_agent_turn(
     let current_file_arc: Arc<std::sync::Mutex<Option<String>>>;
     let cwd_arc: Arc<std::sync::Mutex<PathBuf>>;
 
-    let cancelled_flag: Arc<AtomicBool>;
+    let cancel_token: CancellationToken;
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
-        cancelled_flag = Arc::clone(&sd.cancelled);
+        cancel_token = sd.cancellation_token.clone();
         sd.auto_approve
             .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
         auto_approve_arc = Arc::clone(&sd.auto_approve);
@@ -1168,7 +1184,7 @@ pub async fn start_agent_turn(
         current_file_arc = Arc::new(std::sync::Mutex::new(current_file.clone()));
         cwd_arc = Arc::new(std::sync::Mutex::new(work_dir.clone()));
 
-        cancelled_flag = Arc::new(AtomicBool::new(false));
+        cancel_token = CancellationToken::new();
 
         // Build guarded tool registry
         let tool_names: Vec<&str> = allowed_tools_for_rebuild
@@ -1226,7 +1242,7 @@ pub async fn start_agent_turn(
                 auto_approve: Arc::clone(&auto_approve_arc),
                 current_file: Arc::clone(&current_file_arc),
                 cwd: Arc::clone(&cwd_arc),
-                cancelled: Arc::clone(&cancelled_flag),
+                cancellation_token: cancel_token.clone(),
             },
         );
 
@@ -1268,13 +1284,10 @@ pub async fn start_agent_turn(
         >::new()));
         let run_task = tokio::spawn({
             let skill_names = Arc::clone(&skill_names);
-            let cancelled = Arc::clone(&cancelled_flag);
+            let inner_token = cancel_token.clone();
             async move {
                 let result = agent
                 .run(user_message, move |event| {
-                    if cancelled.load(Ordering::Relaxed) {
-                        return;
-                    }
                     let a = app_t.clone();
                     let pfx = &event_prefix;
 
@@ -1388,7 +1401,7 @@ pub async fn start_agent_turn(
                             );
                         }
                     }
-                })
+                }, inner_token)
                 .await;
                 (result, agent)
             }
@@ -1396,7 +1409,7 @@ pub async fn start_agent_turn(
 
         match run_task.await {
             Ok((result, agent)) => {
-                if cancelled_flag.load(Ordering::Relaxed) {
+                if cancel_token.is_cancelled() {
                     eprintln!("[zcode] agent_task: cancelled, skipping post-processing for session={session_id_t}");
                     return;
                 }

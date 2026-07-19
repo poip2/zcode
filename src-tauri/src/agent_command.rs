@@ -199,9 +199,7 @@ pub struct SessionMeta {
 /// Sessions are sorted by most recent first.
 #[tauri::command]
 pub fn list_sessions(cwd: Option<String>) -> Result<Vec<SessionMeta>, String> {
-    let folder_prefix = cwd
-        .as_deref()
-        .map(|dir| compute_folder_prefix(dir));
+    let folder_prefix = cwd.as_deref().map(compute_folder_prefix);
     let sessions_dir = dirs::config_dir()
         .or_else(dirs::data_local_dir)
         .unwrap_or_else(std::env::temp_dir)

@@ -7,6 +7,7 @@ use futures::stream::{self, Stream};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::model::{
@@ -272,36 +273,42 @@ async fn test_agent_image_aging_mechanism() -> Result<()> {
     let turn_end_count_clone = std::sync::Arc::clone(&turn_end_count);
 
     let result = agent
-        .run("What does the image contain?", move |ev| {
-            match &ev {
-                AgentEvent::TurnEnd { tool_results, .. } => {
-                    turn_end_count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    for tr in tool_results {
-                        // Check if any tool result message contains an Image block
-                        if let Message::ToolResult(tr_msg) = tr {
-                            let has_image = tr_msg
-                                .content
-                                .iter()
-                                .any(|b| matches!(b, ContentBlock::Image(_)));
-                            eprintln!(
-                                "ToolResult in TurnEnd: tool={} has_image={has_image}",
-                                tr_msg.tool_name
-                            );
+        .run(
+            "What does the image contain?",
+            move |ev| {
+                match &ev {
+                    AgentEvent::TurnEnd { tool_results, .. } => {
+                        turn_end_count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        for tr in tool_results {
+                            // Check if any tool result message contains an Image block
+                            if let Message::ToolResult(tr_msg) = tr {
+                                let has_image = tr_msg
+                                    .content
+                                    .iter()
+                                    .any(|b| matches!(b, ContentBlock::Image(_)));
+                                eprintln!(
+                                    "ToolResult in TurnEnd: tool={} has_image={has_image}",
+                                    tr_msg.tool_name
+                                );
+                            }
                         }
                     }
+                    AgentEvent::ToolEnd {
+                        tool_name,
+                        is_error,
+                        ..
+                    } => {
+                        eprintln!("  [ToolEnd: {tool_name} error={is_error}]");
+                    }
+                    AgentEvent::TurnStart { turn_index, .. } => {
+                        eprintln!("--- Turn #{turn_index} ---")
+                    }
+                    AgentEvent::AgentEnd { .. } => eprintln!("[AgentEnd]"),
+                    _ => {}
                 }
-                AgentEvent::ToolEnd {
-                    tool_name,
-                    is_error,
-                    ..
-                } => {
-                    eprintln!("  [ToolEnd: {tool_name} error={is_error}]");
-                }
-                AgentEvent::TurnStart { turn_index, .. } => eprintln!("--- Turn #{turn_index} ---"),
-                AgentEvent::AgentEnd { .. } => eprintln!("[AgentEnd]"),
-                _ => {}
-            }
-        })
+            },
+            CancellationToken::new(),
+        )
         .await;
 
     match &result {
@@ -374,22 +381,26 @@ async fn test_tool_result_with_image_in_history() -> Result<()> {
     let mut agent = Agent::new(mock, tools, config);
 
     let result = agent
-        .run("Read test.txt and respond", move |ev| match &ev {
-            AgentEvent::TurnStart { turn_index, .. } => {
-                eprintln!("--- Turn #{turn_index} ---")
-            }
-            AgentEvent::ToolEnd {
-                tool_name,
-                is_error,
-                ..
-            } => {
-                eprintln!("  [ToolEnd: {tool_name} error={is_error}]")
-            }
-            AgentEvent::AgentEnd { error, .. } => {
-                eprintln!("[AgentEnd error={:?}]", error)
-            }
-            _ => {}
-        })
+        .run(
+            "Read test.txt and respond",
+            move |ev| match &ev {
+                AgentEvent::TurnStart { turn_index, .. } => {
+                    eprintln!("--- Turn #{turn_index} ---")
+                }
+                AgentEvent::ToolEnd {
+                    tool_name,
+                    is_error,
+                    ..
+                } => {
+                    eprintln!("  [ToolEnd: {tool_name} error={is_error}]")
+                }
+                AgentEvent::AgentEnd { error, .. } => {
+                    eprintln!("[AgentEnd error={:?}]", error)
+                }
+                _ => {}
+            },
+            CancellationToken::new(),
+        )
         .await;
 
     assert!(result.is_ok(), "Agent should complete: {:?}", result.err());

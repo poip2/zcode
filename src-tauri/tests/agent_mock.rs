@@ -8,6 +8,7 @@ use futures::stream::{self, Stream};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use zcode_lib::agent::{Agent, AgentConfig, AgentEvent};
 use zcode_lib::error::Result;
 use zcode_lib::model::{
@@ -140,37 +141,43 @@ async fn test_agent_loop_with_mock_provider() -> Result<()> {
     let events_clone = Arc::clone(&events);
 
     let result = agent
-        .run("What's in hello.txt?", move |ev| {
-            let label = match &ev {
-                AgentEvent::AgentStart { .. } => "[AgentStart]".into(),
-                AgentEvent::AgentEnd { error, .. } => format!("[AgentEnd error={:?}]", error),
-                AgentEvent::TurnStart { turn_index, .. } => format!("[TurnStart #{turn_index}]"),
-                AgentEvent::TurnEnd { .. } => "[TurnEnd]".into(),
-                AgentEvent::MessageUpdate { delta, .. } => delta.clone(),
-                AgentEvent::MessageEnd { message } => {
-                    if let Message::Assistant(ref m) = message {
-                        let has_tool = m
-                            .content
-                            .iter()
-                            .any(|b| matches!(b, ContentBlock::ToolCall(_)));
-                        format!("[MessageEnd has_tool_call={has_tool}]")
-                    } else {
-                        "[MessageEnd]".into()
+        .run(
+            "What's in hello.txt?",
+            move |ev| {
+                let label = match &ev {
+                    AgentEvent::AgentStart { .. } => "[AgentStart]".into(),
+                    AgentEvent::AgentEnd { error, .. } => format!("[AgentEnd error={:?}]", error),
+                    AgentEvent::TurnStart { turn_index, .. } => {
+                        format!("[TurnStart #{turn_index}]")
                     }
-                }
-                AgentEvent::ToolStart { tool_name, .. } => format!("[ToolStart: {tool_name}]"),
-                AgentEvent::ToolEnd {
-                    tool_name,
-                    is_error,
-                    ..
-                } => {
-                    format!("[ToolEnd: {tool_name} error={is_error}]")
-                }
-                _ => format!("[{:?}]", std::mem::discriminant(&ev)),
-            };
-            eprintln!("{label}");
-            events_clone.lock().unwrap().push(label);
-        })
+                    AgentEvent::TurnEnd { .. } => "[TurnEnd]".into(),
+                    AgentEvent::MessageUpdate { delta, .. } => delta.clone(),
+                    AgentEvent::MessageEnd { message } => {
+                        if let Message::Assistant(ref m) = message {
+                            let has_tool = m
+                                .content
+                                .iter()
+                                .any(|b| matches!(b, ContentBlock::ToolCall(_)));
+                            format!("[MessageEnd has_tool_call={has_tool}]")
+                        } else {
+                            "[MessageEnd]".into()
+                        }
+                    }
+                    AgentEvent::ToolStart { tool_name, .. } => format!("[ToolStart: {tool_name}]"),
+                    AgentEvent::ToolEnd {
+                        tool_name,
+                        is_error,
+                        ..
+                    } => {
+                        format!("[ToolEnd: {tool_name} error={is_error}]")
+                    }
+                    _ => format!("[{:?}]", std::mem::discriminant(&ev)),
+                };
+                eprintln!("{label}");
+                events_clone.lock().unwrap().push(label);
+            },
+            CancellationToken::new(),
+        )
         .await;
 
     let msg = result?;

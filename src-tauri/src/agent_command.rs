@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
+use tokio_util::sync::CancellationToken;
 
 // ============================================================================
 // Frontend-facing event types (lightweight, serializable)
@@ -132,6 +133,8 @@ pub(crate) struct SessionData {
     pub(crate) current_file: Arc<std::sync::Mutex<Option<String>>>,
     /// Working directory (updated each turn from the frontend).
     pub(crate) cwd: Arc<std::sync::Mutex<PathBuf>>,
+    /// Cancellation token — fired when the session should stop.
+    pub(crate) cancellation_token: CancellationToken,
 }
 
 // ============================================================================
@@ -192,10 +195,12 @@ pub struct SessionMeta {
     pub message_count: usize,
 }
 
-/// List all saved sessions with metadata (title, time, message count).
+/// List saved sessions with metadata, optionally filtered to a workspace (cwd).
+/// When `cwd` is Some(dir), only sessions under that directory are returned.
 /// Sessions are sorted by most recent first.
 #[tauri::command]
-pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
+pub fn list_sessions(cwd: Option<String>) -> Result<Vec<SessionMeta>, String> {
+    let folder_prefix = cwd.as_deref().map(compute_folder_prefix);
     let sessions_dir = dirs::config_dir()
         .or_else(dirs::data_local_dir)
         .unwrap_or_else(std::env::temp_dir)
@@ -225,6 +230,12 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
             .to_string();
         if session_key.is_empty() {
             continue;
+        }
+        // Filter by folder prefix when requested
+        if let Some(ref prefix) = folder_prefix {
+            if !session_key.starts_with(prefix) {
+                continue;
+            }
         }
 
         let content = match fs::read_to_string(&path) {
@@ -275,15 +286,50 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
     Ok(metas)
 }
 
-/// Compute a stable session key from a file path.
-/// Uses dunce::canonicalize + sha256(hex, first 16 chars).
-fn compute_session_key(file_path: &str) -> String {
-    let path = Path::new(file_path);
+/// Compute a folder-based prefix from a workspace directory path.
+/// Uses dunce::canonicalize + sha256(first 16 chars).
+fn compute_folder_prefix(dir: &str) -> String {
+    let path = Path::new(dir);
     let canonical = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hex = format!("{:x}", hasher.finalize());
     hex[..16].to_string()
+}
+
+/// Find the latest existing session key for a folder prefix.
+/// Returns None if no session exists for this folder yet.
+fn find_latest_session_for_prefix(prefix: &str) -> Option<String> {
+    let sessions_dir = dirs::config_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("zcode")
+        .join("sessions");
+    if !sessions_dir.exists() {
+        return None;
+    }
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&sessions_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "jsonl") {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                if stem.starts_with(prefix) {
+                    candidates.push(stem.to_string());
+                }
+            }
+        }
+    }
+    // Sort by embedded timestamp suffix (descending) = newest first
+    candidates.sort_by(|a, b| b.cmp(a));
+    candidates.into_iter().next()
+}
+
+/// Create a brand-new session key for a folder (prefix + timestamp).
+fn new_session_key_for_prefix(prefix: &str) -> String {
+    format!("{prefix}-{}", chrono::Utc::now().timestamp_millis())
 }
 
 /// Filesystem path for a session's JSONL file.
@@ -340,8 +386,20 @@ pub fn load_session_messages(session_key: String) -> Result<Vec<ChatMessage>, St
 }
 
 #[tauri::command]
-pub fn resolve_session_key(file_path: String) -> Result<String, String> {
-    Ok(compute_session_key(&file_path))
+pub fn resolve_session_key(cwd: String) -> Result<String, String> {
+    let prefix = compute_folder_prefix(&cwd);
+    // Reuse the latest session for this workspace, or create a new one
+    Ok(find_latest_session_for_prefix(&prefix)
+        .unwrap_or_else(|| new_session_key_for_prefix(&prefix)))
+}
+
+/// Create a brand-new session key for the workspace `cwd`.
+/// This does NOT touch any existing sessions — it always creates a new key.
+/// Used by the frontend "New Agent" button.
+#[tauri::command]
+pub fn new_session_key(cwd: String) -> Result<String, String> {
+    let prefix = compute_folder_prefix(&cwd);
+    Ok(new_session_key_for_prefix(&prefix))
 }
 
 #[tauri::command]
@@ -886,14 +944,30 @@ fn tool_result_summary(content: &[ContentBlock]) -> String {
 }
 
 /// Remove a session's in-memory state from the SessionManager.
-/// Called by the frontend when switching away from a file session.
+/// Signals cancellation to any running tokio task, then removes the entry.
 #[tauri::command]
 pub async fn close_session(
     session_key: String,
     state: tauri::State<'_, SessionManager>,
 ) -> Result<(), String> {
     let mut map = state.sessions.lock().await;
+    if let Some(sd) = map.get(&session_key) {
+        sd.cancellation_token.cancel();
+    }
     map.remove(&session_key);
+    Ok(())
+}
+
+/// Cancel ALL active sessions and clear the session map.
+/// Called when the Agent panel is closed or the app exits.
+#[tauri::command]
+pub async fn close_all_sessions(state: tauri::State<'_, SessionManager>) -> Result<(), String> {
+    let mut map = state.sessions.lock().await;
+    for (key, sd) in map.iter() {
+        eprintln!("[zcode] close_all_sessions: cancelling {key}");
+        sd.cancellation_token.cancel();
+    }
+    map.clear();
     Ok(())
 }
 
@@ -1072,7 +1146,9 @@ pub async fn start_agent_turn(
     let current_file_arc: Arc<std::sync::Mutex<Option<String>>>;
     let cwd_arc: Arc<std::sync::Mutex<PathBuf>>;
 
+    let cancel_token: CancellationToken;
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
+        cancel_token = sd.cancellation_token.clone();
         sd.auto_approve
             .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
         auto_approve_arc = Arc::clone(&sd.auto_approve);
@@ -1105,6 +1181,8 @@ pub async fn start_agent_turn(
         pending_approvals_arc = Arc::new(Mutex::new(HashMap::new()));
         current_file_arc = Arc::new(std::sync::Mutex::new(current_file.clone()));
         cwd_arc = Arc::new(std::sync::Mutex::new(work_dir.clone()));
+
+        cancel_token = CancellationToken::new();
 
         // Build guarded tool registry
         let tool_names: Vec<&str> = allowed_tools_for_rebuild
@@ -1162,6 +1240,7 @@ pub async fn start_agent_turn(
                 auto_approve: Arc::clone(&auto_approve_arc),
                 current_file: Arc::clone(&current_file_arc),
                 cwd: Arc::clone(&cwd_arc),
+                cancellation_token: cancel_token.clone(),
             },
         );
 
@@ -1203,6 +1282,7 @@ pub async fn start_agent_turn(
         >::new()));
         let run_task = tokio::spawn({
             let skill_names = Arc::clone(&skill_names);
+            let inner_token = cancel_token.clone();
             async move {
                 let result = agent
                 .run(user_message, move |event| {
@@ -1319,7 +1399,7 @@ pub async fn start_agent_turn(
                             );
                         }
                     }
-                })
+                }, inner_token)
                 .await;
                 (result, agent)
             }
@@ -1327,6 +1407,11 @@ pub async fn start_agent_turn(
 
         match run_task.await {
             Ok((result, agent)) => {
+                if cancel_token.is_cancelled() {
+                    eprintln!("[zcode] agent_task: cancelled, skipping post-processing for session={session_id_t}");
+                    rebuild_pending_approvals.lock().await.clear();
+                    return;
+                }
                 match &result {
                     Ok(msg) => {
                         eprintln!(

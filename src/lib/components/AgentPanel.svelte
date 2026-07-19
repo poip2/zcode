@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
+  import { getAgentSession, resolveSessionKey, loadSessionMessages, listSessions, closeAllSessions, type ChatMessage, type ToolConfirmation, type SessionMeta } from "$lib/stores/agentSession";
+  import { invoke } from "@tauri-apps/api/core";
   import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders, type AIProviderSettings } from "$lib/stores/settings";
   import { pinnedFolder } from "$lib/stores/pinnedFolder";
   import { document as docStore } from "$lib/stores/document";
@@ -46,6 +47,16 @@
   let wasSending = $state(false);
   let lastToolCompletion = $state<{ toolName: string; isError: boolean; ts: number } | null>(null);
 
+  // Stable workspace root for session grouping.
+  // Falls back: open file's parent dir → pinned folder → null (scratch).
+  function parentDir(p: string): string {
+    const sep = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+    return sep > 0 ? p.slice(0, sep) : '.';
+  }
+  let workspaceCwd = $derived<string | null>(
+    filePath ? parentDir(filePath) : (pinnedPath ?? null)
+  );
+
   let inputEl: HTMLTextAreaElement | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
   let unsubMessages: (() => void) | undefined;
@@ -76,12 +87,12 @@
   // ------------------------------------------------------------------
 
   $effect(() => {
-    const fp = filePath;
+    const cwd = workspaceCwd;
     let cancelled = false;
 
     (async () => {
       loading = true;
-      const key = await resolveSessionKey(fp);
+      const key = await resolveSessionKey(cwd);
       if (cancelled) return;
 
       sessionId = key;
@@ -109,7 +120,7 @@
   });
 
   async function loadSessionList() {
-    sessionList = await listSessions();
+    sessionList = await listSessions(workspaceCwd ?? undefined);
   }
 
   async function switchToHistorySession(key: string) {
@@ -154,23 +165,28 @@
 
   async function handleNewAgent() {
     showHistory = false;
-    // Reset back to current file's session
-    const key = await resolveSessionKey(filePath);
-    if (key !== sessionId) {
-      session = await getAgentSession(key);
-      unsubMessages?.();
-      unsubMessages = session.state.subscribe((s: any) => {
-        messages = s.messages;
-        streamingText = s.streamingText;
-        sending = s.sending;
-        error = s.error;
-        activeToolCall = s.activeToolCall;
-        toolConfirmation = s.toolConfirmation;
-        lastToolCompletion = s.lastToolCompletion;
-      });
-      sessionId = key;
+    // Create a brand-new session key for the current folder.
+    // The old session continues running in the background — we don't kill it.
+    const effectiveCwd = workspaceCwd ?? "scratch";
+    let newKey: string;
+    try {
+      newKey = await invoke<string>("new_session_key", { cwd: effectiveCwd });
+    } catch {
+      // Fallback: resolve normally (Rust will create a new key if none exists)
+      newKey = await resolveSessionKey(effectiveCwd);
     }
-    session?.reset();
+    session = await getAgentSession(newKey);
+    unsubMessages?.();
+    unsubMessages = session.state.subscribe((s: any) => {
+      messages = s.messages;
+      streamingText = s.streamingText;
+      sending = s.sending;
+      error = s.error;
+      activeToolCall = s.activeToolCall;
+      toolConfirmation = s.toolConfirmation;
+      lastToolCompletion = s.lastToolCompletion;
+    });
+    sessionId = newKey;
     inputText = "";
     requestAnimationFrame(() => inputEl?.focus());
   }
@@ -206,6 +222,7 @@
     unsubMessages?.();
     unsubPinned?.();
     unsubDoc?.();
+    closeAllSessions();
   });
 
   // ------------------------------------------------------------------

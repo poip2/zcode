@@ -65,7 +65,6 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   });
 
   let unlisteners: UnlistenFn[] = [];
-  let stopped = false;
 
   function cleanup() {
     for (const unlisten of unlisteners) {
@@ -244,8 +243,6 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
       toolConfirmation: null,
     }));
 
-    stopped = false;
-
     if (unlisteners.length === 0) {
       await setupListeners();
     }
@@ -296,12 +293,11 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
   }
 
   function stop() {
-    stopped = true;
     state.update((s) => ({ ...s, sending: false }));
+    invoke("close_session", { sessionKey: sessionId }).catch(() => {});
   }
 
   async function reset() {
-    stopped = false;
     state.set({
       messages: [],
       streamingText: "",
@@ -331,10 +327,10 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
 // Public API
 // ============================================================================
 
-/** List all saved sessions with metadata (title, time, message count). */
-export async function listSessions(): Promise<SessionMeta[]> {
+/** List saved sessions, optionally filtered to a workspace folder (cwd). */
+export async function listSessions(cwd?: string): Promise<SessionMeta[]> {
   try {
-    return await invoke<SessionMeta[]>("list_sessions");
+    return await invoke<SessionMeta[]>("list_sessions", { cwd: cwd ?? null });
   } catch (err) {
     console.error("Failed to list sessions:", err);
     return [];
@@ -352,9 +348,8 @@ export async function loadSessionMessages(sessionKey: string): Promise<ChatMessa
 }
 
 export async function getAgentSession(sessionId: string, preloadedMessages?: ChatMessage[]) {
-  if (activeSessionId && activeSessionId !== sessionId) {
-    closeAgentSession(activeSessionId);
-  }
+  // Don't kill the old session when switching — keep its Tauri listeners alive
+  // so streaming state continues to accumulate in the background.
   activeSessionId = sessionId;
 
   if (sessions.has(sessionId)) return sessions.get(sessionId)!;
@@ -373,11 +368,12 @@ export async function getAgentSession(sessionId: string, preloadedMessages?: Cha
   return session;
 }
 
-export async function resolveSessionKey(filePath: string | null): Promise<string> {
-  if (!filePath) return "scratch";
-  return await invoke<string>("resolve_session_key", { filePath });
+export async function resolveSessionKey(cwd: string | null): Promise<string> {
+  return await invoke<string>("resolve_session_key", { cwd: cwd ?? "scratch" });
 }
 
+/** Close a session completely — kill listeners, remove from map, notify Rust.
+ *  Only call this when the Agent panel is being closed, not on session switch. */
 export function closeAgentSession(sessionId: string) {
   const session = sessions.get(sessionId);
   if (session) {
@@ -389,5 +385,18 @@ export function closeAgentSession(sessionId: string) {
   }
   invoke("close_session", { sessionKey: sessionId }).catch((err) => {
     console.error("Failed to close Rust-side session:", err);
+  });
+}
+
+/** Close ALL active sessions — cancel running tasks, clean up listeners.
+ *  Call this when the Agent panel is destroyed or the app exits. */
+export function closeAllSessions() {
+  for (const [id, session] of sessions) {
+    session.cleanup();
+  }
+  sessions.clear();
+  activeSessionId = null;
+  invoke("close_all_sessions").catch((err) => {
+    console.error("Failed to close all Rust-side sessions:", err);
   });
 }

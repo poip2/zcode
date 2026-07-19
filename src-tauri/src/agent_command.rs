@@ -132,6 +132,8 @@ pub(crate) struct SessionData {
     pub(crate) current_file: Arc<std::sync::Mutex<Option<String>>>,
     /// Working directory (updated each turn from the frontend).
     pub(crate) cwd: Arc<std::sync::Mutex<PathBuf>>,
+    /// Cancellation flag — when true the tokio task should bail out early.
+    pub(crate) cancelled: Arc<AtomicBool>,
 }
 
 // ============================================================================
@@ -192,10 +194,14 @@ pub struct SessionMeta {
     pub message_count: usize,
 }
 
-/// List all saved sessions with metadata (title, time, message count).
+/// List saved sessions with metadata, optionally filtered to a workspace (cwd).
+/// When `cwd` is Some(dir), only sessions under that directory are returned.
 /// Sessions are sorted by most recent first.
 #[tauri::command]
-pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
+pub fn list_sessions(cwd: Option<String>) -> Result<Vec<SessionMeta>, String> {
+    let folder_prefix = cwd
+        .as_deref()
+        .map(|dir| compute_folder_prefix(dir));
     let sessions_dir = dirs::config_dir()
         .or_else(dirs::data_local_dir)
         .unwrap_or_else(std::env::temp_dir)
@@ -225,6 +231,12 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
             .to_string();
         if session_key.is_empty() {
             continue;
+        }
+        // Filter by folder prefix when requested
+        if let Some(ref prefix) = folder_prefix {
+            if !session_key.starts_with(prefix) {
+                continue;
+            }
         }
 
         let content = match fs::read_to_string(&path) {
@@ -275,15 +287,50 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
     Ok(metas)
 }
 
-/// Compute a stable session key from a file path.
-/// Uses dunce::canonicalize + sha256(hex, first 16 chars).
-fn compute_session_key(file_path: &str) -> String {
-    let path = Path::new(file_path);
+/// Compute a folder-based prefix from a workspace directory path.
+/// Uses dunce::canonicalize + sha256(first 12 chars).
+fn compute_folder_prefix(dir: &str) -> String {
+    let path = Path::new(dir);
     let canonical = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hex = format!("{:x}", hasher.finalize());
-    hex[..16].to_string()
+    hex[..12].to_string()
+}
+
+/// Find the latest existing session key for a folder prefix.
+/// Returns None if no session exists for this folder yet.
+fn find_latest_session_for_prefix(prefix: &str) -> Option<String> {
+    let sessions_dir = dirs::config_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("zcode")
+        .join("sessions");
+    if !sessions_dir.exists() {
+        return None;
+    }
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&sessions_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "jsonl") {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                if stem.starts_with(prefix) {
+                    candidates.push(stem.to_string());
+                }
+            }
+        }
+    }
+    // Sort by embedded timestamp suffix (descending) = newest first
+    candidates.sort_by(|a, b| b.cmp(a));
+    candidates.into_iter().next()
+}
+
+/// Create a brand-new session key for a folder (prefix + timestamp).
+fn new_session_key_for_prefix(prefix: &str) -> String {
+    format!("{prefix}-{}", chrono::Utc::now().timestamp_millis())
 }
 
 /// Filesystem path for a session's JSONL file.
@@ -340,8 +387,20 @@ pub fn load_session_messages(session_key: String) -> Result<Vec<ChatMessage>, St
 }
 
 #[tauri::command]
-pub fn resolve_session_key(file_path: String) -> Result<String, String> {
-    Ok(compute_session_key(&file_path))
+pub fn resolve_session_key(cwd: String) -> Result<String, String> {
+    let prefix = compute_folder_prefix(&cwd);
+    // Reuse the latest session for this workspace, or create a new one
+    Ok(find_latest_session_for_prefix(&prefix)
+        .unwrap_or_else(|| new_session_key_for_prefix(&prefix)))
+}
+
+/// Create a brand-new session key for the workspace `cwd`.
+/// This does NOT touch any existing sessions — it always creates a new key.
+/// Used by the frontend "New Agent" button.
+#[tauri::command]
+pub fn new_session_key(cwd: String) -> Result<String, String> {
+    let prefix = compute_folder_prefix(&cwd);
+    Ok(new_session_key_for_prefix(&prefix))
 }
 
 #[tauri::command]
@@ -886,13 +945,16 @@ fn tool_result_summary(content: &[ContentBlock]) -> String {
 }
 
 /// Remove a session's in-memory state from the SessionManager.
-/// Called by the frontend when switching away from a file session.
+/// Signals cancellation to any running tokio task, then removes the entry.
 #[tauri::command]
 pub async fn close_session(
     session_key: String,
     state: tauri::State<'_, SessionManager>,
 ) -> Result<(), String> {
     let mut map = state.sessions.lock().await;
+    if let Some(sd) = map.get(&session_key) {
+        sd.cancelled.store(true, Ordering::Relaxed);
+    }
     map.remove(&session_key);
     Ok(())
 }
@@ -1162,6 +1224,7 @@ pub async fn start_agent_turn(
                 auto_approve: Arc::clone(&auto_approve_arc),
                 current_file: Arc::clone(&current_file_arc),
                 cwd: Arc::clone(&cwd_arc),
+                cancelled: Arc::new(AtomicBool::new(false)),
             },
         );
 

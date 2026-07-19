@@ -59,6 +59,7 @@ pub fn run() {
             agent_command::set_skill_active,
             agent_command::load_session_messages,
             agent_command::resolve_session_key,
+            agent_command::new_session_key,
             agent_command::clear_session,
             agent_command::close_session,
             agent_command::list_sessions,

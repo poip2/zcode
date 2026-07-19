@@ -247,10 +247,7 @@ pub fn enforce_cwd_scope(
     // Allow access to skill directories (user-level and pi agent)
     if let Some(home) = dirs::home_dir() {
         let skills_dirs: Vec<std::path::PathBuf> = if let Some(config_dir) = dirs::config_dir() {
-            vec![
-                config_dir.join("zcode/skills"),
-                home.join(".agents/skills"),
-            ]
+            vec![config_dir.join("zcode/skills"), home.join(".agents/skills")]
         } else {
             vec![
                 home.join(".config/zcode/skills"),

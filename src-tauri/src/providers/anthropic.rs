@@ -767,7 +767,7 @@ fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
 /// are not matched by a following user message containing the corresponding
 /// tool_results. Some API providers (DeepSeek) reject requests with dangling
 /// tool_use blocks.
-fn repair_dangling_tool_uses(messages: &mut Vec<AnthropicMessage<'_>>) {
+fn repair_dangling_tool_uses(messages: &mut [AnthropicMessage<'_>]) {
     let len = messages.len();
     for i in 0..len {
         if messages[i].role != "assistant" {

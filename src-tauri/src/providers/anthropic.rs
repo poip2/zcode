@@ -812,10 +812,16 @@ fn repair_dangling_tool_uses(messages: &mut Vec<AnthropicMessage<'_>>) {
         };
 
         // If not all resolved, strip the tool_use blocks from this assistant
+        // and also strip orphan tool_result blocks from the next user message
         if !all_resolved {
             messages[i]
                 .content
                 .retain(|c| !matches!(c, AnthropicContent::ToolUse { .. }));
+            if i + 1 < len && messages[i + 1].role == "user" {
+                messages[i + 1]
+                    .content
+                    .retain(|c| !matches!(c, AnthropicContent::ToolResult { .. }));
+            }
         }
     }
 }

@@ -108,7 +108,7 @@ echo "→ Installing to ${TARGET_DIR}"
 mkdir -p "$TARGET_DIR"
 
 # Copy all files, preserving structure
-cp -r "${SRC}/"* "$TARGET_DIR/" 2>/dev/null || cp -r "${SRC}/"* "$TARGET_DIR/"
+cp -r "${SRC}/"* "$TARGET_DIR/" 2>/dev/null
 
 # Verify SKILL.md exists
 if [ -f "${TARGET_DIR}/SKILL.md" ]; then

@@ -119,7 +119,7 @@ Users paste GitHub URLs at varying depths. Parse accordingly:
 
 **Parsing rules:**
 
-1. **Repo URL**: `https://github.com/{owner}/{repo}.git` — strip everything after the repo name, add `.git`.
+1. **Repo URL**: `https://github.com/{owner}/{repo}.git` — strip everything after the repo name, add `.git` if not already present.
 2. **In-repo path**: the portion after `tree/{branch}/` or `blob/{branch}/`.
 3. **Skill name**: if the in-repo path ends with `SKILL.md`, the skill is its parent directory.
    Otherwise, the skill is the last path segment.
@@ -149,7 +149,7 @@ URL: https://github.com/user/myskills/tree/main/rust
 ```
 
 Only ask the user if the URL is just a repo root (no path beyond `github.com/user/repo`).
-Default scope to `--global` (`~/.config/zcode/skills/`) unless user says "project" or "here".
+Default scope to `--project` (`.zcode/skills/`) unless user says "global", "all projects", or "agents".
 
 ### Step 2: Install with git sparse-checkout
 

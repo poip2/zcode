@@ -87,8 +87,8 @@ SRC="${TMP_DIR}/${SPARSE_PATH}"
 # Fallback: try without skills/ prefix
 if [ ! -d "$SRC" ]; then
   echo "→ 'skills/${SKILL_NAME}' not found, trying '${SKILL_NAME}' at repo root..."
-  git -C "$TMP_DIR" sparse-checkout set "$SKILL_NAME" 2>/dev/null
-  git -C "$TMP_DIR" checkout 2>/dev/null
+  git -C "$TMP_DIR" sparse-checkout set "$SKILL_NAME"
+  git -C "$TMP_DIR" checkout
   SRC="${TMP_DIR}/${SKILL_NAME}"
 fi
 
@@ -107,8 +107,8 @@ fi
 echo "→ Installing to ${TARGET_DIR}"
 mkdir -p "$TARGET_DIR"
 
-# Copy all files, preserving structure
-cp -r "${SRC}/"* "$TARGET_DIR/" 2>/dev/null
+# Copy all files including dotfiles, preserving structure
+cp -r "${SRC}/." "$TARGET_DIR/"
 
 # Verify SKILL.md exists
 if [ -f "${TARGET_DIR}/SKILL.md" ]; then

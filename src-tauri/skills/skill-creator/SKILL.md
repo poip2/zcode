@@ -196,8 +196,8 @@ Remove-Item -Recurse -Force "TMP"
 ```
 
 TARGET_DIR mapping:
-- **global** (default): `~/.config/zcode/skills/SKILL_NAME`
-- **project**: `$(pwd)/.zcode/skills/SKILL_NAME`
+- **project** (default): `$(pwd)/.zcode/skills/SKILL_NAME`
+- **global**: `~/.config/zcode/skills/SKILL_NAME`
 - **pi agent**: `~/.agents/skills/SKILL_NAME`
 
 ### Step 3: Verify

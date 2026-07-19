@@ -67,8 +67,8 @@ try {
     if (-not (Test-Path $Src)) {
         Write-Host "→ 'skills/$SkillName' not found, trying '$SkillName' at repo root..." -ForegroundColor Yellow
         Push-Location $TmpDir
-        git sparse-checkout set $SkillName 2>&1 | Out-Null
-        git checkout 2>&1 | Out-Null
+        git sparse-checkout set $SkillName
+        git checkout
         Pop-Location
         $Src = Join-Path $TmpDir $SkillName
     }
@@ -91,7 +91,7 @@ try {
         New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
     }
 
-    Copy-Item -Recurse -Force "$Src\*" $TargetDir
+    Get-ChildItem -Path $Src -Force | Copy-Item -Destination $TargetDir -Recurse -Force
 
     # Verify SKILL.md exists
     $skillMd = Join-Path $TargetDir "SKILL.md"

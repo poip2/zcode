@@ -763,18 +763,17 @@ fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage<'_>> {
     result
 }
 
-/// Strip tool_use content blocks from any assistant message that is not
-/// immediately followed by a user message containing the matching tool_results.
-/// Some API providers (DeepSeek) reject requests with dangling tool_use blocks.
+/// Strip tool_use content blocks from any assistant message whose tool_uses
+/// are not matched by a following user message containing the corresponding
+/// tool_results. Some API providers (DeepSeek) reject requests with dangling
+/// tool_use blocks.
 fn repair_dangling_tool_uses(messages: &mut Vec<AnthropicMessage<'_>>) {
     let len = messages.len();
     for i in 0..len {
-        // Only look at assistant messages
         if messages[i].role != "assistant" {
             continue;
         }
 
-        // Collect tool_use_ids from this assistant message
         let tool_use_ids: Vec<&str> = messages[i]
             .content
             .iter()
@@ -791,37 +790,32 @@ fn repair_dangling_tool_uses(messages: &mut Vec<AnthropicMessage<'_>>) {
             continue;
         }
 
-        // Check if the next message is a user with tool_results for ALL ids
-        let all_resolved = if i + 1 < len && messages[i + 1].role == "user" {
-            let next_tool_result_ids: Vec<&str> = messages[i + 1]
-                .content
-                .iter()
-                .filter_map(|c| {
-                    if let AnthropicContent::ToolResult { tool_use_id, .. } = c {
-                        Some(*tool_use_id)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            tool_use_ids
-                .iter()
-                .all(|id| next_tool_result_ids.contains(id))
-        } else {
-            false
-        };
+        // Scan forward for the next user message (not just i+1) to
+        // tolerate intermediate non-user messages inserted by compaction
+        // or other pre-processing.
+        let all_resolved = messages[i + 1..]
+            .iter()
+            .find(|m| m.role == "user")
+            .map(|user_msg| {
+                let result_ids: Vec<&str> = user_msg
+                    .content
+                    .iter()
+                    .filter_map(|c| {
+                        if let AnthropicContent::ToolResult { tool_use_id, .. } = c {
+                            Some(*tool_use_id)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                tool_use_ids.iter().all(|id| result_ids.contains(id))
+            })
+            .unwrap_or(false);
 
-        // If not all resolved, strip the tool_use blocks from this assistant
-        // and also strip orphan tool_result blocks from the next user message
         if !all_resolved {
             messages[i]
                 .content
                 .retain(|c| !matches!(c, AnthropicContent::ToolUse { .. }));
-            if i + 1 < len && messages[i + 1].role == "user" {
-                messages[i + 1]
-                    .content
-                    .retain(|c| !matches!(c, AnthropicContent::ToolResult { .. }));
-            }
         }
     }
 }

@@ -67,8 +67,8 @@ try {
     if (-not (Test-Path $Src)) {
         Write-Host "→ 'skills/$SkillName' not found, trying '$SkillName' at repo root..." -ForegroundColor Yellow
         Push-Location $TmpDir
-        git sparse-checkout set $SkillName
-        git checkout
+        git sparse-checkout set $SkillName 2>&1 | Out-Null
+        git checkout 2>&1 | Out-Null
         Pop-Location
         $Src = Join-Path $TmpDir $SkillName
     }

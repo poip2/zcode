@@ -87,8 +87,8 @@ SRC="${TMP_DIR}/${SPARSE_PATH}"
 # Fallback: try without skills/ prefix
 if [ ! -d "$SRC" ]; then
   echo "→ 'skills/${SKILL_NAME}' not found, trying '${SKILL_NAME}' at repo root..."
-  git -C "$TMP_DIR" sparse-checkout set "$SKILL_NAME"
-  git -C "$TMP_DIR" checkout
+  git -C "$TMP_DIR" sparse-checkout set "$SKILL_NAME" 2>/dev/null
+  git -C "$TMP_DIR" checkout 2>/dev/null
   SRC="${TMP_DIR}/${SKILL_NAME}"
 fi
 

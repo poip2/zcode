@@ -246,11 +246,19 @@ pub fn enforce_cwd_scope(
 
     // Allow access to skill directories (user-level and pi agent)
     if let Some(home) = dirs::home_dir() {
-        for skills_dir in [
-            home.join(".config/zcode/skills"),
-            home.join(".agents/skills"),
-        ] {
-            let skills_canonical = canonicalize_safe(&skills_dir);
+        let skills_dirs: Vec<std::path::PathBuf> = if let Some(config_dir) = dirs::config_dir() {
+            vec![
+                config_dir.join("zcode/skills"),
+                home.join(".agents/skills"),
+            ]
+        } else {
+            vec![
+                home.join(".config/zcode/skills"),
+                home.join(".agents/skills"),
+            ]
+        };
+        for skills_dir in &skills_dirs {
+            let skills_canonical = canonicalize_safe(skills_dir);
             if canonical.starts_with(&skills_canonical) {
                 return Ok(canonical);
             }

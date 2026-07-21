@@ -65,6 +65,24 @@ pub struct ToolDef {
 // Stream Options
 // ============================================================================
 
+/// Cache retention policy for provider-managed prompt caching.
+///
+/// Default is `None` (conservative): changing the system-prompt wire format
+/// from a plain string to an array of content blocks can break
+/// Anthropic-compatible providers (DeepSeek etc.) that reject unknown fields.
+/// Enable explicitly for official Anthropic API usage.
+///
+/// Anthropic ephemeral cache TTL: 5 minutes, reset on every cache read.
+/// For an active coding session this means effectively always cached after
+/// the first turn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CacheRetention {
+    #[default]
+    None,
+    /// Ephemeral cache (5 min TTL, resets on read). ~1.25x write, ~0.10x read.
+    Short,
+}
+
 /// Options that control streaming completion behavior.
 #[derive(Debug, Clone, Default)]
 pub struct StreamOptions {
@@ -73,6 +91,7 @@ pub struct StreamOptions {
     pub api_key: Option<String>,
     pub base_url: Option<String>,
     pub session_id: Option<String>,
+    pub cache_retention: CacheRetention,
     pub headers: HashMap<String, String>,
     pub thinking_level: Option<ThinkingLevel>,
     pub thinking_budgets: Option<ThinkingBudgets>,

@@ -82,6 +82,8 @@ impl AnthropicProvider {
     ) -> AnthropicRequest<'a> {
         let messages: Vec<AnthropicMessage<'_>> = build_anthropic_messages(context.messages);
 
+        let cache_enabled = options.cache_retention != crate::provider::CacheRetention::None;
+
         let tools: Option<Vec<AnthropicTool<'_>>> = if context.tools.is_empty() {
             None
         } else {
@@ -89,10 +91,28 @@ impl AnthropicProvider {
                 context
                     .tools
                     .iter()
-                    .map(convert_tool_to_anthropic)
+                    .map(|t| convert_tool_to_anthropic(t, cache_enabled))
                     .collect(),
             )
         };
+
+        // Wrap system prompt in a content block array so we can attach
+        // cache_control: { type: "ephemeral" } when caching is enabled.
+        // This is the single highest-ROI caching target: system prompt
+        // is re-sent unchanged every turn.
+        let system: Option<Vec<AnthropicSystemBlock<'_>>> = context
+            .system_prompt
+            .map(|text| {
+                vec![AnthropicSystemBlock {
+                    r#type: "text",
+                    text,
+                    cache_control: if cache_enabled {
+                        Some(CacheControl { r#type: "ephemeral" })
+                    } else {
+                        None
+                    },
+                }]
+            });
 
         // Build thinking config
         let thinking = match options.thinking_level {
@@ -119,7 +139,7 @@ impl AnthropicProvider {
         AnthropicRequest {
             model: &self.model,
             messages,
-            system: context.system_prompt,
+            system,
             max_tokens,
             temperature: options.temperature,
             tools,
@@ -279,7 +299,7 @@ struct AnthropicRequest<'a> {
     model: &'a str,
     messages: Vec<AnthropicMessage<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<&'a str>,
+    system: Option<Vec<AnthropicSystemBlock<'a>>>,
     max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
@@ -288,6 +308,22 @@ struct AnthropicRequest<'a> {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking: Option<AnthropicThinking>,
+}
+
+/// System prompt content block with optional cache control.
+/// When cache_retention is enabled, marks the system prompt for
+/// Anthropic prompt caching (GA as of 2024, no beta header needed).
+#[derive(Debug, Serialize)]
+struct AnthropicSystemBlock<'a> {
+    r#type: &'static str,
+    text: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<CacheControl>,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheControl {
+    r#type: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -350,6 +386,8 @@ struct AnthropicTool<'a> {
     name: &'a str,
     description: &'a str,
     input_schema: &'a serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<CacheControl>,
 }
 
 // ============================================================================
@@ -922,10 +960,17 @@ fn convert_content_block_to_anthropic(block: &ContentBlock) -> Option<AnthropicC
     }
 }
 
-fn convert_tool_to_anthropic(tool: &ToolDef) -> AnthropicTool<'_> {
+fn convert_tool_to_anthropic(tool: &ToolDef, cache_enabled: bool) -> AnthropicTool<'_> {
     AnthropicTool {
         name: &tool.name,
         description: &tool.description,
         input_schema: &tool.parameters,
+        cache_control: if cache_enabled {
+            Some(CacheControl {
+                r#type: "ephemeral",
+            })
+        } else {
+            None
+        },
     }
 }

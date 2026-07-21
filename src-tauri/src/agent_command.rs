@@ -815,6 +815,11 @@ fn build_system_prompt(
     prompt.push_str(base);
 
     // --- Dynamic: session context ---
+    prompt.push_str("\n**Important:** The Current Session section below reflects live editor\n");
+    prompt.push_str("state that may change between turns when the user switches files. It is\n");
+    prompt.push_str("NOT a correction of earlier messages — the user simply opened a different\n");
+    prompt.push_str("file since your last turn. Do not apologize for previous answers; just\n");
+    prompt.push_str("use the current value.\n");
     prompt.push_str("\n## Current Session\n\n");
     prompt.push_str(&format!("Working directory: {}\n", cwd.display()));
 

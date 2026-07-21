@@ -430,7 +430,7 @@
     class="resize-handle"
     onpointerdown={handleResizeStart}
     data-tauri-drag-region="false"
-    title="Drag to resize"
+    title={$t('agent.resizeHandle')}
   >
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.6">
       <line x1="3" y1="6" x2="13" y2="6"/>

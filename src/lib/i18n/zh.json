@@ -99,6 +99,7 @@
     "noMatch": "没有匹配的对话",
     "noConversations": "暂无对话记录",
     "messages": "{count} 条消息",
+    "resizeHandle": "拖拽调整大小",
     "time": {
       "justNow": "刚刚",
       "minAgo": "{n}分钟前",

@@ -9,7 +9,11 @@
   import { locale } from "$lib/i18n";
   import "../app.css";
 
-  let { children } = $props();
+  let { data, children } = $props();
+
+  if (data.locale) {
+    locale.set(data.locale);
+  }
 
   let currentCwd = $state<string>(".");
   let unlistenSkills: (() => void) | undefined;
@@ -78,14 +82,6 @@
 
   onMount(async () => {
     await pinnedFolder.load();
-
-    // Restore locale from saved settings
-    try {
-      const settings = await loadSettings();
-      if (settings.locale) {
-        locale.set(settings.locale);
-      }
-    } catch { /* ignore */ }
 
     // Auto-create the four workspace folders (idempotent — only creates if missing)
     try {

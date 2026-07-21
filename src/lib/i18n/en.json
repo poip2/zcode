@@ -99,6 +99,7 @@
     "noMatch": "No matching conversations",
     "noConversations": "No conversations yet",
     "messages": "{count} messages",
+    "resizeHandle": "Drag to resize",
     "time": {
       "justNow": "Just now",
       "minAgo": "{n}m ago",

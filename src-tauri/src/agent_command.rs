@@ -1152,7 +1152,9 @@ pub async fn start_agent_turn(
         max_tool_iterations: 50,
         stream_options: StreamOptions {
             session_id: Some(session_id.clone()),
-            cache_retention: if provider.api() == "anthropic-messages" {
+            cache_retention: if provider.api() == "anthropic-messages"
+                && base_url.contains("api.anthropic.com")
+            {
                 CacheRetention::Short
             } else {
                 CacheRetention::None

@@ -428,6 +428,8 @@
   <!-- Resize handle (top-left corner) -->
   <div
     class="resize-handle"
+    role="separator"
+    aria-label={$t('agent.resizeHandle')}
     onpointerdown={handleResizeStart}
     data-tauri-drag-region="false"
     title={$t('agent.resizeHandle')}

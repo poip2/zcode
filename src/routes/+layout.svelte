@@ -11,9 +11,11 @@
 
   let { data, children } = $props();
 
-  if (data.locale) {
-    locale.set(data.locale);
-  }
+  $effect(() => {
+    if (data.locale) {
+      locale.set(data.locale);
+    }
+  });
 
   let currentCwd = $state<string>(".");
   let unlistenSkills: (() => void) | undefined;

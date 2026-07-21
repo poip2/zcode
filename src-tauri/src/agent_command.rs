@@ -18,11 +18,11 @@
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
 use crate::error::Result as AgentResult;
-use crate::provider::CacheRetention;
 use crate::model::{
     AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent,
     UserMessage,
 };
+use crate::provider::CacheRetention;
 use crate::provider::StreamOptions;
 use crate::runtime_env::{self, RuntimeState};
 use crate::settings;

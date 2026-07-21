@@ -99,19 +99,19 @@ impl AnthropicProvider {
         // System prompt: gate wire format on cache_retention.
         // Plain string for None (safe for DeepSeek etc.), content-block
         // array for Short (enables Anthropic prompt caching).
-        let system: Option<AnthropicSystem<'_>> = context
-            .system_prompt
-            .map(|text| {
-                if cache_enabled {
-                    AnthropicSystem::Blocks(vec![AnthropicSystemBlock {
-                        r#type: "text",
-                        text,
-                        cache_control: Some(CacheControl { r#type: "ephemeral" }),
-                    }])
-                } else {
-                    AnthropicSystem::Plain(text)
-                }
-            });
+        let system: Option<AnthropicSystem<'_>> = context.system_prompt.map(|text| {
+            if cache_enabled {
+                AnthropicSystem::Blocks(vec![AnthropicSystemBlock {
+                    r#type: "text",
+                    text,
+                    cache_control: Some(CacheControl {
+                        r#type: "ephemeral",
+                    }),
+                }])
+            } else {
+                AnthropicSystem::Plain(text)
+            }
+        });
 
         // Build thinking config
         let thinking = match options.thinking_level {

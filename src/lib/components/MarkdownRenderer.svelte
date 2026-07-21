@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { tt } from "$lib/i18n";
 
   let { html = "" }: { html: string } = $props();
 
@@ -22,13 +23,13 @@
 
       const btn = document.createElement("button");
       btn.className = "code-copy-btn";
-      btn.textContent = "Copy";
+      btn.textContent = tt('markdown.copy');
       btn.addEventListener("click", () => {
         const code = pre.querySelector("code");
         const text = code?.textContent ?? pre.textContent ?? "";
         navigator.clipboard.writeText(text).then(() => {
-          btn.textContent = "Copied!";
-          setTimeout(() => (btn.textContent = "Copy"), 1500);
+          btn.textContent = tt('markdown.copied');
+          setTimeout(() => (btn.textContent = tt('markdown.copy')), 1500);
         });
       });
       pre.appendChild(btn);

@@ -5,8 +5,9 @@
   import { document as docStore } from "$lib/stores/document";
   import { openFolderDialog, listDirTree, getBaseDir, getDefaultDataDir, joinPath } from "$lib/tauri/files";
   import { saveApiKey, maskApiKey, checkApiKey } from "$lib/tauri/ai";
-  import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, type AIProviderSettings, type Locale } from "$lib/stores/settings";
   import { skillsStore } from "$lib/stores/skills.svelte";
+  import { t, locale } from "$lib/i18n";
 
   let {
     open = false,
@@ -20,7 +21,7 @@
   let persistedAi: AIProviderSettings = $state({ baseUrl: "", model: "" });
 
   // ── Tab state ──
-  let activeTab = $state<"folder" | "ai" | "skills">("folder");
+  let activeTab = $state<"folder" | "ai" | "skills" | "language">("folder");
   let pinnedPath = $state<string | null>(null);
   let docFilePath = $state<string | null>(null);
 
@@ -57,6 +58,9 @@
   let showApiKey = $state(false);
   let apiKeyDirty = $state(false);     // true after user types in the key field
   let aiWarning = $state<string | null>(null);
+
+  // ── Language draft state ──
+  let draftLocale = $state<Locale>("en");
 
   // ── Keychain reality (queried on open, not from store) ──
   let keychainExists = $state(false);
@@ -102,12 +106,13 @@
       keychainExists = false;
       keychainWarning = null;
 
-      // Load folder settings from store (or leave undefined for defaults)
+      // Load folder settings + locale from store (or leave undefined for defaults)
       loadSettings().then((s) => {
         draftOutputFolder = s.outputFolder;
         draftPinFolder = s.pinFolder;
         draftScriptsFolder = s.scriptsFolder;
         draftSourcesFolder = s.sourcesFolder;
+        draftLocale = s.locale ?? "en";
       });
       if (!portableDataDir) {
         getDefaultDataDir().then((d) => updateDefaultPaths(d)).catch(() => {});
@@ -194,11 +199,15 @@
       pinFolder: finalPinFolder,
       scriptsFolder: finalScriptsFolder,
       sourcesFolder: finalSourcesFolder,
+      locale: draftLocale,
     });
     if (!ok) {
       saveError = true;
       return;
     }
+
+    // Sync locale store so UI updates immediately
+    locale.set(draftLocale);
 
     // Update persisted state
     persistedAi = newAi;
@@ -325,11 +334,11 @@
   >
     <!-- Header -->
     <div class="settings-header">
-      <h2>Settings</h2>
+      <h2>{$t('settings.title')}</h2>
       <button
         class="settings-close"
         onclick={handleCancel}
-        title="Close"
+        title={$t('common.close')}
         data-tauri-drag-region="false"
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
@@ -345,17 +354,22 @@
         class="settings-tab"
         class:active={activeTab === "folder"}
         onclick={() => (activeTab = "folder")}
-      >Default Folder</button>
+      >{$t('settings.tabs.folder')}</button>
       <button
         class="settings-tab"
         class:active={activeTab === "ai"}
         onclick={() => (activeTab = "ai")}
-      >AI Provider</button>
+      >{$t('settings.tabs.ai')}</button>
       <button
         class="settings-tab"
         class:active={activeTab === "skills"}
         onclick={() => (activeTab = "skills")}
-      >Skills</button>
+      >{$t('settings.tabs.skills')}</button>
+      <button
+        class="settings-tab"
+        class:active={activeTab === "language"}
+        onclick={() => (activeTab = "language")}
+      >{$t('settings.tabs.language')}</button>
     </div>
 
     <!-- Body -->
@@ -364,8 +378,8 @@
       <!-- Section: Default Folder -->
       {#if activeTab === "folder"}
         <section class="settings-section">
-          <div class="settings-section-title">Pin Folder</div>
-          <p class="settings-section-desc">Working folder opened on launch. If not set, defaults to <code>{defaultPinFolder()}</code>.</p>
+          <div class="settings-section-title">{$t('settings.folder.pinTitle')}</div>
+          <p class="settings-section-desc">{$t('settings.folder.pinDesc', { path: defaultPinFolder() })}</p>
           <div class="folder-field">
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -375,19 +389,19 @@
               class="settings-btn-secondary"
               onclick={handleBrowsePinDefault}
               data-tauri-drag-region="false"
-            >{draftPinFolder ? "Change…" : "Browse…"}</button>
+            >{draftPinFolder ? $t('common.change') : $t('common.browse')}</button>
             {#if draftPinFolder}
               <button
                 class="settings-btn-clear"
                 onclick={() => (draftPinFolder = undefined)}
-                title="Reset to default"
+                title={$t('settings.folder.resetToDefault')}
                 data-tauri-drag-region="false"
-              >Reset</button>
+              >{$t('common.reset')}</button>
             {/if}
           </div>
 
-          <div class="settings-section-title" style="margin-top: 20px;">Scripts Folder</div>
-          <p class="settings-section-desc">Where the agent writes scripts it creates to complete tasks (Python, JS, etc.). If not set, defaults to <code>{defaultScriptsFolderStr()}</code>.</p>
+          <div class="settings-section-title" style="margin-top: 20px;">{$t('settings.folder.scriptsTitle')}</div>
+          <p class="settings-section-desc">{$t('settings.folder.scriptsDesc', { path: defaultScriptsFolderStr() })}</p>
           <div class="folder-field">
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -397,19 +411,19 @@
               class="settings-btn-secondary"
               onclick={handleBrowseScripts}
               data-tauri-drag-region="false"
-            >{draftScriptsFolder ? "Change…" : "Browse…"}</button>
+            >{draftScriptsFolder ? $t('common.change') : $t('common.browse')}</button>
             {#if draftScriptsFolder}
               <button
                 class="settings-btn-clear"
                 onclick={() => (draftScriptsFolder = undefined)}
-                title="Reset to default"
+                title={$t('settings.folder.resetToDefault')}
                 data-tauri-drag-region="false"
-              >Reset</button>
+              >{$t('common.reset')}</button>
             {/if}
           </div>
 
-          <div class="settings-section-title" style="margin-top: 20px;">Sources Folder</div>
-          <p class="settings-section-desc">Staging area for existing files (Word, Excel, etc.) you want the agent to modify. Copy a file here before asking the agent to edit it. If not set, defaults to <code>{defaultSourcesFolderStr()}</code>.</p>
+          <div class="settings-section-title" style="margin-top: 20px;">{$t('settings.folder.sourcesTitle')}</div>
+          <p class="settings-section-desc">{$t('settings.folder.sourcesDesc', { path: defaultSourcesFolderStr() })}</p>
           <div class="folder-field">
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -419,19 +433,19 @@
               class="settings-btn-secondary"
               onclick={handleBrowseSources}
               data-tauri-drag-region="false"
-            >{draftSourcesFolder ? "Change…" : "Browse…"}</button>
+            >{draftSourcesFolder ? $t('common.change') : $t('common.browse')}</button>
             {#if draftSourcesFolder}
               <button
                 class="settings-btn-clear"
                 onclick={() => (draftSourcesFolder = undefined)}
-                title="Reset to default"
+                title={$t('settings.folder.resetToDefault')}
                 data-tauri-drag-region="false"
-              >Reset</button>
+              >{$t('common.reset')}</button>
             {/if}
           </div>
 
-          <div class="settings-section-title" style="margin-top: 20px;">Output Folder</div>
-          <p class="settings-section-desc">Where the agent writes generated non-md files (Word, PDF, etc.). If not set, defaults to <code>{defaultOutputFolder()}</code>.</p>
+          <div class="settings-section-title" style="margin-top: 20px;">{$t('settings.folder.outputTitle')}</div>
+          <p class="settings-section-desc">{$t('settings.folder.outputDesc', { path: defaultOutputFolder() })}</p>
           <div class="folder-field">
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
@@ -441,14 +455,14 @@
               class="settings-btn-secondary"
               onclick={handleBrowseOutput}
               data-tauri-drag-region="false"
-            >{draftOutputFolder ? "Change…" : "Browse…"}</button>
+            >{draftOutputFolder ? $t('common.change') : $t('common.browse')}</button>
             {#if draftOutputFolder}
               <button
                 class="settings-btn-clear"
                 onclick={() => (draftOutputFolder = undefined)}
-                title="Reset to default"
+                title={$t('settings.folder.resetToDefault')}
                 data-tauri-drag-region="false"
-              >Reset</button>
+              >{$t('common.reset')}</button>
             {/if}
           </div>
         </section>
@@ -457,14 +471,13 @@
       <!-- Section: AI Provider -->
       {#if activeTab === "ai"}
         <section class="settings-section">
-          <div class="settings-section-title">AI Provider</div>
-          <p class="settings-section-desc">Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain. Standard path suffixes (like <code>/v1/chat/completions</code> or <code>/v1/messages</code>) are appended automatically if omitted.</p>
+          <div class="settings-section-title">{$t('settings.ai.title')}</div>
 
           {#if keychainWarning}
             <p class="keychain-warning">{keychainWarning}</p>
           {/if}
 
-          <label class="settings-label" for="settings-base-url">Base URL</label>
+          <label class="settings-label" for="settings-base-url">{$t('settings.ai.baseUrl')}</label>
           <input
             id="settings-base-url"
             class="settings-input mono"
@@ -473,18 +486,17 @@
             bind:value={draftBaseUrl}
           />
 
-          <label class="settings-label" for="settings-api-key">API Key</label>
+          <label class="settings-label" for="settings-api-key">{$t('settings.ai.apiKey')}</label>
           <div class="api-key-field">
             {#if !apiKeyDirty && keychainExists && draftMaskedApiKey && !draftApiKey}
-              <!-- Key verified in keychain → show masked, no eye -->
               <button
                 id="settings-api-key"
                 class="settings-input mono masked-btn"
                 onclick={() => { apiKeyDirty = true; }}
-                title="Click to replace"
+                title={$t('settings.ai.clickToReplace')}
               >
                 <span class="masked-value">{draftMaskedApiKey}</span>
-                <span class="masked-hint">Click to edit</span>
+                <span class="masked-hint">{$t('settings.ai.clickToEdit')}</span>
               </button>
             {:else}
               <input
@@ -493,11 +505,11 @@
                 type={showApiKey ? "text" : "password"}
                 bind:value={draftApiKey}
                 oninput={handleApiKeyInput}
-                placeholder={keychainExists && draftMaskedApiKey ? "Enter a new key to replace" : "sk-your-key-here"}
+                placeholder={keychainExists && draftMaskedApiKey ? $t('settings.ai.enterNewKey') : $t('settings.ai.keyPlaceholder')}
               />
               <button
                 class="icon-toggle-btn"
-                title={showApiKey ? "Hide key" : "Show key"}
+                title={showApiKey ? $t('settings.ai.hideKey') : $t('settings.ai.showKey')}
                 onclick={handleRevealKey}
               >
                 {#if showApiKey}
@@ -516,7 +528,7 @@
               {#if apiKeyDirty && draftMaskedApiKey}
                 <button
                   class="key-cancel-btn"
-                  title="Keep existing key"
+                  title={$t('settings.ai.keepExisting')}
                   onclick={() => {
                     draftApiKey = "";
                     showApiKey = false;
@@ -531,7 +543,7 @@
               {/if}
             {/if}
           </div>
-          <label class="settings-label" for="settings-model">Model</label>
+          <label class="settings-label" for="settings-model">{$t('settings.ai.model')}</label>
           <input
             id="settings-model"
             class="settings-input mono"
@@ -546,10 +558,10 @@
       {#if activeTab === "skills"}
         <section class="settings-section">
           <div class="settings-section-title-row">
-            <div class="settings-section-title">Skills</div>
+            <div class="settings-section-title">{$t('settings.skills.title')}</div>
             <span
               class="info-icon"
-              title="Skill files are automatically discovered from .zcode/skills/<name>/SKILL.md and ~/.config/zcode/skills/<name>/SKILL.md."
+              title={$t('settings.skills.infoTooltip', { path1: '.zcode/skills/<name>/SKILL.md', path2: '~/.config/zcode/skills/<name>/SKILL.md' })}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                 <circle cx="12" cy="12" r="10"/>
@@ -559,13 +571,12 @@
             </span>
           </div>
           <p class="settings-section-desc">
-            Toggle a skill on or off below. Changes take effect on the next conversation turn.
+            {$t('settings.skills.desc')}
           </p>
 
           {#if skillsStore.all.length === 0}
             <p class="skills-empty">
-              No skills discovered. Place a <code>SKILL.md</code> file in one of the directories above
-              and reopen this dialog.
+              {$t('settings.skills.empty', { code: 'SKILL.md' })}
             </p>
           {:else}
             {#each skillsStore.all as skill (skill.name)}
@@ -592,6 +603,38 @@
           {/if}
         </section>
       {/if}
+
+      <!-- Section: Language -->
+      {#if activeTab === "language"}
+        <section class="settings-section">
+          <div class="settings-section-title">{$t('settings.tabs.language')}</div>
+          <p class="settings-section-desc">
+            Select the user interface language. Changes apply immediately after saving.
+          </p>
+          <div class="language-options">
+            <label class="language-option" class:selected={draftLocale === "en"}>
+              <input
+                type="radio"
+                name="locale"
+                value="en"
+                checked={draftLocale === "en"}
+                onchange={() => (draftLocale = "en")}
+              />
+              <span class="language-label">{$t('language.en')}</span>
+            </label>
+            <label class="language-option" class:selected={draftLocale === "zh"}>
+              <input
+                type="radio"
+                name="locale"
+                value="zh"
+                checked={draftLocale === "zh"}
+                onchange={() => (draftLocale = "zh")}
+              />
+              <span class="language-label">{$t('language.zh')}</span>
+            </label>
+          </div>
+        </section>
+      {/if}
     </div>
 
     <!-- Footer -->
@@ -599,7 +642,7 @@
       {#if saveError || aiWarning}
         <div class="footer-messages">
           {#if saveError}
-            <div class="save-error">保存失败，请重试</div>
+            <div class="save-error">{$t('settings.saveError')}</div>
           {/if}
           {#if aiWarning}
             <div class="ai-warning-footer">
@@ -609,8 +652,8 @@
           {/if}
         </div>
       {/if}
-      <button class="settings-btn-secondary" onclick={handleCancel}>Cancel</button>
-      <button class="settings-btn-primary" onclick={handleSave}>Save</button>
+      <button class="settings-btn-secondary" onclick={handleCancel}>{$t('common.cancel')}</button>
+      <button class="settings-btn-primary" onclick={handleSave}>{$t('common.save')}</button>
     </div>
   </div>
 </dialog>
@@ -992,6 +1035,44 @@
     font-size: 12px;
     color: var(--zc-text-tertiary, #A8A49D);
     line-height: 1.5;
+  }
+
+  /* ── Language options ── */
+  .language-options {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .language-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--zc-border, #E7E4DD);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  .language-option:hover {
+    background: var(--zc-bg-chrome, #F4F2ED);
+  }
+
+  .language-option.selected {
+    border-color: var(--zc-text-primary, #1F1E1C);
+    background: var(--zc-bg-chrome, #F4F2ED);
+  }
+
+  .language-option input[type="radio"] {
+    accent-color: var(--zc-text-primary, #1F1E1C);
+  }
+
+  .language-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   /* ── Toggle switch ── */

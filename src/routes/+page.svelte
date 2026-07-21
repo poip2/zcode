@@ -19,6 +19,7 @@
   import { reloadSourcesFiles } from "$lib/stores/workspaceFiles";
   
   import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import { t, tt } from "$lib/i18n";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -68,13 +69,13 @@
     await reloadSourcesFiles(sourcesFolder);
     const parts: string[] = [];
     if (copiedCount > 0) {
-      parts.push(`Copied ${copiedCount} file${copiedCount === 1 ? "" : "s"} to Sources`);
+      parts.push(tt('editor.copied', { count: copiedCount }));
     }
     if (copyErrors > 0) {
-      parts.push(`${copyErrors} cop${copyErrors === 1 ? "y" : "ies"} failed`);
+      parts.push(tt('editor.copyFailed', { count: copyErrors }));
     }
     if (parts.length > 0) {
-      flashStatus(parts.join(" — "));
+      flashStatus(parts.join(tt('editor.sep')));
     }
   }
 
@@ -195,10 +196,10 @@
 
       dirty = false;
       isEditing = false;
-      flashStatus("Saved");
+      flashStatus(tt('editor.saved'));
     } catch (err) {
       console.error("Save failed:", err);
-      flashStatus(`Save failed: ${err}`);
+      flashStatus(tt('editor.saveFailed', { error: String(err) }));
     }
   }
 
@@ -279,27 +280,27 @@
     <main class="main-pane">
       {#if !rendererReady}
         <div class="state-center">
-          <p class="state-text">Loading…</p>
+          <p class="state-text">{$t('editor.loading')}</p>
         </div>
       {:else if doc.loading}
         <div class="state-center">
-          <p class="state-text">Opening file…</p>
+          <p class="state-text">{$t('editor.opening')}</p>
         </div>
       {:else if doc.error}
         <div class="state-center">
           <div class="error-box">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <p class="error-msg">{doc.error}</p>
-            <button class="retry-btn" onclick={handleOpenDialog}>Open a file</button>
+            <button class="retry-btn" onclick={handleOpenDialog}>{$t('editor.openFile')}</button>
           </div>
         </div>
       {:else if $externalFile}
         <div class="state-center">
           <div class="empty-state">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="8" y1="2" x2="16" y2="2"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="8 14 12 18 16 14"/></svg>
-            <h2>This file type isn't previewable here</h2>
+            <h2>{$t('editor.notPreviewable')}</h2>
             <p class="hint">{$externalFile.name}</p>
-            <button class="open-btn" onclick={() => openInShell($externalFile!.path)}>Open in default app</button>
+            <button class="open-btn" onclick={() => openInShell($externalFile!.path)}>{$t('editor.openInApp')}</button>
           </div>
         </div>
       {:else if doc.filePath && isEditing}
@@ -312,9 +313,9 @@
         <div class="state-center">
           <div class="empty-state">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            <h2>Open a Markdown file</h2>
-            <p class="hint">Press <kbd>⌘O</kbd> or drop files here to copy to Sources</p>
-            <button class="open-btn" onclick={handleOpenDialog}>Open File…</button>
+            <h2>{$t('editor.openMarkdown')}</h2>
+            <p class="hint">{$t('editor.openHint')}</p>
+            <button class="open-btn" onclick={handleOpenDialog}>{$t('editor.openFileBtn')}</button>
           </div>
         </div>
       {/if}
@@ -327,19 +328,19 @@
           {:else}
             <span class="status-file">{doc.fileName ?? ""}</span>
             {#if dirty}
-              <span class="status-dirty">(unsaved)</span>
+              <span class="status-dirty">{$t('editor.unsaved')}</span>
             {/if}
             <span class="status-mode">
-              {isEditing ? "— Editing" : "— Preview"}
+              {isEditing ? $t('editor.editing') : $t('editor.preview')}
             </span>
           {/if}
           <span class="status-hints">
             {#if isEditing}
-              <span class="hint-full">⌘O Open &nbsp; ⌘E Preview &nbsp; ⌘S Save &nbsp; ⌘B Sidebar</span>
+              <span class="hint-full">{$t('editor.shortcuts.editing')}</span>
             {:else}
-              <span class="hint-full">⌘O Open &nbsp; ⌘E Edit &nbsp; ⌘S Save &nbsp; ⌘B Sidebar</span>
+              <span class="hint-full">{$t('editor.shortcuts.preview')}</span>
             {/if}
-            <span class="hint-compact">⌘O &nbsp; ⌘E &nbsp; ⌘S &nbsp; ⌘B</span>
+            <span class="hint-compact">{$t('editor.shortcuts.compact')}</span>
           </span>
         </div>
       {/if}
@@ -357,7 +358,7 @@
           <line x1="12" y1="11" x2="12" y2="17"/>
           <polyline points="8 14 12 18 16 14"/>
         </svg>
-        <p>Drop files to copy to Sources</p>
+        <p>{$t('editor.dropHint')}</p>
       </div>
     </div>
   {/if}
@@ -492,16 +493,6 @@
   .hint {
     font-size: 13px;
     color: var(--zc-text-secondary, #8A8782);
-  }
-
-  .hint kbd {
-    display: inline-block;
-    padding: 1px 6px;
-    font-size: 12px;
-    font-family: "SF Mono", monospace;
-    background: #f2f2f7;
-    border: 1px solid #e5e5ea;
-    border-radius: 4px;
   }
 
   .open-btn {

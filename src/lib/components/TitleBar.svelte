@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { document as docStore } from "$lib/stores/document";
+  import { t } from "$lib/i18n";
 
   let {
     sidebarVisible,
@@ -14,7 +15,10 @@
 
   let doc = $derived($docStore);
 
-  // Window controls
+  // Detect macOS — native traffic lights via titleBarStyle: Overlay
+  const isMac = navigator.platform.includes('Mac');
+
+  // Window controls (hidden on macOS — native traffic lights handle this)
   function minimize() {
     getCurrentWindow().minimize();
   }
@@ -28,12 +32,12 @@
   }
 </script>
 
-<div class="titlebar" data-tauri-drag-region>
+<div class="titlebar" class:mac={isMac} data-tauri-drag-region>
   <!-- Left: sidebar toggle -->
   <button
     class="tb-btn tb-toggle"
     onclick={onToggleSidebar}
-    title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
+    title={sidebarVisible ? $t('titlebar.hideSidebar') : $t('titlebar.showSidebar')}
     data-tauri-drag-region="false"
   >
     {#if sidebarVisible}
@@ -59,7 +63,7 @@
   <button
     class="tb-btn"
     onclick={onOpenSettings}
-    title="Settings"
+    title={$t('titlebar.settings')}
     data-tauri-drag-region="false"
   >
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -70,29 +74,31 @@
 
   <!-- Center: filename + dropdown (TODO) -->
   <div class="tb-center" data-tauri-drag-region>
-    <span class="tb-filename" data-tauri-drag-region>{doc.fileName ?? "zcode"}</span>
+    <span class="tb-filename" data-tauri-drag-region>{doc.fileName ?? $t('titlebar.defaultTitle')}</span>
     <!-- TODO: dropdown for file switcher -->
   </div>
 
-  <!-- Right: window controls -->
+  <!-- Right: window controls (hidden on macOS — native traffic lights) -->
+  {#if !isMac}
   <div class="tb-controls" data-tauri-drag-region="false">
-    <button class="tb-btn" onclick={minimize} title="Minimize">
+    <button class="tb-btn" onclick={minimize} title={$t('titlebar.minimize')}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
         <line x1="3" y1="8" x2="13" y2="8"/>
       </svg>
     </button>
-    <button class="tb-btn" onclick={toggleMaximize} title="Maximize">
+    <button class="tb-btn" onclick={toggleMaximize} title={$t('titlebar.maximize')}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
         <rect x="3" y="3" width="10" height="10" rx="1"/>
       </svg>
     </button>
-    <button class="tb-btn tb-close" onclick={closeWindow} title="Close">
+    <button class="tb-btn tb-close" onclick={closeWindow} title={$t('titlebar.close')}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
         <line x1="4" y1="4" x2="12" y2="12"/>
         <line x1="12" y1="4" x2="4" y2="12"/>
       </svg>
     </button>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -104,6 +110,11 @@
     border-bottom: 1px solid var(--zc-border, #E7E4DD);
     user-select: none;
     flex-shrink: 0;
+  }
+
+  /* macOS: leave room for native traffic lights (left side) */
+  .titlebar.mac {
+    padding-left: 68px;
   }
 
   .tb-btn {

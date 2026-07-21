@@ -26,6 +26,8 @@ export interface WorkspaceFolders {
   outputFolder: string;
 }
 
+export type Locale = 'en' | 'zh';
+
 export interface AppSettings {
   aiProvider: AIProviderSettings;
   /** Folder for generated non-md files (word, pdf, etc.). Default: {dataDir}/output */
@@ -36,6 +38,11 @@ export interface AppSettings {
   scriptsFolder?: string;
   /** Staging area for existing non-md files the user wants the agent to modify. Default: {dataDir}/sources */
   sourcesFolder?: string;
+  /** UI language */
+  locale?: Locale;
+  /** Agent panel dimensions (persisted across sessions) */
+  agentPanelWidth?: number;
+  agentPanelHeight?: number;
 }
 
 const DEFAULTS: AppSettings = {
@@ -68,6 +75,9 @@ export async function load(): Promise<AppSettings> {
         pinFolder: saved.pinFolder,
         scriptsFolder: saved.scriptsFolder,
         sourcesFolder: saved.sourcesFolder,
+        locale: saved.locale,
+        agentPanelWidth: saved.agentPanelWidth,
+        agentPanelHeight: saved.agentPanelHeight,
       };
     }
   } catch {

@@ -1,0 +1,151 @@
+{
+  "common": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "close": "Close",
+    "reset": "Reset",
+    "browse": "Browse…",
+    "change": "Change…"
+  },
+  "sidebar": {
+    "title": "Files",
+    "loading": "Loading…",
+    "emptyFolder": "Empty folder",
+    "openHint": "Open a folder to browse files",
+    "newFile": "New file",
+    "newFolder": "New folder",
+    "pinFolder": "Pin folder",
+    "unpinFolder": "Unpin folder",
+    "collapseFolder": "Collapse folder",
+    "expandFolder": "Expand folder",
+    "confirm": "Confirm",
+    "sources": "Sources",
+    "output": "Output",
+    "openFolder": "Open folder",
+    "outputPanel": "Output panel",
+    "filenamePlaceholder": "filename.md",
+    "folderPlaceholder": "folder name",
+    "failedReadPinned": "Failed to read pinned folder: {error}",
+    "failedReadFolder": "Failed to read folder: {error}"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "folder": "Default Folder",
+      "ai": "AI Provider",
+      "skills": "Skills",
+      "language": "Language"
+    },
+    "folder": {
+      "pinTitle": "Pin Folder",
+      "pinDesc": "Working folder opened on launch. If not set, defaults to {path}.",
+      "scriptsTitle": "Scripts Folder",
+      "scriptsDesc": "Where the agent writes scripts it creates to complete tasks (Python, JS, etc.). If not set, defaults to {path}.",
+      "sourcesTitle": "Sources Folder",
+      "sourcesDesc": "Staging area for existing files (Word, Excel, etc.) you want the agent to modify. Copy a file here before asking the agent to edit it. If not set, defaults to {path}.",
+      "outputTitle": "Output Folder",
+      "outputDesc": "Where the agent writes generated non-md files (Word, PDF, etc.). If not set, defaults to {path}.",
+      "resetToDefault": "Reset to default"
+    },
+    "ai": {
+      "title": "AI Provider",
+      "desc": "Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain. Standard path suffixes (like {code1} or {code2}) are appended automatically if omitted.",
+      "baseUrl": "Base URL",
+      "apiKey": "API Key",
+      "model": "Model",
+      "clickToEdit": "Click to edit",
+      "clickToReplace": "Click to replace",
+      "enterNewKey": "Enter a new key to replace",
+      "keyPlaceholder": "sk-your-key-here",
+      "showKey": "Show key",
+      "hideKey": "Hide key",
+      "keepExisting": "Keep existing key"
+    },
+    "skills": {
+      "title": "Skills",
+      "desc": "Toggle a skill on or off below. Changes take effect on the next conversation turn.",
+      "empty": "No skills discovered. Place a {code} file in one of the directories above and reopen this dialog.",
+      "infoTooltip": "Skill files are automatically discovered from {path1} and {path2}."
+    },
+    "saveError": "Save failed, please try again"
+  },
+  "titlebar": {
+    "hideSidebar": "Hide sidebar",
+    "showSidebar": "Show sidebar",
+    "settings": "Settings",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close",
+    "defaultTitle": "zcode"
+  },
+  "agent": {
+    "defaultTitle": "AI Agent",
+    "history": "History",
+    "newAgent": "New Agent",
+    "closePanel": "Close panel",
+    "emptyTitle": "Ask me anything about your project.",
+    "emptyHint": "I can read, write, and edit files, run commands, and search your codebase.",
+    "thinking": "Thinking…",
+    "running": "Running {tool}…",
+    "stop": "Stop",
+    "send": "Send message",
+    "responding": "Agent is responding…",
+    "placeholder": "Ask something… (Enter to send, Shift+Enter for new line)",
+    "searchPlaceholder": "Search conversations…",
+    "noMatch": "No matching conversations",
+    "noConversations": "No conversations yet",
+    "messages": "{count} messages",
+    "time": {
+      "justNow": "Just now",
+      "minAgo": "{n}m ago",
+      "hourAgo": "{n}h ago",
+      "dayAgo": "{n}d ago"
+    }
+  },
+  "toolConfirm": {
+    "title": "Allow tool execution?",
+    "writeDesc": "Agent wants to write a file",
+    "editDesc": "Agent wants to edit a file",
+    "shellDesc": "Agent wants to run a command",
+    "file": "File",
+    "command": "Command",
+    "showChanges": "Show changes",
+    "hideChanges": "Hide changes",
+    "autoApprove": "Auto-approve future write/edit/shell operations",
+    "reject": "Reject",
+    "approve": "Approve"
+  },
+  "editor": {
+    "loading": "Loading…",
+    "opening": "Opening file…",
+    "openFile": "Open a file",
+    "notPreviewable": "This file type isn't previewable here",
+    "openInApp": "Open in default app",
+    "openMarkdown": "Open a Markdown file",
+    "openHint": "Press ⌘O or drop files here to copy to Sources",
+    "openFileBtn": "Open File…",
+    "saved": "Saved",
+    "saveFailed": "Save failed: {error}",
+    "unsaved": "(unsaved)",
+    "editing": "— Editing",
+    "preview": "— Preview",
+    "shortcuts": {
+      "editing": "⌘O Open  ⌘E Preview  ⌘S Save  ⌘B Sidebar",
+      "preview": "⌘O Open  ⌘E Edit  ⌘S Save  ⌘B Sidebar",
+      "compact": "⌘O  ⌘E  ⌘S  ⌘B"
+    },
+    "dropHint": "Drop files to copy to Sources",
+    "copied": "Copied {count} file(s) to Sources",
+    "copyFailed": "{count} cop(ies) failed",
+    "sep": " — "
+  },
+  "markdown": {
+    "copy": "Copy",
+    "copied": "Copied!"
+  },
+  "language": {
+    "en": "English",
+    "zh": "中文"
+  }
+}

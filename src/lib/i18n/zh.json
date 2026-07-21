@@ -123,7 +123,7 @@
     "notPreviewable": "此文件类型无法在此预览",
     "openInApp": "用默认程序打开",
     "openMarkdown": "打开 Markdown 文件",
-    "openHint": "按 ⌘O 或拖放文件以复制到素材",
+    "openHint": "按 {shortcut} 或拖放文件以复制到素材",
     "openFileBtn": "打开文件…",
     "saved": "已保存",
     "saveFailed": "保存失败：{error}",
@@ -136,7 +136,9 @@
       "compact": "⌘O  ⌘E  ⌘S  ⌘B"
     },
     "dropHint": "拖放文件以复制到素材",
+    "copiedOne": "已将 {count} 个文件复制到素材",
     "copied": "已将 {count} 个文件复制到素材",
+    "copyFailedOne": "{count} 个文件复制失败",
     "copyFailed": "{count} 个文件复制失败",
     "sep": " — "
   },
@@ -147,5 +149,10 @@
   "language": {
     "en": "English",
     "zh": "中文"
+  },
+  "settings": {
+    "language": {
+      "desc": "选择用户界面语言。更改在保存后立即生效。"
+    }
   }
 }

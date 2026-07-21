@@ -314,7 +314,7 @@
           <div class="empty-state">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             <h2>{$t('editor.openMarkdown')}</h2>
-            <p class="hint">{$t('editor.openHint')}</p>
+            <p class="hint">{@html $t('editor.openHint', { shortcut: '<kbd>⌘O</kbd>' })}</p>
             <button class="open-btn" onclick={handleOpenDialog}>{$t('editor.openFileBtn')}</button>
           </div>
         </div>
@@ -493,6 +493,15 @@
   .hint {
     font-size: 13px;
     color: var(--zc-text-secondary, #8A8782);
+  }
+
+  .hint :global(kbd) {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    padding: 1px 5px;
+    background: var(--zc-bg-chrome, #F4F2ED);
+    border: 1px solid var(--zc-border, #E7E4DD);
+    border-radius: 4px;
   }
 
   .open-btn {

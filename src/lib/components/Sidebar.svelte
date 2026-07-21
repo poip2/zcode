@@ -311,7 +311,7 @@
   <!-- File tree -->
   <div class="tree-scroll">
     {#if ft.loading}
-      <div class="tree-empty">Loading…</div>
+      <div class="tree-empty">{$t('sidebar.loading')}</div>
     {:else if ft.error}
       <div class="tree-error">{ft.error}</div>
     {:else if ft.tree?.children?.length}
@@ -502,9 +502,9 @@
         {/if}
       {/each}
     {:else if ft.rootPath && ft.tree}
-      <div class="tree-empty">Empty folder</div>
+      <div class="tree-empty">{$t('sidebar.emptyFolder')}</div>
     {:else if !ft.rootPath}
-      <div class="tree-empty hint">Open a folder to browse files</div>
+      <div class="tree-empty hint">{$t('sidebar.openHint')}</div>
     {/if}
   </div>
 

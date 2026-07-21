@@ -123,7 +123,7 @@
     "notPreviewable": "This file type isn't previewable here",
     "openInApp": "Open in default app",
     "openMarkdown": "Open a Markdown file",
-    "openHint": "Press ⌘O or drop files here to copy to Sources",
+    "openHint": "Press {shortcut} or drop files here to copy to Sources",
     "openFileBtn": "Open File…",
     "saved": "Saved",
     "saveFailed": "Save failed: {error}",
@@ -136,8 +136,10 @@
       "compact": "⌘O  ⌘E  ⌘S  ⌘B"
     },
     "dropHint": "Drop files to copy to Sources",
-    "copied": "Copied {count} file(s) to Sources",
-    "copyFailed": "{count} cop(ies) failed",
+    "copiedOne": "Copied {count} file to Sources",
+    "copied": "Copied {count} files to Sources",
+    "copyFailedOne": "{count} copy failed",
+    "copyFailed": "{count} copies failed",
     "sep": " — "
   },
   "markdown": {
@@ -147,5 +149,10 @@
   "language": {
     "en": "English",
     "zh": "中文"
+  },
+  "settings": {
+    "language": {
+      "desc": "Select the user interface language. Changes apply immediately after saving."
+    }
   }
 }

@@ -5,7 +5,8 @@
   import { document as docStore } from "$lib/stores/document";
   import { openFolderDialog, listDirTree, getBaseDir, getDefaultDataDir, joinPath } from "$lib/tauri/files";
   import { saveApiKey, maskApiKey, checkApiKey } from "$lib/tauri/ai";
-  import { load as loadSettings, save as saveSettings, type AIProviderSettings, type Locale } from "$lib/stores/settings";
+  import { load as loadSettings, save as saveSettings, type AIProviderSettings } from "$lib/stores/settings";
+  import type { Locale } from "$lib/i18n";
   import { skillsStore } from "$lib/stores/skills.svelte";
   import { t, locale } from "$lib/i18n";
 
@@ -472,6 +473,7 @@
       {#if activeTab === "ai"}
         <section class="settings-section">
           <div class="settings-section-title">{$t('settings.ai.title')}</div>
+          <p class="settings-section-desc">{$t('settings.ai.desc', { code1: '/v1/chat/completions', code2: '/v1/messages' })}</p>
 
           {#if keychainWarning}
             <p class="keychain-warning">{keychainWarning}</p>
@@ -608,9 +610,7 @@
       {#if activeTab === "language"}
         <section class="settings-section">
           <div class="settings-section-title">{$t('settings.tabs.language')}</div>
-          <p class="settings-section-desc">
-            Select the user interface language. Changes apply immediately after saving.
-          </p>
+          <p class="settings-section-desc">{$t('settings.language.desc')}</p>
           <div class="language-options">
             <label class="language-option" class:selected={draftLocale === "en"}>
               <input

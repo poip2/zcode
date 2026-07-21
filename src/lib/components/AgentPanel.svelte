@@ -80,8 +80,8 @@
   // Derived: panel title from first user message
   let panelTitle = $derived(
     messages.length === 0
-      ? tt('agent.defaultTitle')
-      : (messages.find(m => m.role === "user")?.content.trim().slice(0, 40) ?? tt('agent.defaultTitle')) +
+      ? $t('agent.defaultTitle')
+      : (messages.find(m => m.role === "user")?.content.trim().slice(0, 40) ?? $t('agent.defaultTitle')) +
         (messages.length > 1 ? "…" : "")
   );
 

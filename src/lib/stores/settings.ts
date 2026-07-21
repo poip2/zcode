@@ -1,5 +1,6 @@
 import { Store } from "@tauri-apps/plugin-store";
 import { joinPath } from "$lib/tauri/files";
+import type { Locale } from "$lib/i18n";
 
 const STORE_FILE = "zcode-settings.json";
 
@@ -25,8 +26,6 @@ export interface WorkspaceFolders {
   sourcesFolder: string;
   outputFolder: string;
 }
-
-export type Locale = 'en' | 'zh';
 
 export interface AppSettings {
   aiProvider: AIProviderSettings;

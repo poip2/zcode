@@ -38,18 +38,18 @@
     },
     "folder": {
       "pinTitle": "固定文件夹",
-      "pinDesc": "启动时打开的工作文件夹。如未设置，默认为 {path}。",
+      "pinDesc": "启动时打开的工作文件夹。",
       "scriptsTitle": "脚本文件夹",
-      "scriptsDesc": "Agent 创建脚本（Python、JS 等）时的存放位置。如未设置，默认为 {path}。",
+      "scriptsDesc": "Agent 创建脚本（Python、JS 等）时的存放位置。",
       "sourcesTitle": "素材文件夹",
-      "sourcesDesc": "需要 Agent 修改的现有文件（Word、Excel 等）的暂存区。在要求 Agent 编辑之前，将文件复制到此。如未设置，默认为 {path}。",
+      "sourcesDesc": "需要 Agent 修改的现有文件（Word、Excel 等）的暂存区。在要求 Agent 编辑之前，将文件复制到此。",
       "outputTitle": "输出文件夹",
-      "outputDesc": "Agent 写入生成的非 md 文件（Word、PDF 等）的位置。如未设置，默认为 {path}。",
+      "outputDesc": "Agent 写入生成的非 md 文件（Word、PDF 等）的位置。",
       "resetToDefault": "恢复默认"
     },
     "ai": {
       "title": "AI 服务",
-      "desc": "将 zcode 连接到 OpenAI 兼容接口或 Anthropic 兼容接口。API Key 存储在系统密钥链中。标准路径后缀（如 {code1} 或 {code2}）如果省略将自动追加。",
+      "desc": "将 zcode 连接到 OpenAI 兼容接口或 Anthropic 兼容接口。API Key 存储在系统密钥链中。",
       "baseUrl": "接口地址",
       "apiKey": "API Key",
       "model": "模型",

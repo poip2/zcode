@@ -38,18 +38,18 @@
     },
     "folder": {
       "pinTitle": "Pin Folder",
-      "pinDesc": "Working folder opened on launch. If not set, defaults to {path}.",
+      "pinDesc": "Working folder opened on launch.",
       "scriptsTitle": "Scripts Folder",
-      "scriptsDesc": "Where the agent writes scripts it creates to complete tasks (Python, JS, etc.). If not set, defaults to {path}.",
+      "scriptsDesc": "Where the agent writes scripts it creates to complete tasks (Python, JS, etc.).",
       "sourcesTitle": "Sources Folder",
-      "sourcesDesc": "Staging area for existing files (Word, Excel, etc.) you want the agent to modify. Copy a file here before asking the agent to edit it. If not set, defaults to {path}.",
+      "sourcesDesc": "Staging area for existing files (Word, Excel, etc.) you want the agent to modify. Copy a file here before asking the agent to edit it.",
       "outputTitle": "Output Folder",
-      "outputDesc": "Where the agent writes generated non-md files (Word, PDF, etc.). If not set, defaults to {path}.",
+      "outputDesc": "Where the agent writes generated non-md files (Word, PDF, etc.).",
       "resetToDefault": "Reset to default"
     },
     "ai": {
       "title": "AI Provider",
-      "desc": "Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain. Standard path suffixes (like {code1} or {code2}) are appended automatically if omitted.",
+      "desc": "Connect zcode to an OpenAI-compatible endpoint or Anthropic-compatible endpoint. Your API key is stored in the system keychain.",
       "baseUrl": "Base URL",
       "apiKey": "API Key",
       "model": "Model",

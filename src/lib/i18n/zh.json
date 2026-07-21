@@ -68,7 +68,10 @@
       "empty": "未发现技能。在上述目录中放置一个 {code} 文件，然后重新打开此对话框。",
       "infoTooltip": "技能文件自动从 {path1} 和 {path2} 中发现。"
     },
-    "saveError": "保存失败，请重试"
+    "saveError": "保存失败，请重试",
+    "language": {
+      "desc": "选择用户界面语言。更改在保存后立即生效。"
+    }
   },
   "titlebar": {
     "hideSidebar": "隐藏侧栏",
@@ -149,10 +152,5 @@
   "language": {
     "en": "English",
     "zh": "中文"
-  },
-  "settings": {
-    "language": {
-      "desc": "选择用户界面语言。更改在保存后立即生效。"
-    }
   }
 }

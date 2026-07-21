@@ -68,7 +68,10 @@
       "empty": "No skills discovered. Place a {code} file in one of the directories above and reopen this dialog.",
       "infoTooltip": "Skill files are automatically discovered from {path1} and {path2}."
     },
-    "saveError": "Save failed, please try again"
+    "saveError": "Save failed, please try again",
+    "language": {
+      "desc": "Select the user interface language. Changes apply immediately after saving."
+    }
   },
   "titlebar": {
     "hideSidebar": "Hide sidebar",
@@ -149,10 +152,5 @@
   "language": {
     "en": "English",
     "zh": "中文"
-  },
-  "settings": {
-    "language": {
-      "desc": "Select the user interface language. Changes apply immediately after saving."
-    }
   }
 }

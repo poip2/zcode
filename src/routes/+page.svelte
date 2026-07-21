@@ -69,10 +69,10 @@
     await reloadSourcesFiles(sourcesFolder);
     const parts: string[] = [];
     if (copiedCount > 0) {
-      parts.push(tt('editor.copied', { count: copiedCount }));
+      parts.push(tt(copiedCount === 1 ? 'editor.copiedOne' : 'editor.copied', { count: copiedCount }));
     }
     if (copyErrors > 0) {
-      parts.push(tt('editor.copyFailed', { count: copyErrors }));
+      parts.push(tt(copyErrors === 1 ? 'editor.copyFailedOne' : 'editor.copyFailed', { count: copyErrors }));
     }
     if (parts.length > 0) {
       flashStatus(parts.join(tt('editor.sep')));

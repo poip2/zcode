@@ -22,6 +22,7 @@ use crate::model::{
     AssistantMessage, ContentBlock, Message, StopReason, TextContent, Usage, UserContent,
     UserMessage,
 };
+use crate::provider::CacheRetention;
 use crate::provider::StreamOptions;
 use crate::runtime_env::{self, RuntimeState};
 use crate::settings;
@@ -815,6 +816,11 @@ fn build_system_prompt(
     prompt.push_str(base);
 
     // --- Dynamic: session context ---
+    prompt.push_str("\n**Important:** The Current Session section below reflects live editor\n");
+    prompt.push_str("state that may change between turns when the user switches files. It is\n");
+    prompt.push_str("NOT a correction of earlier messages — the user simply opened a different\n");
+    prompt.push_str("file since your last turn. Do not apologize for previous answers; just\n");
+    prompt.push_str("use the current value.\n");
     prompt.push_str("\n## Current Session\n\n");
     prompt.push_str(&format!("Working directory: {}\n", cwd.display()));
 
@@ -1146,6 +1152,13 @@ pub async fn start_agent_turn(
         max_tool_iterations: 50,
         stream_options: StreamOptions {
             session_id: Some(session_id.clone()),
+            cache_retention: if provider.api() == "anthropic-messages"
+                && base_url.contains("api.anthropic.com")
+            {
+                CacheRetention::Short
+            } else {
+                CacheRetention::None
+            },
             ..Default::default()
         },
     };

@@ -1,6 +1,5 @@
 {
   "common": {
-    "ok": "确定",
     "cancel": "取消",
     "save": "保存",
     "close": "关闭",
@@ -99,6 +98,8 @@
     "noMatch": "没有匹配的对话",
     "noConversations": "暂无对话记录",
     "messages": "{count} 条消息",
+    "openFab": "打开 AI Agent",
+    "closeFab": "关闭 AI Agent",
     "resizeHandle": "拖拽调整大小",
     "time": {
       "justNow": "刚刚",

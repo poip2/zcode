@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from "$lib/i18n";
+
   let {
     open = false,
     onclick,
@@ -12,7 +14,7 @@
   class="agent-fab"
   class:is-open={open}
   onclick={onclick}
-  title={open ? "Close AI Agent" : "Open AI Agent"}
+  title={open ? $t("agent.closeFab") : $t("agent.openFab")}
 >
   {#if open}
     <!-- X icon when open -->

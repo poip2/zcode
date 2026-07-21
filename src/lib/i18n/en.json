@@ -1,6 +1,5 @@
 {
   "common": {
-    "ok": "OK",
     "cancel": "Cancel",
     "save": "Save",
     "close": "Close",
@@ -99,6 +98,8 @@
     "noMatch": "No matching conversations",
     "noConversations": "No conversations yet",
     "messages": "{count} messages",
+    "openFab": "Open AI Agent",
+    "closeFab": "Close AI Agent",
     "resizeHandle": "Drag to resize",
     "time": {
       "justNow": "Just now",

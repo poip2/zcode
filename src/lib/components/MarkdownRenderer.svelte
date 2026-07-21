@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { tt, locale } from "$lib/i18n";
 
   let { html = "" }: { html: string } = $props();
 
@@ -7,6 +8,7 @@
 
   $effect(() => {
     html;
+    const _ = $locale;
     tick().then(() => {
       if (!articleEl) return;
       addCodeCopyButtons();
@@ -17,21 +19,22 @@
     if (!articleEl) return;
     const pres = articleEl.querySelectorAll("pre");
     for (const pre of pres) {
-      if (pre.querySelector(".code-copy-btn")) continue;
-      (pre as HTMLElement).style.position = "relative";
-
-      const btn = document.createElement("button");
-      btn.className = "code-copy-btn";
-      btn.textContent = "Copy";
-      btn.addEventListener("click", () => {
-        const code = pre.querySelector("code");
-        const text = code?.textContent ?? pre.textContent ?? "";
-        navigator.clipboard.writeText(text).then(() => {
-          btn.textContent = "Copied!";
-          setTimeout(() => (btn.textContent = "Copy"), 1500);
+      let btn = pre.querySelector(".code-copy-btn") as HTMLButtonElement | null;
+      if (!btn) {
+        (pre as HTMLElement).style.position = "relative";
+        btn = document.createElement("button");
+        btn.className = "code-copy-btn";
+        btn.addEventListener("click", () => {
+          const code = pre.querySelector("code");
+          const text = code?.textContent ?? pre.textContent ?? "";
+          navigator.clipboard.writeText(text).then(() => {
+            btn!.textContent = tt('markdown.copied');
+            setTimeout(() => (btn!.textContent = tt('markdown.copy')), 1500);
+          });
         });
-      });
-      pre.appendChild(btn);
+        pre.appendChild(btn);
+      }
+      btn.textContent = tt('markdown.copy');
     }
   }
 </script>

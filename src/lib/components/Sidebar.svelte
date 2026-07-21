@@ -22,6 +22,7 @@
   import { load as loadSettings, onSettingsChange, resolveWorkspaceFolders } from "$lib/stores/settings";
   import { sourcesFiles, outputFiles, reloadSourcesFiles, reloadOutputFiles } from "$lib/stores/workspaceFiles";
   import { isMarkdownExt } from "$lib/utils/fileTypes";
+  import { t, tt } from "$lib/i18n";
 
   // New file/folder inline editing
   let newItemMode = $state<null | "file" | "folder">(null);
@@ -83,7 +84,7 @@
             const tree = await listDirTree(p);
             folderTree.setTree(tree);
           } catch (err) {
-            folderTree.setError(`Failed to read pinned folder: ${err}`);
+            folderTree.setError(tt('sidebar.failedReadPinned', { error: String(err) }));
           }
         }
       }
@@ -171,7 +172,7 @@
       const tree = await listDirTree(path);
       folderTree.setTree(tree);
     } catch (err) {
-      folderTree.setError(`Failed to read folder: ${err}`);
+      folderTree.setError(tt('sidebar.failedReadFolder', { error: String(err) }));
     }
   }
 
@@ -218,14 +219,14 @@
 <div class="sidebar">
   <!-- Header -->
   <div class="sidebar-header">
-    <span class="sidebar-title">Files</span>
+    <span class="sidebar-title">{$t('sidebar.title')}</span>
     <div class="sidebar-actions">
       <!-- Pin / unpin current folder -->
       {#if ft.rootPath}
         <button
           class="sb-icon-btn"
           class:is-pinned={pinnedPath === ft.rootPath}
-          title={pinnedPath === ft.rootPath ? "Unpin folder" : "Pin folder"}
+          title={pinnedPath === ft.rootPath ? $t('sidebar.unpinFolder') : $t('sidebar.pinFolder')}
           onclick={handlePin}
           data-tauri-drag-region="false"
         >
@@ -247,7 +248,7 @@
       <!-- New file -->
       <button
         class="sb-icon-btn"
-        title="New file"
+        title={$t('sidebar.newFile')}
         onclick={() => startNew("file")}
         data-tauri-drag-region="false"
       >
@@ -260,7 +261,7 @@
       <!-- New folder -->
       <button
         class="sb-icon-btn"
-        title="New folder"
+        title={$t('sidebar.newFolder')}
         onclick={() => startNew("folder")}
         data-tauri-drag-region="false"
       >
@@ -292,11 +293,11 @@
         bind:this={newItemInput}
         bind:value={newItemName}
         class="new-item-input"
-        placeholder={newItemMode === "file" ? "filename.md" : "folder name"}
+        placeholder={newItemMode === "file" ? $t('sidebar.filenamePlaceholder') : $t('sidebar.folderPlaceholder')}
         onkeydown={handleNewKeydown}
         onblur={cancelNew}
       />
-      <button class="sb-icon-btn confirm-btn" onmousedown={confirmNew} title="Confirm" data-tauri-drag-region="false">
+      <button class="sb-icon-btn confirm-btn" onmousedown={confirmNew} title={$t('sidebar.confirm')} data-tauri-drag-region="false">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <polyline points="4,8 7,12 13,4"/>
         </svg>
@@ -310,7 +311,7 @@
   <!-- File tree -->
   <div class="tree-scroll">
     {#if ft.loading}
-      <div class="tree-empty">Loading…</div>
+      <div class="tree-empty">{$t('sidebar.loading')}</div>
     {:else if ft.error}
       <div class="tree-error">{ft.error}</div>
     {:else if ft.tree?.children?.length}
@@ -325,7 +326,7 @@
                 class="tree-chevron"
                 onclick={() => toggleDir(key)}
                 aria-expanded={open}
-                aria-label={open ? "Collapse folder" : "Expand folder"}
+                aria-label={open ? $t('sidebar.collapseFolder') : $t('sidebar.expandFolder')}
                 data-tauri-drag-region="false"
               >
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={open}>
@@ -356,7 +357,7 @@
                       class="tree-chevron"
                       onclick={() => toggleDir(subKey)}
                       aria-expanded={subOpen}
-                      aria-label={subOpen ? "Collapse folder" : "Expand folder"}
+                      aria-label={subOpen ? $t('sidebar.collapseFolder') : $t('sidebar.expandFolder')}
                       data-tauri-drag-region="false"
                     >
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={subOpen}>
@@ -387,7 +388,7 @@
                             class="tree-chevron"
                             onclick={() => toggleDir(leafKey)}
                             aria-expanded={leafOpen}
-                            aria-label={leafOpen ? "Collapse folder" : "Expand folder"}
+                            aria-label={leafOpen ? $t('sidebar.collapseFolder') : $t('sidebar.expandFolder')}
                             data-tauri-drag-region="false"
                           >
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="chevron-svg" class:rotated={leafOpen}>
@@ -501,9 +502,9 @@
         {/if}
       {/each}
     {:else if ft.rootPath && ft.tree}
-      <div class="tree-empty">Empty folder</div>
+      <div class="tree-empty">{$t('sidebar.emptyFolder')}</div>
     {:else if !ft.rootPath}
-      <div class="tree-empty hint">Open a folder to browse files</div>
+      <div class="tree-empty hint">{$t('sidebar.openHint')}</div>
     {/if}
   </div>
 
@@ -522,7 +523,7 @@
         >
           <polyline points="6,3 11,8 6,13"/>
         </svg>
-        <span class="section-label">Sources</span>
+        <span class="section-label">{$t('sidebar.sources')}</span>
       </button>
       {#if sourcesExpanded}
         <div class="section-list">
@@ -562,7 +563,7 @@
         >
           <polyline points="6,3 11,8 6,13"/>
         </svg>
-        <span class="section-label">Output</span>
+        <span class="section-label">{$t('sidebar.output')}</span>
       </button>
       {#if outputExpanded}
         <div class="section-list">
@@ -592,7 +593,7 @@
     <div class="segmented-btn-group">
       <button
         class="seg-btn"
-        aria-label="打开文件夹"
+        aria-label={$t('sidebar.openFolder')}
         onclick={handleOpenFolder}
         data-tauri-drag-region="false"
       >
@@ -605,7 +606,7 @@
         <span class="seg-divider" aria-hidden="true"></span>
         <button
           class="seg-btn"
-          aria-label="输出面板"
+          aria-label={$t('sidebar.outputPanel')}
           title={outputFolderPath}
           onclick={() => openInShell(outputFolderPath)}
           data-tauri-drag-region="false"

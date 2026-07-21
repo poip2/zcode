@@ -6,9 +6,16 @@
   import { startSkillsWatcher, stopSkillsWatcher, listenSkillsChanged } from "$lib/tauri/watcher";
   import { getBaseDir, getDefaultDataDir, joinPath, pathExists, createFolder } from "$lib/tauri/files";
   import { load as loadSettings, save as saveSettings, resolveWorkspaceFolders } from "$lib/stores/settings";
+  import { locale } from "$lib/i18n";
   import "../app.css";
 
-  let { children } = $props();
+  let { data, children } = $props();
+
+  $effect(() => {
+    if (data.locale) {
+      locale.set(data.locale);
+    }
+  });
 
   let currentCwd = $state<string>(".");
   let unlistenSkills: (() => void) | undefined;

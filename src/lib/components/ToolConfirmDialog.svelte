@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from "$lib/i18n";
+
   interface ToolConfirmation {
     callId: string;
     toolName: string;
@@ -86,13 +88,13 @@
         {/if}
       </div>
       <div class="confirm-title-section">
-        <h3>Allow tool execution?</h3>
+        <h3>{$t('toolConfirm.title')}</h3>
         <p class="confirm-subtitle">
           {confirmation.toolName === "write"
-            ? "Agent wants to write a file"
+            ? $t('toolConfirm.writeDesc')
             : confirmation.toolName === "edit"
-              ? "Agent wants to edit a file"
-              : "Agent wants to run a command"}
+              ? $t('toolConfirm.editDesc')
+              : $t('toolConfirm.shellDesc')}
         </p>
       </div>
     </div>
@@ -101,7 +103,7 @@
       <!-- File path -->
       {#if filePath}
         <div class="detail-row">
-          <span class="detail-label">File</span>
+          <span class="detail-label">{$t('toolConfirm.file')}</span>
           <code class="detail-path">{filePath}</code>
         </div>
       {/if}
@@ -113,7 +115,7 @@
             class="diff-toggle"
             onclick={() => (showFullDiff = !showFullDiff)}
           >
-            {showFullDiff ? "▲" : "▼"} {showFullDiff ? "Hide" : "Show"} changes
+            {showFullDiff ? "▲" : "▼"} {showFullDiff ? $t('toolConfirm.hideChanges') : $t('toolConfirm.showChanges')}
           </button>
           {#if showFullDiff}
             <div class="diff-view">
@@ -133,7 +135,7 @@
       <!-- Command preview for shell -->
       {#if commandPreview}
         <div class="command-section">
-          <span class="detail-label">Command</span>
+          <span class="detail-label">{$t('toolConfirm.command')}</span>
           <pre class="command-preview">{commandPreview}</pre>
         </div>
       {/if}
@@ -146,15 +148,15 @@
           checked={autoApproveWrites}
           onchange={(e) => onAutoApproveChange?.((e.target as HTMLInputElement).checked)}
         />
-        <span>Auto-approve future write/edit/shell operations</span>
+        <span>{$t('toolConfirm.autoApprove')}</span>
       </label>
 
       <div class="confirm-actions">
         <button class="btn-reject" onclick={() => onReject(confirmation.callId)}>
-          Reject
+          {$t('toolConfirm.reject')}
         </button>
         <button class="btn-approve" onclick={() => onApprove(confirmation.callId)}>
-          Approve
+          {$t('toolConfirm.approve')}
         </button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { Store } from "@tauri-apps/plugin-store";
 import { joinPath } from "$lib/tauri/files";
+import type { Locale } from "$lib/i18n";
 
 const STORE_FILE = "zcode-settings.json";
 
@@ -36,6 +37,11 @@ export interface AppSettings {
   scriptsFolder?: string;
   /** Staging area for existing non-md files the user wants the agent to modify. Default: {dataDir}/sources */
   sourcesFolder?: string;
+  /** UI language */
+  locale?: Locale;
+  /** Agent panel dimensions (persisted across sessions) */
+  agentPanelWidth?: number;
+  agentPanelHeight?: number;
 }
 
 const DEFAULTS: AppSettings = {
@@ -68,6 +74,9 @@ export async function load(): Promise<AppSettings> {
         pinFolder: saved.pinFolder,
         scriptsFolder: saved.scriptsFolder,
         sourcesFolder: saved.sourcesFolder,
+        locale: saved.locale,
+        agentPanelWidth: saved.agentPanelWidth,
+        agentPanelHeight: saved.agentPanelHeight,
       };
     }
   } catch {

@@ -1,0 +1,158 @@
+{
+  "common": {
+    "cancel": "取消",
+    "save": "保存",
+    "close": "关闭",
+    "reset": "重置",
+    "browse": "浏览…",
+    "change": "更改…"
+  },
+  "sidebar": {
+    "title": "文件",
+    "loading": "加载中…",
+    "emptyFolder": "空文件夹",
+    "openHint": "打开文件夹以浏览文件",
+    "newFile": "新建文件",
+    "newFolder": "新建文件夹",
+    "pinFolder": "固定文件夹",
+    "unpinFolder": "取消固定",
+    "collapseFolder": "折叠文件夹",
+    "expandFolder": "展开文件夹",
+    "confirm": "确认",
+    "sources": "素材",
+    "output": "输出",
+    "openFolder": "打开文件夹",
+    "outputPanel": "输出面板",
+    "filenamePlaceholder": "文件名.md",
+    "folderPlaceholder": "文件夹名称",
+    "failedReadPinned": "读取固定文件夹失败：{error}",
+    "failedReadFolder": "读取文件夹失败：{error}"
+  },
+  "settings": {
+    "title": "设置",
+    "tabs": {
+      "folder": "默认文件夹",
+      "ai": "AI 服务",
+      "skills": "技能",
+      "language": "语言"
+    },
+    "folder": {
+      "pinTitle": "固定文件夹",
+      "pinDesc": "启动时打开的工作文件夹。如未设置，默认为 {path}。",
+      "scriptsTitle": "脚本文件夹",
+      "scriptsDesc": "Agent 创建脚本（Python、JS 等）时的存放位置。如未设置，默认为 {path}。",
+      "sourcesTitle": "素材文件夹",
+      "sourcesDesc": "需要 Agent 修改的现有文件（Word、Excel 等）的暂存区。在要求 Agent 编辑之前，将文件复制到此。如未设置，默认为 {path}。",
+      "outputTitle": "输出文件夹",
+      "outputDesc": "Agent 写入生成的非 md 文件（Word、PDF 等）的位置。如未设置，默认为 {path}。",
+      "resetToDefault": "恢复默认"
+    },
+    "ai": {
+      "title": "AI 服务",
+      "desc": "将 zcode 连接到 OpenAI 兼容接口或 Anthropic 兼容接口。API Key 存储在系统密钥链中。标准路径后缀（如 {code1} 或 {code2}）如果省略将自动追加。",
+      "baseUrl": "接口地址",
+      "apiKey": "API Key",
+      "model": "模型",
+      "clickToEdit": "点击编辑",
+      "clickToReplace": "点击替换",
+      "enterNewKey": "输入新 Key 以替换",
+      "keyPlaceholder": "sk-your-key-here",
+      "showKey": "显示 Key",
+      "hideKey": "隐藏 Key",
+      "keepExisting": "保留现有 Key"
+    },
+    "skills": {
+      "title": "技能",
+      "desc": "在下方启用或禁用技能。更改将在下一次对话时生效。",
+      "empty": "未发现技能。在上述目录中放置一个 {code} 文件，然后重新打开此对话框。",
+      "infoTooltip": "技能文件自动从 {path1} 和 {path2} 中发现。"
+    },
+    "saveError": "保存失败，请重试",
+    "language": {
+      "desc": "选择用户界面语言。更改在保存后立即生效。"
+    }
+  },
+  "titlebar": {
+    "hideSidebar": "隐藏侧栏",
+    "showSidebar": "显示侧栏",
+    "settings": "设置",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "close": "关闭",
+    "defaultTitle": "zcode"
+  },
+  "agent": {
+    "defaultTitle": "AI Agent",
+    "history": "历史",
+    "newAgent": "新建会话",
+    "closePanel": "关闭面板",
+    "emptyTitle": "关于你的项目，尽管问我。",
+    "emptyHint": "我可以读写编辑文件、运行命令、搜索代码库。",
+    "thinking": "思考中…",
+    "running": "正在执行 {tool}…",
+    "stop": "停止",
+    "send": "发送消息",
+    "responding": "Agent 正在回复…",
+    "placeholder": "输入问题…（Enter 发送，Shift+Enter 换行）",
+    "searchPlaceholder": "搜索对话…",
+    "noMatch": "没有匹配的对话",
+    "noConversations": "暂无对话记录",
+    "messages": "{count} 条消息",
+    "openFab": "打开 AI Agent",
+    "closeFab": "关闭 AI Agent",
+    "resizeHandle": "拖拽调整大小",
+    "time": {
+      "justNow": "刚刚",
+      "minAgo": "{n}分钟前",
+      "hourAgo": "{n}小时前",
+      "dayAgo": "{n}天前"
+    }
+  },
+  "toolConfirm": {
+    "title": "允许执行工具？",
+    "writeDesc": "Agent 想要写入文件",
+    "editDesc": "Agent 想要编辑文件",
+    "shellDesc": "Agent 想要执行命令",
+    "file": "文件",
+    "command": "命令",
+    "showChanges": "显示变更",
+    "hideChanges": "隐藏变更",
+    "autoApprove": "自动批准后续的写入/编辑/命令操作",
+    "reject": "拒绝",
+    "approve": "批准"
+  },
+  "editor": {
+    "loading": "加载中…",
+    "opening": "正在打开文件…",
+    "openFile": "打开文件",
+    "notPreviewable": "此文件类型无法在此预览",
+    "openInApp": "用默认程序打开",
+    "openMarkdown": "打开 Markdown 文件",
+    "openHint": "按 {shortcut} 或拖放文件以复制到素材",
+    "openFileBtn": "打开文件…",
+    "saved": "已保存",
+    "saveFailed": "保存失败：{error}",
+    "unsaved": "（未保存）",
+    "editing": "— 编辑中",
+    "preview": "— 预览",
+    "shortcuts": {
+      "editing": "⌘O 打开  ⌘E 预览  ⌘S 保存  ⌘B 侧栏",
+      "preview": "⌘O 打开  ⌘E 编辑  ⌘S 保存  ⌘B 侧栏",
+      "compact": "⌘O  ⌘E  ⌘S  ⌘B"
+    },
+    "dropHint": "拖放文件以复制到素材",
+    "copiedOne": "已将 {count} 个文件复制到素材",
+    "copied": "已将 {count} 个文件复制到素材",
+    "copyFailedOne": "{count} 个文件复制失败",
+    "copyFailed": "{count} 个文件复制失败",
+    "sep": " — "
+  },
+  "markdown": {
+    "copy": "复制",
+    "copied": "已复制！"
+  },
+  "language": {
+    "en": "English",
+    "zh": "中文"
+  }
+}

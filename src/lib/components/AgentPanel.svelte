@@ -10,6 +10,7 @@
   import { skillsStore } from "$lib/stores/skills.svelte";
   import { reloadOutputFiles, reloadSourcesFiles } from "$lib/stores/workspaceFiles";
   import { folderTree } from "$lib/stores/folderTree";
+  import { t, tt } from "$lib/i18n";
 
   type AgentSession = Awaited<ReturnType<typeof getAgentSession>>;
 
@@ -59,17 +60,28 @@
 
   let inputEl: HTMLTextAreaElement | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
+  let panelEl: HTMLDivElement | undefined = $state();
   let unsubMessages: (() => void) | undefined;
   let unsubPinned: () => void;
   let unsubDoc: () => void;
   let mounted = false;
   let loading = $state(true);
 
+  // Resize state
+  const MIN_W = 300, MIN_H = 300;
+  let panelWidth = $state(360);
+  let panelHeight = $state(480);
+  let resizing = $state(false);
+  let resizeStartX = $state(0);
+  let resizeStartY = $state(0);
+  let resizeStartW = $state(0);
+  let resizeStartH = $state(0);
+
   // Derived: panel title from first user message
   let panelTitle = $derived(
     messages.length === 0
-      ? "AI Agent"
-      : (messages.find(m => m.role === "user")?.content.trim().slice(0, 40) ?? "AI Agent") +
+      ? $t('agent.defaultTitle')
+      : (messages.find(m => m.role === "user")?.content.trim().slice(0, 40) ?? $t('agent.defaultTitle')) +
         (messages.length > 1 ? "…" : "")
   );
 
@@ -202,6 +214,10 @@
     aiSettings = saved.aiProvider;
     autoApproveWrites = saved.aiProvider.autoApproveWrites ?? false;
 
+    // Restore panel dimensions
+    if (saved.agentPanelWidth && saved.agentPanelWidth >= MIN_W) panelWidth = saved.agentPanelWidth;
+    if (saved.agentPanelHeight && saved.agentPanelHeight >= MIN_H) panelHeight = saved.agentPanelHeight;
+
     unsubPinned = pinnedFolder.subscribe((p) => {
       pinnedPath = p;
     });
@@ -271,12 +287,12 @@
   function relativeTime(ts: number): string {
     const diff = Date.now() - ts;
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1) return tt('agent.time.justNow');
+    if (mins < 60) return tt('agent.time.minAgo', { n: mins });
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return tt('agent.time.hourAgo', { n: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
+    if (days < 7) return tt('agent.time.dayAgo', { n: days });
     return new Date(ts).toLocaleDateString();
   }
 
@@ -366,10 +382,63 @@
       .replace(/\*([^*]+)\*/g, "<em>$1</em>")
       .replace(/\n/g, "<br>");
   }
+
+  // ── Resize ──
+  function handleResizeStart(e: PointerEvent) {
+    e.preventDefault();
+    resizing = true;
+    resizeStartX = e.clientX;
+    resizeStartY = e.clientY;
+    resizeStartW = panelWidth;
+    resizeStartH = panelHeight;
+    document.body.style.userSelect = 'none';
+    // Track pointer anywhere on the document while resizing
+    document.addEventListener('pointermove', onResizeMove);
+    document.addEventListener('pointerup', onResizeEnd);
+    document.addEventListener('pointercancel', onResizeEnd);
+  }
+
+  function onResizeMove(e: PointerEvent) {
+    if (!resizing) return;
+    const dx = resizeStartX - e.clientX;
+    const dy = resizeStartY - e.clientY;
+    panelWidth = Math.max(MIN_W, Math.min(window.innerWidth - 40, resizeStartW + dx));
+    panelHeight = Math.max(MIN_H, Math.min(window.innerHeight - 100, resizeStartH + dy));
+  }
+
+  async function onResizeEnd(_e: PointerEvent) {
+    if (!resizing) return;
+    resizing = false;
+    document.body.style.userSelect = '';
+    document.removeEventListener('pointermove', onResizeMove);
+    document.removeEventListener('pointerup', onResizeEnd);
+    document.removeEventListener('pointercancel', onResizeEnd);
+    // Persist size
+    try {
+      const s = await loadSettings();
+      s.agentPanelWidth = panelWidth;
+      s.agentPanelHeight = panelHeight;
+      await saveSettings(s);
+    } catch { /* best-effort */ }
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && showHistory && (showHistory = false)} />
-<div class="agent-panel">
+<div class="agent-panel" bind:this={panelEl} style="width:{panelWidth}px; height:{panelHeight}px;">
+  <!-- Resize handle (top-left corner) -->
+  <div
+    class="resize-handle"
+    role="separator"
+    aria-label={$t('agent.resizeHandle')}
+    onpointerdown={handleResizeStart}
+    data-tauri-drag-region="false"
+    title={$t('agent.resizeHandle')}
+  >
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.6">
+      <line x1="3" y1="6" x2="13" y2="6"/>
+      <line x1="3" y1="10" x2="13" y2="10"/>
+    </svg>
+  </div>
   <!-- ============================================================== -->
   <!-- Header: dropdown title + actions                               -->
   <!-- ============================================================== -->
@@ -381,7 +450,7 @@
         <circle cx="14" cy="12" r="1.4" fill="currentColor" stroke="none"/>
         <circle cx="12" cy="7.5" r="1.4" fill="currentColor" stroke="none"/>
       </svg>
-      <button class="title-dropdown-btn" onclick={toggleHistory} title="Conversation history">
+      <button class="title-dropdown-btn" onclick={toggleHistory} title={$t('agent.history')}>
         <span class="header-title">{panelTitle}</span>
         <svg class="title-caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="4,6 8,10 12,6"/>
@@ -389,19 +458,19 @@
       </button>
     </div>
     <div class="header-right">
-      <button class="icon-btn" onclick={handleNewAgent} title="New Agent">
+      <button class="icon-btn" onclick={handleNewAgent} title={$t('agent.newAgent')}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <line x1="8" y1="3" x2="8" y2="13"/>
           <line x1="3" y1="8" x2="13" y2="8"/>
         </svg>
       </button>
-      <button class="icon-btn" onclick={toggleHistory} title="History">
+      <button class="icon-btn" onclick={toggleHistory} title={$t('agent.history')}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="8" cy="8.5" r="6"/>
           <path d="M8 5.2v3.3l2.4 1.4"/>
         </svg>
       </button>
-      <button class="icon-btn" onclick={onClose} title="Close panel">
+      <button class="icon-btn" onclick={onClose} title={$t('agent.closePanel')}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
           <line x1="4" y1="4" x2="12" y2="12"/>
           <line x1="12" y1="4" x2="4" y2="12"/>
@@ -426,8 +495,8 @@
     <div class="messages-scroll" bind:this={scrollEl}>
       {#if messages.length === 0 && !sending}
         <div class="empty-state">
-          <p>Ask me anything about your project.</p>
-          <p class="empty-hint">I can read, write, and edit files, run commands, and search your codebase.</p>
+          <p>{$t('agent.emptyTitle')}</p>
+          <p class="empty-hint">{$t('agent.emptyHint')}</p>
         </div>
       {/if}
 
@@ -467,7 +536,7 @@
             {#if streamingText}
               {@html renderMessageContent(streamingText)}<span class="cursor-blink">▌</span>
             {:else}
-              <span class="thinking">Thinking…</span>
+              <span class="thinking">{$t('agent.thinking')}</span>
             {/if}
           </div>
         </div>
@@ -480,7 +549,7 @@
             <span class="role-icon spinning">⚙️</span>
           </div>
           <div class="msg-body">
-            <span class="tool-working">Running <code>{activeToolCall.toolName}</code>…</span>
+            <span class="tool-working">{$t('agent.running', { tool: activeToolCall.toolName })}</span>
           </div>
         </div>
       {/if}
@@ -505,7 +574,7 @@
           <!-- svelte-ignore a11y_autofocus -->
           <input
             type="text"
-            placeholder="Search conversations…"
+            placeholder={$t('agent.searchPlaceholder')}
             bind:value={searchQuery}
             autofocus
           />
@@ -515,7 +584,7 @@
             <line x1="8" y1="3" x2="8" y2="13"/>
             <line x1="3" y1="8" x2="13" y2="8"/>
           </svg>
-          New Agent
+          {$t('agent.newAgent')}
         </button>
         <div class="history-list">
           {#each filteredSessions as s (s.sessionKey)}
@@ -525,11 +594,11 @@
               onclick={() => switchToHistorySession(s.sessionKey)}
             >
               <span class="history-item-title">{s.title}</span>
-              <span class="history-item-meta">{relativeTime(s.timestamp)} · {s.messageCount} messages</span>
+              <span class="history-item-meta">{relativeTime(s.timestamp)} · {$t('agent.messages', { count: s.messageCount })}</span>
             </button>
           {:else}
             <div class="history-empty">
-              {searchQuery ? "No matching conversations" : "No conversations yet"}
+              {searchQuery ? $t('agent.noMatch') : $t('agent.noConversations')}
             </div>
           {/each}
         </div>
@@ -562,7 +631,7 @@
       bind:this={inputEl}
       bind:value={inputText}
       class="chat-input"
-      placeholder={sending ? "Agent is responding…" : "Ask something… (Enter to send, Shift+Enter for new line)"}
+      placeholder={sending ? $t('agent.responding') : $t('agent.placeholder')}
       rows="2"
       onkeydown={handleKeydown}
       disabled={sending}
@@ -573,14 +642,14 @@
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <rect x="3" y="3" width="10" height="10" rx="1"/>
           </svg>
-          Stop
+          {$t('agent.stop')}
         </button>
       {:else}
         <button
           class="send-btn"
           onclick={handleSend}
           disabled={!inputText.trim()}
-          title="Send message"
+          title={$t('agent.send')}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="8" y1="2" x2="8" y2="14"/>
@@ -598,8 +667,7 @@
     bottom: 80px;
     right: 20px;
     z-index: 950;
-    width: 360px;
-    height: 480px;
+    max-width: calc(100vw - 40px);
     max-height: calc(100vh - 100px);
     display: flex;
     flex-direction: column;
@@ -609,6 +677,30 @@
     box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  /* ── Resize handle (top-left corner) ── */
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: nw-resize;
+    z-index: 10;
+    border-radius: 12px 0 4px 0;
+    color: var(--zc-text-tertiary, #A8A49D);
+    transition: background 0.1s;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .resize-handle:hover {
+    background: var(--zc-active-row, #EAE6DD);
+    color: var(--zc-text-primary, #1F1E1C);
   }
 
   /* ── Header ── */

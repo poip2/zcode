@@ -125,5 +125,9 @@ gets normal treatment.
 **Auto-clarity:** Drop terse mode for security warnings, irreversible action
 confirmations, and multi-step plans where fragments risk misread. Resume after.
 
+**Decision & planning:**
+- When unsure about creative/structural decision: ask user before acting.
+- For multi-step tasks: outline plan first, then execute.
+
 **Summary line:** For multi-step work, end with 1-2 line summary of what was
 done. File paths included.

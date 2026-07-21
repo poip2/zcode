@@ -96,22 +96,21 @@ impl AnthropicProvider {
             )
         };
 
-        // Wrap system prompt in a content block array so we can attach
-        // cache_control: { type: "ephemeral" } when caching is enabled.
-        // This is the single highest-ROI caching target: system prompt
-        // is re-sent unchanged every turn.
-        let system: Option<Vec<AnthropicSystemBlock<'_>>> = context
+        // System prompt: gate wire format on cache_retention.
+        // Plain string for None (safe for DeepSeek etc.), content-block
+        // array for Short (enables Anthropic prompt caching).
+        let system: Option<AnthropicSystem<'_>> = context
             .system_prompt
             .map(|text| {
-                vec![AnthropicSystemBlock {
-                    r#type: "text",
-                    text,
-                    cache_control: if cache_enabled {
-                        Some(CacheControl { r#type: "ephemeral" })
-                    } else {
-                        None
-                    },
-                }]
+                if cache_enabled {
+                    AnthropicSystem::Blocks(vec![AnthropicSystemBlock {
+                        r#type: "text",
+                        text,
+                        cache_control: Some(CacheControl { r#type: "ephemeral" }),
+                    }])
+                } else {
+                    AnthropicSystem::Plain(text)
+                }
             });
 
         // Build thinking config
@@ -299,7 +298,7 @@ struct AnthropicRequest<'a> {
     model: &'a str,
     messages: Vec<AnthropicMessage<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<Vec<AnthropicSystemBlock<'a>>>,
+    system: Option<AnthropicSystem<'a>>,
     max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
@@ -308,6 +307,16 @@ struct AnthropicRequest<'a> {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking: Option<AnthropicThinking>,
+}
+
+/// System prompt wire format, gated on cache_retention.
+/// Plain(&str) is compatible with all Anthropic-compatible providers.
+/// Blocks enables prompt caching for official Anthropic API.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum AnthropicSystem<'a> {
+    Plain(&'a str),
+    Blocks(Vec<AnthropicSystemBlock<'a>>),
 }
 
 /// System prompt content block with optional cache control.

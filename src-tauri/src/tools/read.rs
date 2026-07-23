@@ -22,12 +22,18 @@ struct ReadInput {
 
 pub struct ReadTool {
     cwd: PathBuf,
+    allowed_roots: Vec<PathBuf>,
 }
 
 impl ReadTool {
     pub fn new(cwd: &Path) -> Self {
+        Self::with_allowed_roots(cwd, Vec::new())
+    }
+
+    pub fn with_allowed_roots(cwd: &Path, allowed_roots: Vec<PathBuf>) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            allowed_roots,
         }
     }
 }
@@ -87,7 +93,7 @@ impl Tool for ReadTool {
         }
 
         let path = resolve_path(&input.path, &self.cwd);
-        let path = enforce_cwd_scope(&path, &self.cwd, "read")?;
+        let path = enforce_cwd_scope(&path, &self.cwd, &self.allowed_roots, "read")?;
 
         let meta = tokio::fs::metadata(&path).await.map_err(|e| {
             Error::tool("read", format!("Cannot access file '{}': {e}", input.path))

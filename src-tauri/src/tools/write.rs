@@ -21,12 +21,18 @@ struct WriteInput {
 
 pub struct WriteTool {
     cwd: PathBuf,
+    allowed_roots: Vec<PathBuf>,
 }
 
 impl WriteTool {
     pub fn new(cwd: &Path) -> Self {
+        Self::with_allowed_roots(cwd, Vec::new())
+    }
+
+    pub fn with_allowed_roots(cwd: &Path, allowed_roots: Vec<PathBuf>) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            allowed_roots,
         }
     }
 }
@@ -83,7 +89,7 @@ impl Tool for WriteTool {
         }
 
         let path = resolve_path(&write_input.path, &self.cwd);
-        let path = enforce_cwd_scope(&path, &self.cwd, "write")?;
+        let path = enforce_cwd_scope(&path, &self.cwd, &self.allowed_roots, "write")?;
 
         // Check if target exists and is a directory
         if let Ok(meta) = tokio::fs::metadata(&path).await {

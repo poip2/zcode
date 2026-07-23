@@ -99,8 +99,8 @@ This pulls only the needed directory in a single network round-trip (~3–10s).
 
 | Location | Scope | Flag |
 |----------|-------|------|
-| `.zcode/skills/<name>/` | Project only | `--project` (default) |
-| `~/.config/zcode/skills/<name>/` | All projects (global) | `--global` |
+| `.zcode/skills/<name>/` | Project only | `--project` |
+| `~/.config/zcode/skills/<name>/` | All projects (user) | `--global` (default) |
 | `~/.agents/skills/<name>/` | pi agent skills | `--agents` |
 
 ## Workflow (agent-driven)
@@ -149,7 +149,7 @@ URL: https://github.com/user/myskills/tree/main/rust
 ```
 
 Only ask the user if the URL is just a repo root (no path beyond `github.com/user/repo`).
-Default scope to `--project` (`.zcode/skills/`) unless user says "global", "all projects", or "agents".
+Default scope to user-level `--global` (`~/.config/zcode/skills/`) unless user explicitly says "project", "current project", or "agents".
 
 ### Step 2: Install with git sparse-checkout
 
@@ -196,8 +196,8 @@ Remove-Item -Recurse -Force "TMP"
 ```
 
 TARGET_DIR mapping:
-- **project** (default): `$(pwd)/.zcode/skills/SKILL_NAME`
-- **global**: `~/.config/zcode/skills/SKILL_NAME`
+- **user/global** (default): `~/.config/zcode/skills/SKILL_NAME`
+- **project**: `$(pwd)/.zcode/skills/SKILL_NAME`
 - **pi agent**: `~/.agents/skills/SKILL_NAME`
 
 ### Step 3: Verify

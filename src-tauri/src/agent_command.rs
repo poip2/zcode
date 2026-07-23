@@ -11,9 +11,9 @@
 //!   event names: `agent://{session_id}/token`, etc.
 //! - Dangerous tools (write, edit, shell) wait for user approval via oneshot
 //!   channels stored in the session's approval map.
-//! - Write/edit operations targeting the user's currently-open file skip the
-//!   confirmation dialog (smart auto-approve). The session's `current_file`
-//!   and `cwd` are updated each turn from the frontend.
+//! - Current-file and user-skill edits skip confirmation. User skills gain an
+//!   immediate per-turn pass; project skills gain one after their first approved
+//!   dangerous action, preventing untrusted repositories from silent execution.
 //! - Read-only tools (read, grep, find, ls) execute immediately.
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
@@ -130,6 +130,8 @@ pub(crate) struct SessionData {
     /// Map of call_id → oneshot sender for pending dangerous tool approvals.
     pub(crate) pending_approvals: Arc<Mutex<HashMap<String, PendingApproval>>>,
     pub(crate) auto_approve: Arc<AtomicBool>,
+    /// Per-turn skill approval state: none, project-pending, or trusted.
+    pub(crate) skill_approval_state: Arc<AtomicU8>,
     /// Current file open in the editor (updated each turn for smart auto-approve).
     pub(crate) current_file: Arc<std::sync::Mutex<Option<String>>>,
     /// Working directory (updated each turn from the frontend).
@@ -466,6 +468,8 @@ struct GuardedTool {
     pending_approvals: Arc<Mutex<HashMap<String, PendingApproval>>>,
     /// Auto-approve flag (if true, skip confirmation for all tools).
     auto_approve: Arc<AtomicBool>,
+    /// Per-turn skill approval state: none, project-pending, or trusted.
+    skill_approval_state: Arc<AtomicU8>,
     /// AppHandle for emitting frontend events.
     app: AppHandle,
     /// Session ID for scoped events.
@@ -476,6 +480,10 @@ struct GuardedTool {
     /// Working directory (shared, updated each turn).
     cwd: Arc<std::sync::Mutex<PathBuf>>,
 }
+
+const SKILL_PASS_NONE: u8 = 0;
+const SKILL_PASS_PROJECT_PENDING: u8 = 1;
+const SKILL_PASS_TRUSTED: u8 = 2;
 
 impl GuardedTool {
     fn is_dangerous(&self) -> bool {
@@ -512,6 +520,37 @@ impl GuardedTool {
             _ => cur == absolute.as_path(),
         }
     }
+
+    fn skill_target_source(&self, input: &serde_json::Value) -> Option<skills::SkillPathSource> {
+        let target = input.get("path").and_then(|v| v.as_str())?;
+        let target_path = std::path::Path::new(target);
+        let cwd = self.cwd.lock().unwrap();
+        let absolute = if target_path.is_absolute() {
+            target_path.to_path_buf()
+        } else {
+            cwd.join(target_path)
+        };
+        skills::skill_path_source(&absolute, &cwd)
+    }
+
+    /// User-installed skill files are trusted directly. Project skill edits
+    /// require the project skill's first per-turn approval.
+    fn targets_user_skill_path(&self, input: &serde_json::Value) -> bool {
+        matches!(self.inner.name(), "write" | "edit")
+            && self.skill_target_source(input) == Some(skills::SkillPathSource::User)
+    }
+
+    /// Loading an installed SKILL.md prepares its approval policy for this turn.
+    fn invoked_skill_source(&self, input: &serde_json::Value) -> Option<skills::SkillPathSource> {
+        if self.inner.name() != "read" {
+            return None;
+        }
+        let target = input.get("path").and_then(|v| v.as_str())?;
+        if std::path::Path::new(target).file_name()? != "SKILL.md" {
+            return None;
+        }
+        self.skill_target_source(input)
+    }
 }
 
 #[async_trait]
@@ -542,13 +581,29 @@ impl Tool for GuardedTool {
         input: serde_json::Value,
         on_update: Option<Box<dyn Fn(tools::ToolUpdate) + Send + Sync>>,
     ) -> AgentResult<ToolOutput> {
-        // Auto-approve if: global flag is on, tool is read-only,
-        // OR the target file is the currently-open file.
+        let invoked_skill = self.invoked_skill_source(&input);
+
+        // User skills are trusted immediately. Project skills receive a pass
+        // only after the user approves their first dangerous action this turn.
         if self.auto_approve.load(Ordering::Relaxed)
+            || self.skill_approval_state.load(Ordering::Relaxed) == SKILL_PASS_TRUSTED
             || !self.is_dangerous()
             || self.targets_current_file(&input)
+            || self.targets_user_skill_path(&input)
         {
-            return self.inner.execute(tool_call_id, input, on_update).await;
+            let result = self.inner.execute(tool_call_id, input, on_update).await;
+            if result.is_ok() {
+                match invoked_skill {
+                    Some(skills::SkillPathSource::User) => self
+                        .skill_approval_state
+                        .store(SKILL_PASS_TRUSTED, Ordering::Relaxed),
+                    Some(skills::SkillPathSource::Project) => self
+                        .skill_approval_state
+                        .store(SKILL_PASS_PROJECT_PENDING, Ordering::Relaxed),
+                    None => {}
+                }
+            }
+            return result;
         }
 
         // Build confirmation details
@@ -588,6 +643,10 @@ impl Tool for GuardedTool {
         }
 
         if approved {
+            if self.skill_approval_state.load(Ordering::Relaxed) == SKILL_PASS_PROJECT_PENDING {
+                self.skill_approval_state
+                    .store(SKILL_PASS_TRUSTED, Ordering::Relaxed);
+            }
             self.inner.execute(tool_call_id, input, on_update).await
         } else {
             Ok(ToolOutput {
@@ -675,10 +734,12 @@ fn build_guarded_registry(
     cwd: &std::path::Path,
     pending_approvals: Arc<Mutex<HashMap<String, PendingApproval>>>,
     auto_approve: Arc<AtomicBool>,
+    skill_approval_state: Arc<AtomicU8>,
     app: AppHandle,
     session_id: &str,
     shared_current_file: Arc<std::sync::Mutex<Option<String>>>,
     shared_cwd: Arc<std::sync::Mutex<PathBuf>>,
+    workspace_roots: &[PathBuf],
     augmented_path: Option<&str>,
     venv_dir: Option<&Path>,
 ) -> ToolRegistry {
@@ -690,7 +751,7 @@ fn build_guarded_registry(
     let mut tools: Vec<Box<dyn Tool>> = Vec::new();
     for name in tool_names {
         let tool: Box<dyn Tool> = match *name {
-            "read" => Box::new(ReadTool::new(cwd)),
+            "read" => Box::new(ReadTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
             "shell" => {
                 if let (Some(path), Some(venv)) = (augmented_path, venv_dir) {
                     Box::new(BashTool::with_runtime(
@@ -702,17 +763,18 @@ fn build_guarded_registry(
                     Box::new(BashTool::new(cwd))
                 }
             }
-            "edit" => Box::new(EditTool::new(cwd)),
-            "write" => Box::new(WriteTool::new(cwd)),
-            "grep" => Box::new(GrepTool::new(cwd)),
-            "find" => Box::new(FindTool::new(cwd)),
-            "ls" => Box::new(LsTool::new(cwd)),
+            "edit" => Box::new(EditTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
+            "write" => Box::new(WriteTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
+            "grep" => Box::new(GrepTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
+            "find" => Box::new(FindTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
+            "ls" => Box::new(LsTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
             _ => continue,
         };
         let guarded: Box<dyn Tool> = Box::new(GuardedTool {
             inner: tool,
             pending_approvals: Arc::clone(&pending_approvals),
             auto_approve: Arc::clone(&auto_approve),
+            skill_approval_state: Arc::clone(&skill_approval_state),
             app: app.clone(),
             session_id: session_id.to_string(),
             current_file: Arc::clone(&shared_current_file),
@@ -828,11 +890,17 @@ fn build_system_prompt(
         prompt.push_str(&format!(
             "The user has this file open: `{path}`\n\
              You may freely read and edit this file. Editing other files \
-             requires the user's confirmation.\n"
+             requires the user's confirmation, except files inside installed \
+             user skill directories.\n"
         ));
     } else {
-        prompt.push_str("No file is open. All edits will require user confirmation.\n");
+        prompt.push_str(
+            "No file is open. Edits require user confirmation, except files inside installed user skill directories.\n",
+        );
     }
+    prompt.push_str(
+        "After loading a user SKILL.md, its tool actions are trusted for the remainder of the turn. A project SKILL.md requires approval for its first dangerous action, then receives the same per-turn pass.\n",
+    );
 
     prompt.push('\n');
 
@@ -1028,19 +1096,6 @@ pub async fn start_agent_turn(
         return Err("No model configured".to_string());
     }
 
-    // Save the user message to disk (best-effort, don't block the turn on I/O error)
-    let _ = append_session_message(
-        &session_id,
-        &ChatMessage {
-            id: next_msg_id("user"),
-            role: "user".to_string(),
-            content: user_message.clone(),
-            input_tokens: None,
-            output_tokens: None,
-            timestamp: chrono::Utc::now().timestamp_millis(),
-        },
-    );
-
     let name = provider_name
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "openai".to_string());
@@ -1130,7 +1185,6 @@ pub async fn start_agent_turn(
     if let Some(p) = &output_folder {
         workspace_roots.push(std::path::PathBuf::from(p));
     }
-    crate::tools::set_workspace_roots(workspace_roots);
 
     // Build provider
     eprintln!("[zcode] start_agent_turn: building provider (name={name})...");
@@ -1177,29 +1231,52 @@ pub async fn start_agent_turn(
     };
 
     let auto_approve_arc: Arc<AtomicBool>;
+    let skill_approval_state_arc: Arc<AtomicU8>;
     let pending_approvals_arc: Arc<Mutex<HashMap<String, PendingApproval>>>;
     let current_file_arc: Arc<std::sync::Mutex<Option<String>>>;
     let cwd_arc: Arc<std::sync::Mutex<PathBuf>>;
 
     let cancel_token: CancellationToken;
     let mut agent = if let Some(sd) = map.get_mut(&session_id) {
-        cancel_token = sd.cancellation_token.clone();
-        sd.auto_approve
-            .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
-        auto_approve_arc = Arc::clone(&sd.auto_approve);
-        pending_approvals_arc = Arc::clone(&sd.pending_approvals);
-        current_file_arc = Arc::clone(&sd.current_file);
-        cwd_arc = Arc::clone(&sd.cwd);
-
-        // Update shared state for the new turn
-        *current_file_arc.lock().unwrap() = current_file.clone();
-        *cwd_arc.lock().unwrap() = work_dir.clone();
-
-        // Update system prompt so the LLM sees the latest current_file
+        // Check availability before mutating state used by a running turn.
         let mut reused = sd
             .agent
             .take()
             .ok_or_else(|| "Agent is already running for this session".to_string())?;
+
+        cancel_token = sd.cancellation_token.clone();
+        sd.auto_approve
+            .store(auto_approve_writes.unwrap_or(false), Ordering::Relaxed);
+        auto_approve_arc = Arc::clone(&sd.auto_approve);
+        sd.skill_approval_state
+            .store(SKILL_PASS_NONE, Ordering::Relaxed);
+        skill_approval_state_arc = Arc::clone(&sd.skill_approval_state);
+        pending_approvals_arc = Arc::clone(&sd.pending_approvals);
+        current_file_arc = Arc::clone(&sd.current_file);
+        cwd_arc = Arc::clone(&sd.cwd);
+
+        // Update shared state and rebuild cwd-scoped tools for the new turn.
+        *current_file_arc.lock().unwrap() = current_file.clone();
+        *cwd_arc.lock().unwrap() = work_dir.clone();
+        let tool_names: Vec<&str> = allowed_tools_for_rebuild
+            .iter()
+            .map(|name| name.as_str())
+            .collect();
+        let tool_registry = build_guarded_registry(
+            &tool_names,
+            &work_dir,
+            Arc::clone(&pending_approvals_arc),
+            Arc::clone(&auto_approve_arc),
+            Arc::clone(&skill_approval_state_arc),
+            app.clone(),
+            &session_id,
+            Arc::clone(&current_file_arc),
+            Arc::clone(&cwd_arc),
+            &workspace_roots,
+            Some(&augmented_path),
+            Some(&runtime_venv_dir),
+        );
+        reused.set_tools(tool_registry);
         reused.set_system_prompt(Some(system_prompt));
 
         // Update compaction window if caller provided one
@@ -1213,6 +1290,7 @@ pub async fn start_agent_turn(
         reused
     } else {
         auto_approve_arc = Arc::new(AtomicBool::new(auto_approve_writes.unwrap_or(false)));
+        skill_approval_state_arc = Arc::new(AtomicU8::new(SKILL_PASS_NONE));
         pending_approvals_arc = Arc::new(Mutex::new(HashMap::new()));
         current_file_arc = Arc::new(std::sync::Mutex::new(current_file.clone()));
         cwd_arc = Arc::new(std::sync::Mutex::new(work_dir.clone()));
@@ -1230,10 +1308,12 @@ pub async fn start_agent_turn(
             &work_dir,
             Arc::clone(&pending_approvals_arc),
             Arc::clone(&auto_approve_arc),
+            Arc::clone(&skill_approval_state_arc),
             app.clone(),
             &session_id,
             Arc::clone(&current_file_arc),
             Arc::clone(&cwd_arc),
+            &workspace_roots,
             Some(&augmented_path),
             Some(&runtime_venv_dir),
         );
@@ -1241,8 +1321,8 @@ pub async fn start_agent_turn(
         let mut agent = Agent::new(Arc::clone(&provider), tool_registry, config.clone());
 
         // Seed agent with existing conversation history from disk (first turn only).
-        // The current user message was just appended to the JSONL above;
-        // agent.run() will push it into history itself, so skip it here.
+        // Drop a trailing legacy user message left by an older failed startup;
+        // agent.run() adds the current message itself.
         if let Ok(history) = crate::agent_command::load_session_messages(session_id.clone()) {
             let mut history_messages: Vec<Message> =
                 history.iter().filter_map(chat_message_to_message).collect();
@@ -1273,6 +1353,7 @@ pub async fn start_agent_turn(
                 agent: None,
                 pending_approvals: Arc::clone(&pending_approvals_arc),
                 auto_approve: Arc::clone(&auto_approve_arc),
+                skill_approval_state: Arc::clone(&skill_approval_state_arc),
                 current_file: Arc::clone(&current_file_arc),
                 cwd: Arc::clone(&cwd_arc),
                 cancellation_token: cancel_token.clone(),
@@ -1281,6 +1362,20 @@ pub async fn start_agent_turn(
 
         agent
     };
+
+    // Persist only after provider/runtime/session setup succeeds. This prevents
+    // failed starts and duplicate sends from leaving dangling user messages.
+    let _ = append_session_message(
+        &session_id,
+        &ChatMessage {
+            id: next_msg_id("user"),
+            role: "user".to_string(),
+            content: user_message.clone(),
+            input_tokens: None,
+            output_tokens: None,
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        },
+    );
     drop(map);
 
     // Capture rebuild parameters in case the agent task panics
@@ -1290,9 +1385,11 @@ pub async fn start_agent_turn(
     let rebuild_app = app.clone();
     let rebuild_session_id = session_id.clone();
     let rebuild_auto_approve = Arc::clone(&auto_approve_arc);
+    let rebuild_skill_approval_state = Arc::clone(&skill_approval_state_arc);
     let rebuild_pending_approvals = Arc::clone(&pending_approvals_arc);
     let rebuild_current_file = Arc::clone(&current_file_arc);
     let rebuild_cwd = Arc::clone(&cwd_arc);
+    let rebuild_workspace_roots = workspace_roots.clone();
     let rebuild_augmented_path = augmented_path.clone();
     let rebuild_runtime_venv_dir = runtime_venv_dir.clone();
 
@@ -1540,10 +1637,12 @@ pub async fn start_agent_turn(
                     &rebuild_work_dir,
                     rebuild_pending_approvals,
                     rebuild_auto_approve,
+                    rebuild_skill_approval_state,
                     rebuild_app,
                     &rebuild_session_id,
                     rebuild_current_file,
                     rebuild_cwd,
+                    &rebuild_workspace_roots,
                     Some(&rebuild_augmented_path),
                     Some(&rebuild_runtime_venv_dir),
                 );

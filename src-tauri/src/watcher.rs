@@ -3,7 +3,7 @@
 
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use std::cell::Cell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -98,6 +98,13 @@ pub struct SkillWatcherState {
     watcher: Mutex<Option<notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>>>,
 }
 
+fn is_skill_change_path(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "SKILL.md")
+        || path
+            .parent()
+            .is_some_and(|parent| parent.file_name().is_some_and(|name| name == "skills"))
+}
+
 impl Default for SkillWatcherState {
     fn default() -> Self {
         Self {
@@ -108,9 +115,10 @@ impl Default for SkillWatcherState {
 
 /// Start watching skill directories for changes.
 ///
-/// Watches two directories recursively:
+/// Watches project and user directories recursively:
 /// - `<cwd>/.zcode/skills` (project-level)
-/// - `<user_config>/zcode/skills` (user-level, e.g. ~/.config/zcode/skills)
+/// - `<user_config>/zcode/skills` (platform user-level)
+/// - `~/.config/zcode/skills` (documented user-level, when different)
 ///
 /// Creates directories if they don't exist so the watcher can catch the first
 /// creation event. Stops and replaces any previously running skills watcher.
@@ -122,18 +130,18 @@ pub fn start_skills_watching(app: AppHandle, cwd: String) -> Result<(), String> 
     // Stop existing watcher first (drop = unwatch + stop)
     *watcher_lock = None;
 
-    let user_dir = dirs::config_dir()
+    let user_config_dir = dirs::config_dir()
         .ok_or_else(|| "No config directory found".to_string())?
-        .join("zcode")
-        .join("skills");
+        .join("zcode");
+    let user_dirs = crate::skills::user_skill_roots(Some(&user_config_dir));
     let project_dir = PathBuf::from(&cwd).join(".zcode").join("skills");
 
     // Ensure directories exist so the watcher can be registered even when empty.
-    // This also handles the case where neither directory has been created yet.
-    std::fs::create_dir_all(&user_dir)
-        .map_err(|e| format!("Failed to create {}: {}", user_dir.display(), e))?;
-    std::fs::create_dir_all(&project_dir)
-        .map_err(|e| format!("Failed to create {}: {}", project_dir.display(), e))?;
+    // This also handles the case where no skill directory has been created yet.
+    for dir in user_dirs.iter().chain(std::iter::once(&project_dir)) {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+    }
 
     let app_handle = app.clone();
     let last_emit = Cell::new(Instant::now() - Duration::from_secs(10));
@@ -143,16 +151,11 @@ pub fn start_skills_watching(app: AppHandle, cwd: String) -> Result<(), String> 
         move |res: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
             match res {
                 Ok(events) => {
-                    let has_skill_change = events.iter().any(|e| {
-                        let path = &e.path;
-                        if path.is_file() {
-                            path.file_name()
-                                .is_some_and(|n| n == "SKILL.md")
-                        } else {
-                            path.parent()
-                                .is_some_and(|p| p.file_name().is_some_and(|n| n == "skills"))
-                        }
-                    });
+                    // Check names, not path.is_file(): deleted SKILL.md paths no
+                    // longer exist and must still trigger a frontend refresh.
+                    let has_skill_change = events
+                        .iter()
+                        .any(|event| is_skill_change_path(&event.path));
                     if has_skill_change {
                         // Rate-limit: at most one emit per 2 seconds.
                         // Prevents feedback loops where list_skills reads SKILL.md,
@@ -173,20 +176,18 @@ pub fn start_skills_watching(app: AppHandle, cwd: String) -> Result<(), String> 
     )
     .map_err(|e| format!("Failed to create skills watcher: {}", e))?;
 
-    debouncer
-        .watcher()
-        .watch(&user_dir, notify::RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch {}: {}", user_dir.display(), e))?;
-    debouncer
-        .watcher()
-        .watch(&project_dir, notify::RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch {}: {}", project_dir.display(), e))?;
+    for dir in user_dirs.iter().chain(std::iter::once(&project_dir)) {
+        debouncer
+            .watcher()
+            .watch(dir, notify::RecursiveMode::Recursive)
+            .map_err(|e| format!("Failed to watch {}: {}", dir.display(), e))?;
+    }
 
     *watcher_lock = Some(debouncer);
 
     eprintln!(
-        "[zcode] skills-watcher: started watching {} and {}",
-        user_dir.display(),
+        "[zcode] skills-watcher: started watching user={:?}, project={}",
+        user_dirs,
         project_dir.display()
     );
     Ok(())
@@ -205,6 +206,13 @@ pub fn stop_skills_watching(app: AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_deleted_skill_file_is_detected() {
+        let deleted = PathBuf::from("/tmp/project/.zcode/skills/demo/SKILL.md");
+        assert!(is_skill_change_path(&deleted));
+        assert!(!is_skill_change_path(&deleted.with_file_name("README.md")));
+    }
 
     #[test]
     fn test_create_skill_dirs_and_watch() {

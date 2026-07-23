@@ -73,6 +73,10 @@ Instructions that get loaded `read` by the model when the skill triggers.
 
 Project-level skills take precedence on name collision.
 
+On macOS, zcode also scans the platform config directory (`~/Library/Application Support/zcode/skills`) so both native and cross-platform install locations work.
+
+Project- and user-level skill directories are allowed file roots. User-installed skills receive an automatic per-turn approval pass after `SKILL.md` loads. Project skills require approval for their first dangerous action each turn, then later actions skip repeated approval. This prevents a cloned repository from silently executing commands.
+
 ## State persistence
 
 `~/.config/zcode/skill-state.json`:
@@ -132,11 +136,11 @@ To add a new built-in skill:
 
 ## Installing skills from GitHub
 
-Use `scripts/install-skill.sh` (Mac/Linux) or `scripts/install-skill.ps1` (Windows):
+Use `scripts/install-skill.sh` (Mac/Linux) or `scripts/install-skill.ps1` (Windows). Omitting scope installs to user-level `~/.config/zcode/skills` by default:
 
 ```bash
-# Install a skill globally
-./scripts/install-skill.sh https://github.com/anthropics/skills.git xlsx --global
+# Install a skill for the current user (default)
+./scripts/install-skill.sh https://github.com/anthropics/skills.git xlsx
 
 # Install to current project
 ./scripts/install-skill.sh https://github.com/anthropics/skills.git xlsx --project

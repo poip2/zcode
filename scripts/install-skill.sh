@@ -25,8 +25,8 @@ Install a zcode skill from a GitHub repository using git sparse-checkout.
 Arguments:
   repo-url     Git clone URL (e.g. https://github.com/anthropics/skills.git)
   skill-name   Skill directory name (e.g. xlsx, rust, skill-creator)
-  --project    Install to .zcode/skills/ (default, project-scoped)
-  --global     Install to ~/.config/zcode/skills/ (all projects)
+  --global     Install to ~/.config/zcode/skills/ (default, user-scoped)
+  --project    Install to .zcode/skills/ (current project)
   --agents     Install to ~/.agents/skills/ (pi agent skills)
 
 Examples:
@@ -40,7 +40,7 @@ fi
 
 REPO_URL="$1"
 SKILL_NAME="$2"
-SCOPE="${3:---project}"
+SCOPE="${3:---global}"
 
 # --- Prerequisites check ---
 if ! command -v git &> /dev/null; then
@@ -57,8 +57,12 @@ case "$SCOPE" in
   --agents)
     TARGET_DIR="${HOME}/.agents/skills/${SKILL_NAME}"
     ;;
-  --project|*)
+  --project)
     TARGET_DIR="$(pwd)/.zcode/skills/${SKILL_NAME}"
+    ;;
+  *)
+    echo "✗ Unknown scope: ${SCOPE}" >&2
+    exit 1
     ;;
 esac
 

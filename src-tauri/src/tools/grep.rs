@@ -37,12 +37,18 @@ struct GrepInput {
 
 pub struct GrepTool {
     cwd: PathBuf,
+    allowed_roots: Vec<PathBuf>,
 }
 
 impl GrepTool {
     pub fn new(cwd: &Path) -> Self {
+        Self::with_allowed_roots(cwd, Vec::new())
+    }
+
+    pub fn with_allowed_roots(cwd: &Path, allowed_roots: Vec<PathBuf>) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            allowed_roots,
         }
     }
 }
@@ -143,7 +149,7 @@ impl Tool for GrepTool {
         } else {
             self.cwd.clone()
         };
-        let search_path = enforce_cwd_scope(&search_path, &self.cwd, "grep")?;
+        let search_path = enforce_cwd_scope(&search_path, &self.cwd, &self.allowed_roots, "grep")?;
 
         let mut args: Vec<String> = vec![
             "--line-number".into(),

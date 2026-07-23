@@ -7,7 +7,6 @@
 //! - Bundled at compile time (builtin)
 
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -24,6 +23,109 @@ pub struct Skill {
     /// the instructions without hitting a non-existent file path).
     #[serde(skip)]
     pub body: Option<String>,
+}
+
+/// User-level skill roots. Includes both platform config and documented
+/// `~/.config/zcode` locations because they differ on macOS.
+pub fn user_skill_roots(user_config_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(config_dir) = user_config_dir {
+        roots.push(config_dir.join("skills"));
+    }
+    if user_config_dir.is_some() {
+        if let Some(home) = dirs::home_dir() {
+            let documented = home.join(".config").join("zcode").join("skills");
+            if !roots.contains(&documented) {
+                // Loaded last so the documented/default install location wins.
+                roots.push(documented);
+            }
+        }
+    }
+    roots
+}
+
+/// Skill roots allowed for direct file access.
+pub fn trusted_skill_roots(cwd: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![cwd.join(".zcode").join("skills")];
+    let platform_config = dirs::config_dir().map(|dir| dir.join("zcode"));
+    roots.extend(user_skill_roots(platform_config.as_deref()));
+    roots
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillPathSource {
+    Project,
+    User,
+}
+
+/// Identify whether `path` belongs to a project- or user-level skill root.
+pub fn skill_path_source(path: &Path, cwd: &Path) -> Option<SkillPathSource> {
+    let candidate = comparable_path(path);
+    let project_root = comparable_path(&cwd.join(".zcode").join("skills"));
+    if candidate.starts_with(project_root) {
+        return Some(SkillPathSource::Project);
+    }
+
+    let platform_config = dirs::config_dir().map(|dir| dir.join("zcode"));
+    user_skill_roots(platform_config.as_deref())
+        .into_iter()
+        .map(|root| comparable_path(&root))
+        .any(|root| candidate.starts_with(root))
+        .then_some(SkillPathSource::User)
+}
+
+/// Return whether `path` is contained by a project- or user-level skill root.
+pub fn is_trusted_skill_path(path: &Path, cwd: &Path) -> bool {
+    skill_path_source(path, cwd).is_some()
+}
+
+fn comparable_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    };
+
+    // Normalize `.` and `..` before prefix matching. This also keeps a new,
+    // not-yet-created file from escaping a trusted root via path traversal.
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+
+    if let Ok(canonical) = dunce::canonicalize(&normalized) {
+        return canonical;
+    }
+
+    // New files cannot be canonicalized. Resolve the closest existing parent
+    // so symlinked skill roots still compare correctly.
+    let mut ancestor = normalized.as_path();
+    let mut missing = Vec::new();
+    while let Some(name) = ancestor.file_name() {
+        missing.push(name.to_os_string());
+        let Some(parent) = ancestor.parent() else {
+            break;
+        };
+        ancestor = parent;
+        if let Ok(mut canonical) = dunce::canonicalize(ancestor) {
+            for part in missing.iter().rev() {
+                canonical.push(part);
+            }
+            return canonical;
+        }
+    }
+
+    normalized
 }
 
 // ============================================================================
@@ -55,9 +157,9 @@ pub fn load_skills(
         }
     }
 
-    // 2. User-level: ~/.config/zcode/skills/*/SKILL.md
-    if let Some(user_dir) = user_config_dir {
-        let user_skills_dir = user_dir.join("skills");
+    // 2. User-level. On macOS, scan both the platform config directory and
+    // ~/.config/zcode so skills installed by the cross-platform scripts work.
+    for user_skills_dir in user_skill_roots(user_config_dir) {
         if user_skills_dir.exists() {
             load_from_dir(&user_skills_dir, "user", &mut skill_map, &mut diagnostics);
         }
@@ -80,19 +182,7 @@ pub fn load_skills(
             load_from_dir(path, "path", &mut skill_map, &mut diagnostics);
         } else if path.extension().is_some_and(|ext| ext == "md") {
             if let Some(skill) = load_skill_from_file(path, "path") {
-                let name = skill.name.clone();
-                match skill_map.entry(name) {
-                    Entry::Occupied(entry) => {
-                        diagnostics.push(format!(
-                            "Skill name collision: {} from {:?}",
-                            entry.key(),
-                            path
-                        ));
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(skill);
-                    }
-                }
+                insert_skill(&mut skill_map, &mut diagnostics, skill, path);
             }
         }
     }
@@ -100,6 +190,23 @@ pub fn load_skills(
     let mut skills: Vec<Skill> = skill_map.into_values().collect();
     skills.sort_by(|a, b| a.name.cmp(&b.name));
     (skills, diagnostics)
+}
+
+fn insert_skill(
+    skill_map: &mut HashMap<String, Skill>,
+    diagnostics: &mut Vec<String>,
+    skill: Skill,
+    path: &Path,
+) {
+    let name = skill.name.clone();
+    if let Some(previous) = skill_map.insert(name.clone(), skill) {
+        diagnostics.push(format!(
+            "Skill '{name}' from {} overrides {} source {}",
+            path.display(),
+            previous.source,
+            previous.file_path.display()
+        ));
+    }
 }
 
 /// Scan a directory for SKILL.md files (one level deep).
@@ -118,28 +225,13 @@ fn load_from_dir(
             let skill_file = path.join("SKILL.md");
             if skill_file.exists() {
                 if let Some(skill) = load_skill_from_file(&skill_file, source) {
-                    let name = skill.name.clone();
-                    match skill_map.entry(name) {
-                        Entry::Occupied(entry) => {
-                            diagnostics.push(format!(
-                                "Skill name collision: {} from {:?}",
-                                entry.key(),
-                                skill_file
-                            ));
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(skill);
-                        }
-                    }
+                    insert_skill(skill_map, diagnostics, skill, &skill_file);
                 }
             }
         } else if path.extension().is_some_and(|ext| ext == "md") {
             // Top-level .md files also treated as skills
             if let Some(skill) = load_skill_from_file(&path, source) {
-                let name = skill.name.clone();
-                if let Entry::Vacant(entry) = skill_map.entry(name) {
-                    entry.insert(skill);
-                }
+                insert_skill(skill_map, diagnostics, skill, &path);
             }
         }
     }
@@ -408,6 +500,72 @@ Do something specific.
 
         let xml = format_skills_for_prompt(&[skill]);
         assert!(xml.is_empty(), "Disabled skill should not appear in prompt");
+    }
+
+    #[test]
+    fn test_project_skill_paths_are_trusted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_file = tmp
+            .path()
+            .join(".zcode/skills/my-skill/references/guide.md");
+
+        assert!(is_trusted_skill_path(&skill_file, tmp.path()));
+        assert_eq!(
+            skill_path_source(&skill_file, tmp.path()),
+            Some(SkillPathSource::Project)
+        );
+        assert!(!is_trusted_skill_path(
+            &tmp.path().join("ordinary-project-file.md"),
+            tmp.path()
+        ));
+        assert!(!is_trusted_skill_path(
+            &tmp.path().join(".zcode/skills/../outside.md"),
+            tmp.path()
+        ));
+    }
+
+    #[test]
+    fn test_user_skill_paths_are_trusted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user_root = trusted_skill_roots(tmp.path())
+            .into_iter()
+            .find(|root| !root.starts_with(tmp.path()))
+            .expect("a user-level skill root should exist");
+
+        assert!(is_trusted_skill_path(
+            &user_root.join("my-skill/SKILL.md"),
+            tmp.path()
+        ));
+        assert_eq!(
+            skill_path_source(&user_root.join("my-skill/SKILL.md"), tmp.path()),
+            Some(SkillPathSource::User)
+        );
+    }
+
+    #[test]
+    fn test_project_skill_overrides_user_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user_config = tmp.path().join("user-config");
+        let name = "zcode-priority-test-skill";
+        let user_skill = user_config.join("skills").join(name);
+        let project_skill = tmp.path().join(".zcode").join("skills").join(name);
+        std::fs::create_dir_all(&user_skill).unwrap();
+        std::fs::create_dir_all(&project_skill).unwrap();
+        std::fs::write(
+            user_skill.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: user version\n---\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            project_skill.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: project version\n---\n"),
+        )
+        .unwrap();
+
+        let (skills, _) = load_skills(tmp.path(), Some(&user_config), &[]);
+        let loaded = skills.iter().find(|skill| skill.name == name).unwrap();
+        assert_eq!(loaded.source, "project");
+        assert_eq!(loaded.description, "project version");
     }
 }
 

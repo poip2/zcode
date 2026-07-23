@@ -33,12 +33,18 @@ struct FindInput {
 
 pub struct FindTool {
     cwd: PathBuf,
+    allowed_roots: Vec<PathBuf>,
 }
 
 impl FindTool {
     pub fn new(cwd: &Path) -> Self {
+        Self::with_allowed_roots(cwd, Vec::new())
+    }
+
+    pub fn with_allowed_roots(cwd: &Path, allowed_roots: Vec<PathBuf>) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            allowed_roots,
         }
     }
 }
@@ -126,7 +132,7 @@ impl Tool for FindTool {
         } else {
             self.cwd.clone()
         };
-        let search_dir = enforce_cwd_scope(&search_dir, &self.cwd, "find")?;
+        let search_dir = enforce_cwd_scope(&search_dir, &self.cwd, &self.allowed_roots, "find")?;
 
         if !search_dir.exists() {
             return Err(Error::tool(

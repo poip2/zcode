@@ -21,12 +21,18 @@ struct LsInput {
 
 pub struct LsTool {
     cwd: PathBuf,
+    allowed_roots: Vec<PathBuf>,
 }
 
 impl LsTool {
     pub fn new(cwd: &Path) -> Self {
+        Self::with_allowed_roots(cwd, Vec::new())
+    }
+
+    pub fn with_allowed_roots(cwd: &Path, allowed_roots: Vec<PathBuf>) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            allowed_roots,
         }
     }
 }
@@ -83,7 +89,7 @@ impl Tool for LsTool {
             .path
             .as_ref()
             .map_or_else(|| self.cwd.clone(), |p| resolve_path(p, &self.cwd));
-        let dir_path = enforce_cwd_scope(&dir_path, &self.cwd, "ls")?;
+        let dir_path = enforce_cwd_scope(&dir_path, &self.cwd, &self.allowed_roots, "ls")?;
 
         if !dir_path.exists() {
             return Err(Error::tool(

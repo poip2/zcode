@@ -21,7 +21,7 @@ param(
 
     [Parameter(Mandatory=$false, Position=2)]
     [ValidateSet("--global", "--project", "--agents")]
-    [string]$Scope = "--project"
+    [string]$Scope = "--global"
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +38,7 @@ switch ($Scope) {
     "--global"  { $TargetDir = Join-Path $env:USERPROFILE ".config\zcode\skills\$SkillName" }
     "--agents"  { $TargetDir = Join-Path $env:USERPROFILE ".agents\skills\$SkillName" }
     "--project" { $TargetDir = Join-Path (Get-Location) ".zcode\skills\$SkillName" }
-    default     { $TargetDir = Join-Path (Get-Location) ".zcode\skills\$SkillName" }
+    default     { throw "Unknown scope: $Scope" }
 }
 
 $TmpDir = Join-Path $env:TEMP "skill_install_$(Get-Random)"

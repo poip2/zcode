@@ -221,6 +221,12 @@ impl Agent {
         self.config.system_prompt = prompt;
     }
 
+    /// Replace tools between turns when cwd or session-owned roots change.
+    pub fn set_tools(&mut self, tools: ToolRegistry) {
+        self.tools = tools;
+        self.cached_tool_defs = None;
+    }
+
     fn compute_system_prompt_tokens(system_prompt: Option<&str>) -> u64 {
         match system_prompt {
             Some(p) if !p.is_empty() => compaction::estimate_text_tokens(p),

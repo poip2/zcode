@@ -12,12 +12,18 @@ use std::path::{Path, PathBuf};
 
 pub struct EditTool {
     cwd: PathBuf,
+    allowed_roots: Vec<PathBuf>,
 }
 
 impl EditTool {
     pub fn new(cwd: &Path) -> Self {
+        Self::with_allowed_roots(cwd, Vec::new())
+    }
+
+    pub fn with_allowed_roots(cwd: &Path, allowed_roots: Vec<PathBuf>) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
+            allowed_roots,
         }
     }
 }
@@ -85,7 +91,8 @@ impl Tool for EditTool {
             .ok_or_else(|| Error::validation("Missing 'path' parameter"))?;
 
         let absolute_path = resolve_path(path_str, &self.cwd);
-        let absolute_path = enforce_cwd_scope(&absolute_path, &self.cwd, "edit")?;
+        let absolute_path =
+            enforce_cwd_scope(&absolute_path, &self.cwd, &self.allowed_roots, "edit")?;
 
         // Parse edits: support both single oldText/newText and edits[] array
         let mut edits: Vec<(String, String)> = Vec::new();

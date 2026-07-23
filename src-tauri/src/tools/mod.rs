@@ -15,7 +15,6 @@ use crate::model::ContentBlock;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
 
 // ============================================================================
 // Tool Trait
@@ -204,27 +203,12 @@ pub fn canonicalize_safe(path: &std::path::Path) -> std::path::PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-// ============================================================================
-// Workspace roots whitelist (global, set once per agent session)
-// ============================================================================
-
-/// Extra directories that file tools are allowed to access beyond cwd.
-/// Set at agent startup to include sources/, scripts/, output/ folders
-/// which live alongside (not inside) the pin folder.
-static WORKSPACE_ROOTS: RwLock<Vec<PathBuf>> = RwLock::new(Vec::new());
-
-/// Register additional roots that tools may read/write outside of cwd.
-pub fn set_workspace_roots(roots: Vec<PathBuf>) {
-    if let Ok(mut w) = WORKSPACE_ROOTS.write() {
-        *w = roots;
-    }
-}
-
-/// Ensure a path is within the CWD scope, an allowed workspace root,
+/// Ensure a path is within the CWD scope, a session-owned workspace root,
 /// or a known skill directory.
 pub fn enforce_cwd_scope(
     path: &std::path::Path,
     cwd: &Path,
+    allowed_roots: &[PathBuf],
     tool: &str,
 ) -> Result<std::path::PathBuf> {
     let canonical = canonicalize_safe(path);
@@ -234,31 +218,25 @@ pub fn enforce_cwd_scope(
         return Ok(canonical);
     }
 
-    // Check workspace roots (sources, scripts, output — siblings of pin)
-    if let Ok(roots) = WORKSPACE_ROOTS.read() {
-        for root in roots.iter() {
-            let root_canonical = canonicalize_safe(root);
-            if canonical.starts_with(&root_canonical) {
-                return Ok(canonical);
-            }
+    // Check this agent session's workspace roots (sources/scripts/output).
+    for root in allowed_roots {
+        let root_canonical = canonicalize_safe(root);
+        if canonical.starts_with(&root_canonical) {
+            return Ok(canonical);
         }
     }
 
-    // Allow access to skill directories (user-level and pi agent)
+    // Allow access to project/user skill directories and pi agent skills.
+    // trusted_skill_roots includes both platform config and ~/.config paths,
+    // which differ on macOS.
+    let mut skill_dirs = crate::skills::trusted_skill_roots(cwd);
     if let Some(home) = dirs::home_dir() {
-        let skills_dirs: Vec<std::path::PathBuf> = if let Some(config_dir) = dirs::config_dir() {
-            vec![config_dir.join("zcode/skills"), home.join(".agents/skills")]
-        } else {
-            vec![
-                home.join(".config/zcode/skills"),
-                home.join(".agents/skills"),
-            ]
-        };
-        for skills_dir in &skills_dirs {
-            let skills_canonical = canonicalize_safe(skills_dir);
-            if canonical.starts_with(&skills_canonical) {
-                return Ok(canonical);
-            }
+        skill_dirs.push(home.join(".agents/skills"));
+    }
+    for skills_dir in &skill_dirs {
+        let skills_canonical = canonicalize_safe(skills_dir);
+        if canonical.starts_with(&skills_canonical) {
+            return Ok(canonical);
         }
     }
 
@@ -365,6 +343,20 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_workspace_roots_are_scoped_to_caller() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("cwd");
+        let allowed = tmp.path().join("allowed");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+
+        assert!(enforce_cwd_scope(&allowed, &cwd, std::slice::from_ref(&allowed), "test").is_ok());
+        assert!(enforce_cwd_scope(&other, &cwd, std::slice::from_ref(&allowed), "test").is_err());
+    }
 
     #[test]
     fn test_truncate_output_no_truncation() {

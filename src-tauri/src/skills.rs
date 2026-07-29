@@ -430,6 +430,22 @@ Do something specific.
     }
 
     #[test]
+    fn test_builtin_skill_creator_routes_missing_git_without_another_skill() {
+        let (_, content) = BUILTIN_SKILLS
+            .iter()
+            .find(|(name, _)| *name == "skill-creator")
+            .expect("skill-creator builtin should exist");
+        assert!(!BUILTIN_SKILLS
+            .iter()
+            .any(|(name, _)| name.contains("git-installer") || name.contains("git-helper")));
+        assert!(content.contains("# Git bootstrap route (no separate skill)"));
+        assert!(content.contains("git --version"));
+        assert!(content.contains("Git is missing | [Git bootstrap]"));
+        assert!(content.contains("Git helper skill or another `SKILL.md`"));
+        assert!(content.contains("continue to B4"));
+    }
+
+    #[test]
     fn test_load_skills_from_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let skills_dir = tmp.path().join(".zcode").join("skills");

@@ -1,166 +1,222 @@
 ---
 name: skill-creator
 description: >
-  MANDATORY — invoke when user wants to create/make/build/write/design/install/
-  download/add/pull a skill or SKILL.md from GitHub or anywhere. Also trigger on:
-  帮我写skill 创建skill 加个skill 安装skill 下载skill install from github.
-  Trigger when user describes something they want AI to remember and follow
-  in future, even without saying "skill".
-  NEVER create a skill file without reading this skill first.
-  NEVER use HTTP (curl/iwr) to fetch from GitHub — always git clone --depth 1
-  with sparse-checkout. This rule applies to ALL GitHub repo access, not just skills.
+  MANDATORY — invoke whenever the user wants to create, write, design, install,
+  download, add, update, or pull a skill or SKILL.md from GitHub or elsewhere.
+  Trigger on phrases such as 帮我写skill, 创建skill, 加个skill, 安装skill,
+  下载skill, and install from GitHub. Also trigger when the user describes behavior
+  they want the AI to remember and follow later, even without saying "skill".
+  Never create a skill file without reading these instructions first. When a GitHub
+  skill install needs Git but git is missing, stay inside this skill and use its
+  embedded Git bootstrap route; never create a separate Git helper skill.
 ---
 
-# Skill Creator & Installer for zcode
+# Skill Creator and Installer
 
-This skill covers TWO workflows:
+This built-in skill owns two workflows and one internal fallback:
 
-| You want to... | Go to |
-|----------------|-------|
-| Create a new skill from scratch | [Creating skills](#creating-skills) |
-| Install an existing skill from GitHub | [Installing skills from GitHub](#installing-skills-from-github) |
+| Request | Route |
+|---|---|
+| Create a skill from instructions | [Workflow A — Create](#workflow-a--create-a-skill) |
+| Install or update a skill from GitHub | [Workflow B — Install](#workflow-b--install-or-update-from-github) |
+| Workflow B discovers that Git is missing | [Git bootstrap](#git-bootstrap-route-no-separate-skill), then return to Workflow B |
+
+## Non-negotiable rules
+
+1. One user intent produces one focused skill. Do not create a Git installer/helper
+   skill when Git is merely a prerequisite of installation.
+2. Never fetch GitHub repository content file-by-file with `curl`,
+   `Invoke-WebRequest`, or `Invoke-RestMethod`. Use shallow Git sparse-checkout.
+3. HTTP is allowed only inside the documented Git bootstrap, where Git does not yet
+   exist and official bootstrap artifacts must be downloaded.
+4. Default installs to user scope unless the user explicitly requests project or pi
+   agent scope.
+5. Verify every written or installed `SKILL.md`. Do not report success before
+   verification passes.
+6. Respect zcode tool approvals and filesystem safety rules. “Silent installation”
+   means no operating-system GUI wizard; it does not bypass zcode approval.
 
 ---
 
-## Where skills live
+# Shared conventions
 
-Skills are discovered from TWO locations (both checked automatically):
+## Skill locations
 
-| Location | Scope | Used for |
-|----------|-------|----------|
-| `.zcode/skills/<name>/SKILL.md` | Project only | Skills specific to this project |
-| `~/.config/zcode/skills/<name>/SKILL.md` | All projects | Globally useful skills (like this one) |
+| Scope | Directory | Selection rule |
+|---|---|---|
+| Project | `.zcode/skills/<name>/SKILL.md` | User says project/current project |
+| User/global | `~/.config/zcode/skills/<name>/SKILL.md` | Default |
+| pi agent | `~/.agents/skills/<name>/SKILL.md` | User says agents/pi agent |
 
----
+## Required file format
 
-## Skill file format
-
-Every skill MUST have YAML frontmatter:
+Every skill has YAML frontmatter followed by Markdown instructions:
 
 ```markdown
 ---
 name: my-skill
-description: What this skill does and when to trigger it
-disable-model-invocation: false  # optional, defaults to false
+description: What this skill does and exactly when it should trigger
+# disable-model-invocation: false  # optional; defaults to false
 ---
 
-# Skill Title
+# Skill title
 
-Instructions go here...
+Instructions...
 ```
 
-Required fields:
-- **`name`**: Unique identifier (kebab-case recommended, e.g. `fix-grammar`)
-- **`description`**: When to trigger + what it does. This is the PRIMARY trigger — include specific contexts and keywords. Be a little "pushy" to avoid under-triggering.
+- `name`: unique identifier; kebab-case preferred.
+- `description`: primary trigger contract. Include actions, contexts, and useful trigger
+  phrases. Be explicit enough to avoid under-triggering.
+- `disable-model-invocation`: optional. `true` hides the skill from model invocation;
+  Settings can still enable or disable it.
 
-Optional fields:
-- **`disable-model-invocation`**: Set to `true` to hide the skill from the AI (user can still enable/disable from Settings UI)
+## Quality bar
 
----
-
-# Creating skills
-
-## Workflow
-
-### 1. Capture intent
-Ask the user:
-- What should this skill do?
-- When should it trigger? (what user phrases/contexts)
-- What's the expected output?
-
-### 2. Write the skill
-- Create the directory: `.zcode/skills/<name>/` (project) or `~/.config/zcode/skills/<name>/` (global)
-- Write `SKILL.md` with frontmatter + instructions
-- Keep instructions clear and specific. Use imperative mood. Include examples.
-- Explain *why* rather than just commanding — models respond better to understanding than rigid ALWAYS/NEVER rules.
-
-### 3. Test
-- Write the skill file using the `write` tool
-- Then send a test message to verify the model picks up the skill.
-- Ask the user if the behavior matches expectations.
-
-### 4. Iterate
-- Refine based on user feedback
+- Use imperative, concrete instructions.
+- Explain why a constraint exists when that improves compliance.
+- Include only examples that clarify behavior.
+- Keep one skill focused on one responsibility.
+- Put supporting material beneath the same skill directory rather than creating
+  unrelated top-level files.
+- Respect zcode workspace folders when generated work needs scripts, sources, or output.
 
 ---
 
-# Installing skills from GitHub
+# Workflow A — Create a skill
 
-## Key rule
+## A1. Capture intent
 
-**NEVER use Invoke-WebRequest / Invoke-RestMethod / curl to fetch individual files
-from GitHub.** GitHub API rate limits unauthenticated requests, and page downloads
-pull 130KB+ of HTML for every file.
+Determine:
 
-**ALWAYS use `git clone --depth 1 --no-checkout` + `git sparse-checkout` instead.**
-This pulls only the needed directory in a single network round-trip (~3–10s).
+- desired behavior;
+- trigger phrases and contexts;
+- expected output or side effects;
+- project, user, or pi-agent scope.
 
-## Install locations
+Ask only for information that cannot be safely inferred. If the request already answers
+these points, do not repeat questions.
 
-| Location | Scope | Flag |
-|----------|-------|------|
-| `.zcode/skills/<name>/` | Project only | `--project` |
-| `~/.config/zcode/skills/<name>/` | All projects (user) | `--global` (default) |
-| `~/.agents/skills/<name>/` | pi agent skills | `--agents` |
+## A2. Choose name and target
 
-## Workflow (agent-driven)
+Use a concise kebab-case name. Resolve the destination from the shared location table;
+default to user/global scope when scope is omitted.
 
-### Step 1: Determine parameters from URL (minimize questions)
+Before writing, check whether the target already exists. If it exists, treat the task as
+an update and preserve useful existing instructions unless the user explicitly asks for
+a replacement.
 
-Users paste GitHub URLs at varying depths. Parse accordingly:
+## A3. Write
 
-**URL patterns and extraction:**
+Create `<target>/<name>/SKILL.md` with valid frontmatter and focused instructions. Use
+the `write` tool for a new file and `edit` for targeted changes to an existing file.
+Do not create variant files such as `SKILL-v2.md`.
 
-| URL pattern | Example | Extraction |
-|---|---|---|
-| Repo root | `github.com/user/repo` | ❓ Ask which skill |
-| Directory (tree) | `github.com/user/repo/tree/main/skills/ppt-master` | Repo + skill from path |
-| File (blob) | `github.com/user/repo/blob/main/skills/ppt-master/SKILL.md` | Repo + skill = parent dir of SKILL.md |
+## A4. Verify
 
-**Parsing rules:**
+Read the resulting `SKILL.md` and confirm:
 
-1. **Repo URL**: `https://github.com/{owner}/{repo}.git` — strip everything after the repo name, add `.git` if not already present.
-2. **In-repo path**: the portion after `tree/{branch}/` or `blob/{branch}/`.
-3. **Skill name**: if the in-repo path ends with `SKILL.md`, the skill is its parent directory.
-   Otherwise, the skill is the last path segment.
-4. **Sparse-checkout path**: the in-repo path up to and including the skill directory
-   (i.e., strip `/SKILL.md` if present).
+- frontmatter delimiters are present;
+- `name` and `description` are non-empty;
+- description names realistic trigger conditions;
+- body contains actionable instructions;
+- destination matches requested scope.
 
-**Examples:**
+Then ask the user to test with a message that should trigger the skill. Iterate from
+observed behavior rather than creating another skill.
 
+---
+
+# Workflow B — Install or update from GitHub
+
+## B1. Parse the URL
+
+Users may provide a repository root, directory URL, or direct `SKILL.md` URL.
+
+| URL shape | Action |
+|---|---|
+| `github.com/owner/repo` | Ask which skill/directory |
+| `github.com/owner/repo/tree/BRANCH/path/to/skill` | Derive repo, branch path, skill name |
+| `github.com/owner/repo/blob/BRANCH/path/to/skill/SKILL.md` | Use parent directory as skill |
+
+Derive:
+
+1. **Repo URL**: `https://github.com/OWNER/REPO.git`.
+2. **Branch**: branch named by `tree/BRANCH/` or `blob/BRANCH/`; omit only for a
+   repository-root URL so Git uses its default branch.
+3. **In-repo path**: portion after the branch.
+4. **Sparse path**: skill directory; remove trailing `/SKILL.md`.
+5. **Skill name**: final sparse-path segment.
+
+Examples:
+
+```text
+https://github.com/hugohe3/ppt-master/blob/main/skills/ppt-master/SKILL.md
+→ repo:   https://github.com/hugohe3/ppt-master.git
+→ sparse: skills/ppt-master
+→ name:   ppt-master
+
+https://github.com/anthropics/skills/tree/main/skills/xlsx
+→ repo:   https://github.com/anthropics/skills.git
+→ sparse: skills/xlsx
+→ name:   xlsx
+
+https://github.com/user/myskills/tree/main/rust
+→ repo:   https://github.com/user/myskills.git
+→ sparse: rust
+→ name:   rust
 ```
-URL: https://github.com/hugohe3/ppt-master/blob/main/skills/ppt-master/SKILL.md
-→ Repo:   https://github.com/hugohe3/ppt-master.git
-→ Path:   skills/ppt-master/SKILL.md
-→ Skill:  ppt-master  (parent of SKILL.md)
-→ Sparse: skills/ppt-master
 
-URL: https://github.com/anthropics/skills/tree/main/skills/xlsx
-→ Repo:   https://github.com/anthropics/skills.git
-→ Path:   skills/xlsx
-→ Skill:  xlsx  (last segment)
-→ Sparse: skills/xlsx
+Only ask which skill when the URL contains no in-repo path. Do not guess among several
+repository skills.
 
-URL: https://github.com/user/myskills/tree/main/rust
-→ Repo:   https://github.com/user/myskills.git
-→ Path:   rust  (no skills/ prefix — skill at repo root)
-→ Skill:  rust
-→ Sparse: rust
+## B2. Resolve destination
+
+Map scope using the shared location table. Default:
+
+```text
+~/.config/zcode/skills/SKILL_NAME
 ```
 
-Only ask the user if the URL is just a repo root (no path beyond `github.com/user/repo`).
-Default scope to user-level `--global` (`~/.config/zcode/skills/`) unless user explicitly says "project", "current project", or "agents".
+## B3. Git gate
 
-### Step 2: Install with git sparse-checkout
+Normally run:
 
-**IMPORTANT**: git clone goes over the network and can take 30-120s. Always use
-`timeout: 60` (or omit timeout to get the 120s default). Never set timeout < 60.
+```bash
+git --version
+```
 
-Split into two calls so the slow network step doesn't get killed:
+macOS exception: Apple's `/usr/bin/git` shim can open the Command Line Tools installer
+when tools are absent. Avoid triggering that GUI. On Darwin, preflight first:
 
-**Call 1 — Clone (timeout: 60):**
+```bash
+if [ "$(command -v git 2>/dev/null)" = "/usr/bin/git" ] && ! xcode-select -p >/dev/null 2>&1; then
+  echo "Git unavailable: Apple Command Line Tools are not installed" >&2
+  exit 127
+fi
+git --version
+```
 
-Mac / Linux:
+Interpret carefully:
+
+- Version prints successfully → continue to B4.
+- Executable is unavailable (`command not found`, PowerShell “not recognized”, or the
+  macOS preflight exits 127) → run [Git bootstrap](#git-bootstrap-route-no-separate-skill),
+  verify, then return to B4.
+- Git runs but another operation failed (`not a git repository`, authentication,
+  network, merge conflict) → report that actual error. Do not reinstall Git.
+
+A failed `git status` alone never proves that Git is missing; the version gate above is
+canonical.
+
+## B4. Sparse clone
+
+Git network operations may take 30–120 seconds. Use a timeout of at least 120 seconds,
+or omit timeout only when tool default is at least 120 seconds. Keep clone and copy in
+separate tool calls. When B1 provided a branch, add `--branch "BRANCH"` before
+`--no-checkout`; otherwise omit that argument.
+
+macOS/Linux clone call:
+
 ```bash
 TMP=$(mktemp -d)
 git clone --depth 1 --no-checkout REPO_URL "$TMP"
@@ -168,7 +224,8 @@ cd "$TMP" && git sparse-checkout set "SPARSE_PATH" && git checkout
 echo "$TMP"
 ```
 
-Windows PowerShell:
+Windows PowerShell clone call:
+
 ```powershell
 $tmp = Join-Path $env:TEMP "skill_$(Get-Random)"
 git clone --depth 1 --no-checkout REPO_URL $tmp
@@ -179,61 +236,252 @@ Pop-Location
 Write-Output $tmp
 ```
 
-**Call 2 — Copy to target (no timeout needed):**
+Do not continue when clone, sparse-checkout, or checkout fails.
 
-Replace `TMP` with the path printed by Call 1.
+## B5. Copy and clean up
 
-Mac / Linux:
+Replace `TMP`, `SPARSE_PATH`, and `TARGET_DIR` with resolved values.
+
+macOS/Linux:
+
 ```bash
-mkdir -p TARGET_DIR && cp -r "TMP/SPARSE_PATH"/. TARGET_DIR/ && rm -rf "TMP"
+mkdir -p "TARGET_DIR"
+cp -r "TMP/SPARSE_PATH"/. "TARGET_DIR"/
+rm -rf "TMP"
 ```
 
 Windows PowerShell:
+
 ```powershell
 New-Item -ItemType Directory -Path "TARGET_DIR" -Force | Out-Null
-Copy-Item -Recurse "TMP\SPARSE_PATH\*" "TARGET_DIR"
+Copy-Item -Recurse -Force "TMP\SPARSE_PATH\*" "TARGET_DIR"
 Remove-Item -Recurse -Force "TMP"
 ```
 
-TARGET_DIR mapping:
-- **user/global** (default): `~/.config/zcode/skills/SKILL_NAME`
-- **project**: `$(pwd)/.zcode/skills/SKILL_NAME`
-- **pi agent**: `~/.agents/skills/SKILL_NAME`
+Delete only the temporary directory created by B4. Never broaden cleanup to its parent
+or an unresolved variable.
 
-### Step 3: Verify
-Use the `read` tool to check `TARGET_DIR/SKILL.md` has valid YAML frontmatter
-(`name` + `description` fields).
+For updates, copy into the same target. Preserve target scope and re-run verification;
+do not create a second directory with a version suffix.
 
-### Updating an already-installed skill
-Same workflow — just overwrite the target directory. No extra steps needed.
+## B6. Verify installation
 
-## Prerequisites
+Use `read` on `TARGET_DIR/SKILL.md`. Confirm:
 
-- **Git** must be installed and on PATH. Verify: `git --version`
+- file exists;
+- frontmatter parses;
+- `name` and `description` exist;
+- installed name and requested skill agree;
+- no clone failure was hidden by a later successful command.
 
-## Performance
-
-| Method | Time | Issues |
-|--------|------|--------|
-| HTTP file-by-file (curl/iwr) | ~20s+ | API rate limit, 130KB HTML per request |
-| `git clone --depth 1` + sparse-checkout | ~3–10s | One round-trip, no rate limits |
-
-## Notes
-
-- The sparse-checkout path is directly extracted from the URL — no guesswork needed
-- The temporary clone directory is fully cleaned up after install (via `rm -rf` / `Remove-Item`)
+Only then report successful installation.
 
 ---
 
-# Tips
+# Git bootstrap route (no separate skill)
 
-- **Descriptions matter most.** The description determines whether the skill gets triggered. Describe both what the skill does AND when to use it.
-- **Keep skills focused.** One skill = one clear purpose. Don't cram unrelated instructions into one skill.
-- **Project vs global:** Use project-level (`.zcode/skills/`) for project-specific workflows (coding conventions, domain knowledge). Use global (`~/.config/zcode/skills/`) for reusable skills that apply across projects.
-- **Test with the actual agent.** After creating a skill, ask the user to send a message that should trigger it, and verify the agent follows the instructions.
-- **Workspace four-folder layout:** When creating skills that generate files, respect the workspace convention:
-  - Skill instructions → `.zcode/skills/<name>/` or `~/.config/zcode/skills/<name>/`
-  - Scripts → `scripts/` directory (alongside pin)
-  - Generated output → `output/` directory (alongside pin)
-  - Source files to modify → `sources/` directory (alongside pin)
-  All four directories are writable via `read`/`write`/`edit` tools.
+This is an internal prerequisite branch of Workflow B. Do not create a
+Git helper skill or another `SKILL.md`.
+
+Route:
+
+```text
+detect missing executable
+→ identify supported platform
+→ install without GUI interaction
+→ refresh PATH if needed
+→ re-run git --version
+→ notify user
+→ return to B4
+```
+
+## C1. Trigger boundaries
+
+Enter this branch only when `git --version` confirms that the executable is missing.
+Typical signals:
+
+- macOS: `command not found: git` or B3 detects an unusable Apple Git shim;
+- Windows PowerShell: `git is not recognized`;
+- prerequisite checklist failed, followed by failed `git --version`.
+
+Do not enter for normal Git errors.
+
+This bootstrap supports macOS and Windows only. Detect the actual OS; bash/zsh does not
+prove macOS. On Linux or another platform, stop and report that automatic bootstrap is
+unsupported.
+
+If tools execute in a sandbox/container rather than on the user's machine, state which
+environment was checked. Do not claim the user's computer was modified.
+
+No graphical installer or command that opens one is allowed. In particular, never use:
+
+```bash
+xcode-select --install
+```
+
+## C2. macOS
+
+First verify `uname -s` returns `Darwin`. Use the B3 preflight instead of invoking an
+unconfigured `/usr/bin/git` shim.
+
+When Homebrew exists:
+
+```bash
+command -v brew
+brew install git
+hash -r
+git --version
+```
+
+When Homebrew is absent:
+
+```bash
+NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+if [ -x /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -x /usr/local/bin/brew ]; then
+  eval "$(/usr/local/bin/brew shellenv)"
+else
+  echo "Homebrew installation finished but brew was not found" >&2
+  exit 1
+fi
+brew install git
+hash -r
+git --version
+```
+
+Use at least a five-minute timeout. `curl` is allowed here only for Homebrew's official
+bootstrap because Git is unavailable. `NONINTERACTIVE=1` suppresses prompts; if the
+operation fails because Command Line Tools, privileges, or network access are missing,
+do not fall back to a GUI. Report the exact error and provide:
+
+<https://git-scm.com/download/mac>
+
+## C3. Windows default — MinGit
+
+Use official MinGit unless the user explicitly requests Git Bash, Git GUI, or full Git
+for Windows. MinGit supplies command-line `git.exe` without an installer wizard,
+administrator rights, Git Bash, Git GUI, or shell menus.
+
+Run in PowerShell:
+
+```powershell
+$ErrorActionPreference = "Stop"
+
+$release = Invoke-RestMethod `
+  -Uri "https://api.github.com/repos/git-for-windows/git/releases/latest" `
+  -Headers @{ "User-Agent" = "zcode-skill-creator" }
+
+$pattern = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
+  "MinGit-*-arm64.zip"
+} else {
+  "MinGit-*-64-bit.zip"
+}
+$asset = $release.assets |
+  Where-Object { $_.name -like $pattern -and $_.name -notlike "*-busybox-*" } |
+  Select-Object -First 1
+if (-not $asset) {
+  throw "No matching MinGit asset found for $env:PROCESSOR_ARCHITECTURE"
+}
+
+$zipPath = Join-Path $env:TEMP "MinGit.zip"
+$installDir = Join-Path $env:LOCALAPPDATA "Programs\MinGit"
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
+New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
+Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+
+$gitCmdDir = Join-Path $installDir "cmd"
+$gitExe = Join-Path $gitCmdDir "git.exe"
+if (-not (Test-Path -LiteralPath $gitExe -PathType Leaf)) {
+  throw "MinGit archive extracted, but git.exe was not found at $gitExe"
+}
+
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+$userEntries = @($userPath -split ";" | Where-Object { $_ })
+if ($userEntries -notcontains $gitCmdDir) {
+  $newUserPath = (@($userEntries) + $gitCmdDir) -join ";"
+  [System.Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+}
+if (($env:Path -split ";") -notcontains $gitCmdDir) {
+  $env:Path += ";$gitCmdDir"
+}
+
+git --version
+```
+
+The GitHub API and MinGit ZIP are allowed HTTP bootstrap exceptions because Git cannot
+clone its own prerequisite.
+
+If extraction succeeds but command lookup still fails, refresh PATH once and verify:
+
+```powershell
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+  [System.Environment]::GetEnvironmentVariable("Path", "User")
+git --version
+```
+
+## C4. Windows full Git — explicit request only
+
+When the user explicitly needs Git Bash, Git GUI, or full Git for Windows:
+
+```powershell
+winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+  [System.Environment]::GetEnvironmentVariable("Path", "User")
+git --version
+```
+
+If `winget` is unavailable, do not launch an interactive installer. Mention Chocolatey
+or Scoop only when already installed. Otherwise provide:
+
+<https://git-scm.com/download/win>
+
+## C5. Verification and notification
+
+Every installation branch must end with a new `git --version` call. Success requires a
+printed version such as:
+
+```text
+git version 2.54.0
+git version 2.54.0.windows.1
+```
+
+Notify according to verified state:
+
+- **Verified**: Git was missing, installation succeeded, include exact version, continue
+  to B4.
+- **Still installing**: say it may take a few minutes; do not imply completion.
+- **Full path works but PATH lookup fails**: explain that a new terminal may be needed.
+- **Failed**: include actual error and platform-specific manual URL.
+
+Never say Git is installed successfully before verification succeeds.
+
+---
+
+# Final checklist
+
+## Created skill
+
+- Correct scope and path
+- Valid `name` and trigger-rich `description`
+- Focused instructions
+- Result re-read
+- Test prompt suggested
+
+## Installed skill
+
+- URL parsed without guessing
+- Scope resolved
+- Git gate passed or bootstrap verified
+- Shallow sparse-checkout used
+- Temporary clone cleaned safely
+- Installed `SKILL.md` re-read and validated
+
+## Never do
+
+- Create a separate Git helper skill
+- Fetch repository skill files one-by-one over HTTP
+- Treat `git status` failure as proof Git is absent
+- Use a GUI installer in automatic bootstrap
+- Claim success before verification

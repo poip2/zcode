@@ -26,7 +26,15 @@
     "filenamePlaceholder": "filename.md",
     "folderPlaceholder": "folder name",
     "failedReadPinned": "Failed to read pinned folder: {error}",
-    "failedReadFolder": "Failed to read folder: {error}"
+    "failedReadFolder": "Failed to read folder: {error}",
+    "rename": "Rename",
+    "delete": "Delete",
+    "renamed": "Renamed",
+    "moved": "Document moved",
+    "movedToTrash": "Moved to trash",
+    "deleteFileConfirm": "Move “{name}” to trash?",
+    "deleteFolderConfirm": "Move folder “{name}” and its contents to trash?",
+    "deleteConfirmUnsaved": "“{name}” contains unsaved changes. Move it to trash anyway?"
   },
   "settings": {
     "title": "Settings",
@@ -76,6 +84,7 @@
     "hideSidebar": "Hide sidebar",
     "showSidebar": "Show sidebar",
     "settings": "Settings",
+    "exportPdf": "Export PDF (⇧⌘P)",
     "minimize": "Minimize",
     "maximize": "Maximize",
     "close": "Close",

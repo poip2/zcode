@@ -128,7 +128,7 @@ zcode ships with one built-in skill compiled into the binary:
 
 | Skill | Description |
 |-------|-------------|
-| `skill-creator` | Guide for creating new skills + installing skills from GitHub repos |
+| `skill-creator` | Guide for creating/installing skills; routes missing-Git installs through an internal silent macOS/Windows bootstrap flow |
 
 To add a new built-in skill:
 1. Create `src-tauri/skills/<name>/SKILL.md`

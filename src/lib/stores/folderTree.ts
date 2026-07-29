@@ -73,6 +73,43 @@ function createFolderTreeStore() {
       isExpanded(path: string): boolean {
         return get(expandedPaths).has(path);
       },
+      ensure(path: string) {
+        expandedPaths.update((set) => {
+          if (set.has(path)) return set;
+          const next = new Set(set);
+          next.add(path);
+          return next;
+        });
+      },
+      removeTree(path: string) {
+        const base = path.replace(/\\/g, "/").replace(/\/$/, "");
+        expandedPaths.update((set) => {
+          const next = new Set(
+            [...set].filter((item) => {
+              const normalized = item.replace(/\\/g, "/");
+              return normalized !== base && !normalized.startsWith(`${base}/`);
+            }),
+          );
+          return next;
+        });
+      },
+      replaceTree(oldPath: string, newPath: string) {
+        const oldBase = oldPath.replace(/\\/g, "/").replace(/\/$/, "");
+        const separator = newPath.includes("\\") ? "\\" : "/";
+        expandedPaths.update((set) => {
+          const next = new Set<string>();
+          for (const item of set) {
+            const normalized = item.replace(/\\/g, "/");
+            if (normalized === oldBase || normalized.startsWith(`${oldBase}/`)) {
+              const suffix = normalized.slice(oldBase.length).replaceAll("/", separator);
+              next.add(`${newPath}${suffix}`);
+            } else {
+              next.add(item);
+            }
+          }
+          return next;
+        });
+      },
     },
   };
 }

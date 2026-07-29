@@ -7,10 +7,14 @@
     sidebarVisible,
     onToggleSidebar,
     onOpenSettings,
+    onExportPdf,
+    canExportPdf,
   }: {
     sidebarVisible: boolean;
     onToggleSidebar: () => void;
     onOpenSettings: () => void;
+    onExportPdf: () => void;
+    canExportPdf: boolean;
   } = $props();
 
   let doc = $derived($docStore);
@@ -57,6 +61,21 @@
         <line x1="10" y1="10" x2="13" y2="10"/>
       </svg>
     {/if}
+  </button>
+
+  <!-- Export current preview through the native print-to-PDF dialog -->
+  <button
+    class="tb-btn"
+    onclick={onExportPdf}
+    title={$t('titlebar.exportPdf')}
+    disabled={!canExportPdf}
+    data-tauri-drag-region="false"
+  >
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14,2 14,8 20,8"/>
+      <path d="M8 15h8M12 11v8"/>
+    </svg>
   </button>
 
   <!-- Settings -->
@@ -133,6 +152,16 @@
   .tb-btn:hover {
     background: rgba(0,0,0,0.05);
     color: var(--zc-text-primary, #1F1E1C);
+  }
+
+  .tb-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .tb-btn:disabled:hover {
+    background: transparent;
+    color: var(--zc-text-secondary, #8A8782);
   }
 
   .tb-toggle {

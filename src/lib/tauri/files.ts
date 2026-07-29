@@ -7,6 +7,15 @@ import { type DirNode } from "../stores/folderTree";
 import { renderFull } from "../renderer/pipeline";
 import { markSaved } from "./watcher";
 
+let loadGeneration = 0;
+let reloadGeneration = 0;
+
+/** Invalidate pending reads when the UI switches to a non-Markdown item. */
+export function cancelPendingFileLoad(): void {
+  loadGeneration++;
+  reloadGeneration++;
+}
+
 export async function readMarkdownFile(path: string): Promise<string> {
   return invoke<string>("read_markdown_file", { path });
 }
@@ -26,7 +35,12 @@ export function getBaseDir(path: string): string {
 }
 
 export async function loadFile(path: string): Promise<void> {
+  const requestId = ++loadGeneration;
+  // A new explicit load also invalidates reloads started by the previous watcher.
+  reloadGeneration++;
   const absolutePath = await resolvePath(path);
+  if (requestId !== loadGeneration) return;
+
   const fileName = absolutePath.replace(/\\/g, "/").split("/").pop() ?? absolutePath;
   const baseDir = getBaseDir(absolutePath);
 
@@ -43,8 +57,10 @@ export async function loadFile(path: string): Promise<void> {
 
   try {
     const content = await readMarkdownFile(absolutePath);
+    if (requestId !== loadGeneration || get(document).filePath !== absolutePath) return;
     const result = renderFull(content, baseDir);
     await allowAssets(result.assetPaths);
+    if (requestId !== loadGeneration || get(document).filePath !== absolutePath) return;
 
     document.set({
       filePath: absolutePath,
@@ -58,8 +74,8 @@ export async function loadFile(path: string): Promise<void> {
     });
 
     getCurrentWindow().setTitle(`${fileName} — zcode`).catch(() => {});
-    invoke("start_watching", { path: absolutePath }).catch(() => {});
   } catch (err) {
+    if (requestId !== loadGeneration || get(document).filePath !== absolutePath) return;
     document.set({
       filePath: absolutePath,
       fileName,
@@ -95,23 +111,25 @@ export async function openFileDialog(): Promise<string | null> {
 }
 
 export async function reloadCurrentFile(path: string, isOwnSave = false): Promise<void> {
+  const requestId = ++reloadGeneration;
   try {
     const absolutePath = await resolvePath(path);
+    if (requestId !== reloadGeneration || get(document).filePath !== absolutePath) return;
     const content = await readMarkdownFile(absolutePath);
+    if (requestId !== reloadGeneration || get(document).filePath !== absolutePath) return;
 
     // Skip update if the content hasn't actually changed.
     // This prevents unnecessary DOM destruction from {@html} in MarkdownRenderer,
     // which would cause the preview to visibly flash/close on every reload.
     const current = get(document);
-    if (current.content === content && current.filePath === absolutePath) {
-      return;
-    }
+    if (current.content === content) return;
 
     const baseDir = getBaseDir(absolutePath);
     const result = renderFull(content, baseDir);
     const fileName = absolutePath.replace(/\\/g, "/").split("/").pop() ?? absolutePath;
 
     await allowAssets(result.assetPaths);
+    if (requestId !== reloadGeneration || get(document).filePath !== absolutePath) return;
 
     if (isOwnSave) {
       markSaved(absolutePath);
@@ -128,7 +146,7 @@ export async function reloadCurrentFile(path: string, isOwnSave = false): Promis
       error: null,
     });
   } catch (err) {
-    console.error("Failed to reload file:", err);
+    if (requestId === reloadGeneration) console.error("Failed to reload file:", err);
   }
 }
 
@@ -153,6 +171,18 @@ export async function createMarkdownFile(dir: string, name: string): Promise<str
 
 export async function createFolder(dir: string, name: string): Promise<string> {
   return invoke<string>("create_folder", { dir, name });
+}
+
+export async function renamePath(path: string, newName: string): Promise<string> {
+  return invoke<string>("rename_path", { path, newName });
+}
+
+export async function moveDocument(path: string, destinationDir: string): Promise<string> {
+  return invoke<string>("move_document", { path, destinationDir });
+}
+
+export async function trashPath(path: string): Promise<void> {
+  return invoke("trash_path", { path });
 }
 
 export async function pathExists(path: string): Promise<boolean> {

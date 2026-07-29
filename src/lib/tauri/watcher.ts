@@ -4,46 +4,82 @@ import { reloadCurrentFile } from "./files";
 
 let unlisten: UnlistenFn | null = null;
 let reloadTimeout: ReturnType<typeof setTimeout> | null = null;
+let activeFilePath: string | null = null;
+let watcherRevision = 0;
+let watcherQueue: Promise<void> = Promise.resolve();
 
 // Track last save time per file path to suppress self-triggered reloads
 const lastSavedAt = new Map<string, number>();
 const OWN_SAVE_SUPPRESSION_MS = 1500;
 
-/** Start watching the given file for external changes. */
-export async function startFileWatcher(filePath: string): Promise<void> {
-  if (unlisten) {
-    unlisten();
-    unlisten = null;
-  }
+function normalizePath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  return navigator.platform.includes("Win") ? normalized.toLowerCase() : normalized;
+}
+
+function clearFrontendWatcher(): void {
   if (reloadTimeout) {
     clearTimeout(reloadTimeout);
     reloadTimeout = null;
   }
+  if (unlisten) {
+    unlisten();
+    unlisten = null;
+  }
+  activeFilePath = null;
+}
 
-  unlisten = await listen<{ path: string }>("file-changed", () => {
-    // Debounce on frontend too — editors may trigger multiple events
-    if (reloadTimeout) clearTimeout(reloadTimeout);
-    reloadTimeout = setTimeout(() => {
-      // Skip reload if this file-changed event was triggered by our own save
-      const savedAt = lastSavedAt.get(filePath);
-      if (savedAt && Date.now() - savedAt < OWN_SAVE_SUPPRESSION_MS) {
+function enqueueWatcherOperation(operation: () => Promise<void>): Promise<void> {
+  const result = watcherQueue.then(operation, operation);
+  // Keep later operations runnable after a failed invoke/listen call.
+  watcherQueue = result.catch(() => {});
+  return result;
+}
+
+/** Start watching the given file. Operations are serialized so stale starts cannot win. */
+export function startFileWatcher(filePath: string): Promise<void> {
+  const revision = ++watcherRevision;
+
+  return enqueueWatcherOperation(async () => {
+    if (revision !== watcherRevision) return;
+    clearFrontendWatcher();
+    activeFilePath = filePath;
+
+    try {
+      const nextUnlisten = await listen<{ path: string }>("file-changed", (event) => {
+        const activePath = activeFilePath;
+        if (!activePath || normalizePath(event.payload.path) !== normalizePath(activePath)) return;
+
+        if (reloadTimeout) clearTimeout(reloadTimeout);
+        reloadTimeout = setTimeout(() => {
+          if (!activeFilePath || normalizePath(activeFilePath) !== normalizePath(activePath)) return;
+          const savedAt = lastSavedAt.get(activePath);
+          if (savedAt && Date.now() - savedAt < OWN_SAVE_SUPPRESSION_MS) return;
+          reloadCurrentFile(activePath);
+        }, 100);
+      });
+
+      if (revision !== watcherRevision) {
+        nextUnlisten();
+        activeFilePath = null;
         return;
       }
-      reloadCurrentFile(filePath);
-    }, 100);
+      unlisten = nextUnlisten;
+      await invoke("start_watching", { path: filePath });
+    } catch (error) {
+      if (revision === watcherRevision) clearFrontendWatcher();
+      throw error;
+    }
   });
 }
 
-/** Stop the file watcher. */
+/** Stop watching. Invalidates and queues behind any in-flight start operation. */
 export function stopFileWatcher(): void {
-  if (reloadTimeout) {
-    clearTimeout(reloadTimeout);
-    reloadTimeout = null;
-  }
-  if (unlisten) {
-    unlisten();
-    unlisten = null;
-  }
+  ++watcherRevision;
+  clearFrontendWatcher();
+  void enqueueWatcherOperation(async () => {
+    await invoke("stop_watching");
+  }).catch(() => {});
 }
 
 /**

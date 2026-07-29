@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { document as docStore } from "$lib/stores/document";
   import { externalFile } from "$lib/stores/externalFile";
   import { initRenderer, renderFull } from "$lib/renderer/pipeline";
   import {
     loadFile,
+    cancelPendingFileLoad,
     saveFile,
     openFileDialog,
     getBaseDir,
@@ -19,6 +20,7 @@
   import { reloadSourcesFiles } from "$lib/stores/workspaceFiles";
   
   import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { t, tt } from "$lib/i18n";
   import Editor from "$lib/components/Editor.svelte";
   import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
@@ -42,6 +44,8 @@
   let settingsOpen = $state(false);
   let agentPanelOpen = $state(false);
   let lastWatchedPath = $state<string | null>(null);
+  let watcherStartingPath = $state<string | null>(null);
+  let watcherFailedPath = $state<string | null>(null);
   let dragHover = $state(false);
   let unlistenDragDrop: (() => void) | undefined;
   let unmounted = false;
@@ -181,6 +185,122 @@
     }
   }
 
+  function normalizePath(path: string): string {
+    const normalized = path.replace(/\\/g, "/").replace(/\/$/, "");
+    return navigator.platform.includes("Win") ? normalized.toLowerCase() : normalized;
+  }
+
+  function remapPath(currentPath: string, oldBase: string, newBase: string): string | null {
+    const current = normalizePath(currentPath);
+    const oldPath = normalizePath(oldBase);
+    if (current !== oldPath && !current.startsWith(`${oldPath}/`)) return null;
+
+    const normalizedCurrent = currentPath.replace(/\\/g, "/");
+    const normalizedOld = oldBase.replace(/\\/g, "/").replace(/\/$/, "");
+    const suffix = normalizedCurrent.slice(normalizedOld.length);
+    const separator = newBase.includes("\\") ? "\\" : "/";
+    return newBase + suffix.replaceAll("/", separator);
+  }
+
+  function fileNameFromPath(path: string): string {
+    return path.replace(/\\/g, "/").split("/").pop() ?? path;
+  }
+
+  function handleEntryPathChanged(oldPath: string, newPath: string) {
+    const currentDoc = $docStore;
+    if (currentDoc.filePath) {
+      const mapped = remapPath(currentDoc.filePath, oldPath, newPath);
+      if (mapped) {
+        cancelPendingFileLoad();
+        if (currentDoc.loading) {
+          void loadFile(mapped).catch((err) => console.error("Failed to reload moved file:", err));
+        } else {
+          const preview = renderFull(dirty ? editContent : currentDoc.content, getBaseDir(mapped));
+          allowAssets(preview.assetPaths).catch(() => {});
+          docStore.set({
+            ...currentDoc,
+            filePath: mapped,
+            fileName: fileNameFromPath(mapped),
+            renderedHtml: preview.html,
+            frontmatter: preview.frontmatter,
+            wordCount: preview.wordCount,
+          });
+          getCurrentWindow().setTitle(`${fileNameFromPath(mapped)} — zcode`).catch(() => {});
+        }
+      }
+    }
+
+    const currentExternal = $externalFile;
+    if (currentExternal) {
+      const mapped = remapPath(currentExternal.path, oldPath, newPath);
+      if (mapped) externalFile.set({ path: mapped, name: fileNameFromPath(mapped) });
+    }
+  }
+
+  function handleEntryDeleted(path: string) {
+    const currentDoc = $docStore;
+    if (currentDoc.filePath && remapPath(currentDoc.filePath, path, path)) {
+      cancelPendingFileLoad();
+      stopFileWatcher();
+      lastWatchedPath = null;
+      watcherStartingPath = null;
+      watcherFailedPath = null;
+      isEditing = false;
+      editContent = "";
+      dirty = false;
+      docStore.set({
+        filePath: null,
+        fileName: null,
+        content: "",
+        renderedHtml: "",
+        frontmatter: null,
+        wordCount: 0,
+        loading: false,
+        error: null,
+      });
+      getCurrentWindow().setTitle("zcode").catch(() => {});
+    }
+    if ($externalFile?.path && remapPath($externalFile.path, path, path)) {
+      cancelPendingFileLoad();
+      externalFile.set(null);
+    }
+  }
+
+  async function waitForPrintableAssets() {
+    await window.document.fonts?.ready.catch(() => {});
+    const pendingImages = [...window.document.querySelectorAll<HTMLImageElement>(".md-content img")]
+      .filter((image) => !image.complete)
+      .map((image) => new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      }));
+    if (pendingImages.length === 0) return;
+    await Promise.race([
+      Promise.all(pendingImages),
+      new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+    ]);
+  }
+
+  async function handleExportPdf() {
+    const currentDoc = $docStore;
+    if (!currentDoc.filePath || currentDoc.loading || currentDoc.error) return;
+
+    if (dirty) {
+      const result = renderFull(editContent, getBaseDir(currentDoc.filePath));
+      await allowAssets(result.assetPaths);
+      docStore.set({
+        ...currentDoc,
+        renderedHtml: result.html,
+        frontmatter: result.frontmatter,
+        wordCount: result.wordCount,
+      });
+    }
+    isEditing = false;
+    await tick();
+    await waitForPrintableAssets();
+    window.print();
+  }
+
   async function handleSave() {
     const doc = $docStore;
     if (!doc.filePath || !dirty) return;
@@ -193,6 +313,7 @@
       }
 
       await reloadCurrentFile(doc.filePath, true);
+      if ($docStore.filePath !== doc.filePath) return;
 
       dirty = false;
       isEditing = false;
@@ -235,6 +356,11 @@
       toggleSidebar();
       return;
     }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      handleExportPdf();
+      return;
+    }
   }
 
   function handleEditChange(newValue: string) {
@@ -242,12 +368,48 @@
     dirty = newValue !== $docStore.content;
   }
 
-  // Watch file path changes to manage the watcher lifecycle
+  async function startWatcherWithRetry(path: string) {
+    let lastError: unknown;
+    try {
+      for (const delay of [0, 250, 1000]) {
+        if (unmounted || $docStore.filePath !== path) return;
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        if (unmounted || $docStore.filePath !== path) return;
+        try {
+          await startFileWatcher(path);
+          if ($docStore.filePath === path) {
+            lastWatchedPath = path;
+            watcherFailedPath = null;
+          }
+          return;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if ($docStore.filePath === path) {
+        watcherFailedPath = path;
+        console.error("Failed to watch file after retries:", lastError);
+      }
+    } finally {
+      if (watcherStartingPath === path) watcherStartingPath = null;
+    }
+  }
+
+  // Watch file path changes to manage the watcher lifecycle.
   $effect(() => {
-    const path = $docStore.filePath;
-    if (path && path !== lastWatchedPath) {
-      lastWatchedPath = path;
-      startFileWatcher(path);
+    const state = $docStore;
+    const path = state.filePath;
+    if (state.loading && watcherFailedPath === path) watcherFailedPath = null;
+    if (
+      path &&
+      !state.loading &&
+      !state.error &&
+      path !== lastWatchedPath &&
+      path !== watcherStartingPath &&
+      path !== watcherFailedPath
+    ) {
+      watcherStartingPath = path;
+      void startWatcherWithRetry(path);
     }
   });
 
@@ -270,11 +432,22 @@
 </script>
 
 <div class="app-root">
-  <TitleBar {sidebarVisible} onToggleSidebar={toggleSidebar} onOpenSettings={() => (settingsOpen = true)} />
+  <TitleBar
+    {sidebarVisible}
+    onToggleSidebar={toggleSidebar}
+    onOpenSettings={() => (settingsOpen = true)}
+    onExportPdf={handleExportPdf}
+    canExportPdf={Boolean(doc.filePath && !doc.loading && !doc.error)}
+  />
 
   <div class="app-body">
     {#if sidebarVisible}
-      <Sidebar />
+      <Sidebar
+        {dirty}
+        onEntryPathChanged={handleEntryPathChanged}
+        onEntryDeleted={handleEntryDeleted}
+        onStatus={flashStatus}
+      />
     {/if}
 
     <main class="main-pane">
@@ -576,6 +749,60 @@
     }
     .status-hints .hint-compact {
       display: inline;
+    }
+  }
+
+  @media print {
+    @page {
+      size: A4;
+      margin: 16mm 18mm;
+    }
+
+    :global(html),
+    :global(body) {
+      width: auto !important;
+      height: auto !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    :global(.titlebar),
+    :global(.sidebar),
+    :global(.status-bar),
+    :global(.agent-fab),
+    :global(.agent-panel),
+    :global(.code-copy-btn) {
+      display: none !important;
+    }
+
+    .app-root,
+    .app-body,
+    .main-pane,
+    .content-main {
+      display: block !important;
+      width: auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: white !important;
+    }
+
+    :global(.md-content) {
+      max-width: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      color: #111 !important;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    :global(.md-content pre),
+    :global(.md-content blockquote),
+    :global(.md-content table),
+    :global(.md-content img) {
+      break-inside: avoid;
     }
   }
 </style>

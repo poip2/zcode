@@ -4,6 +4,7 @@ use crate::settings;
 use futures::StreamExt;
 use serde::Serialize;
 use std::fs;
+use std::io;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
 
@@ -268,6 +269,175 @@ fn validate_simple_name(name: &str) -> Result<(), String> {
         return Err("Invalid name".to_string());
     }
     Ok(())
+}
+
+/// Resolve an existing entry without following the entry itself through a symlink.
+/// Canonicalizing only the parent also gives us a stable absolute return path.
+fn resolve_existing_entry(path: &str) -> Result<std::path::PathBuf, String> {
+    let input = Path::new(path);
+    let name = input
+        .file_name()
+        .ok_or_else(|| format!("Path has no file or folder name: {path}"))?;
+    let parent = input
+        .parent()
+        .ok_or_else(|| format!("Path has no parent directory: {path}"))?;
+    let canonical_parent = dunce::canonicalize(parent)
+        .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
+    let resolved = canonical_parent.join(name);
+    fs::symlink_metadata(&resolved).map_err(|e| format!("Path not found: {path}: {e}"))?;
+    Ok(resolved)
+}
+
+fn path_to_string(path: &Path) -> Result<String, String> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "Path is not valid UTF-8".to_string())
+}
+
+/// Atomically rename without replacing an entry created by another process.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use rustix::fs::{renameat_with, RenameFlags, CWD};
+
+    renameat_with(CWD, source, CWD, destination, RenameFlags::NOREPLACE).map_err(io::Error::from)
+}
+
+#[cfg(target_os = "windows")]
+fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    // SAFETY: Both buffers are NUL-terminated and remain alive for the call.
+    let result = unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0) };
+    if result == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    if fs::symlink_metadata(destination).is_ok() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "destination already exists",
+        ));
+    }
+    fs::rename(source, destination)
+}
+
+/// Cross-filesystem fallback for regular files. `create_new` reserves the destination
+/// atomically, so an existing file is never truncated or replaced.
+fn copy_then_remove_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    let mut source_file = fs::File::open(source)?;
+    let source_permissions = source_file.metadata()?.permissions();
+    let mut destination_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)?;
+
+    let result = (|| -> io::Result<()> {
+        io::copy(&mut source_file, &mut destination_file)?;
+        destination_file.set_permissions(source_permissions)?;
+        destination_file.sync_all()?;
+        fs::remove_file(source)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        drop(destination_file);
+        let _ = fs::remove_file(destination);
+    }
+    result
+}
+
+/// Rename a file or folder beside itself. Existing destinations are never overwritten.
+#[tauri::command]
+pub fn rename_path(path: String, new_name: String) -> Result<String, String> {
+    validate_simple_name(&new_name)?;
+    let source = resolve_existing_entry(&path)?;
+    let destination = source
+        .parent()
+        .ok_or_else(|| format!("Path has no parent directory: {path}"))?
+        .join(new_name);
+
+    if destination == source {
+        return path_to_string(&source);
+    }
+    if fs::symlink_metadata(&destination).is_ok() {
+        let same_entry = dunce::canonicalize(&destination)
+            .ok()
+            .zip(dunce::canonicalize(&source).ok())
+            .is_some_and(|(existing, source)| existing == source);
+        if !same_entry {
+            return Err(format!(
+                "A file or folder already exists: {}",
+                destination.display()
+            ));
+        }
+        // Case-only rename on a case-insensitive filesystem targets the same entry.
+        fs::rename(&source, &destination).map_err(|e| format!("Failed to rename: {e}"))?;
+        return path_to_string(&destination);
+    }
+
+    rename_no_replace(&source, &destination)
+        .map_err(|e| format!("Failed to rename without overwriting: {e}"))?;
+    path_to_string(&destination)
+}
+
+/// Move one document into an existing folder. Existing destinations are never overwritten.
+#[tauri::command]
+pub fn move_document(path: String, destination_dir: String) -> Result<String, String> {
+    let source = resolve_existing_entry(&path)?;
+    let metadata = fs::symlink_metadata(&source)
+        .map_err(|e| format!("Failed to read source metadata: {e}"))?;
+    if !metadata.is_file() {
+        return Err("Only files can be moved into folders".to_string());
+    }
+
+    let destination_dir = dunce::canonicalize(&destination_dir)
+        .map_err(|e| format!("Failed to resolve destination folder: {e}"))?;
+    if !destination_dir.is_dir() {
+        return Err(format!("Not a directory: {}", destination_dir.display()));
+    }
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| format!("Source path has no file name: {path}"))?;
+    let destination = destination_dir.join(file_name);
+
+    if destination == source {
+        return path_to_string(&source);
+    }
+    if fs::symlink_metadata(&destination).is_ok() {
+        return Err(format!(
+            "A file already exists in that folder: {}",
+            destination.display()
+        ));
+    }
+
+    match rename_no_replace(&source, &destination) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
+            copy_then_remove_no_replace(&source, &destination)
+                .map_err(|e| format!("Failed to move document across filesystems: {e}"))?;
+        }
+        Err(error) => return Err(format!("Failed to move document: {error}")),
+    }
+    path_to_string(&destination)
+}
+
+/// Send a file or folder to the operating system trash/recycle bin.
+#[tauri::command]
+pub fn trash_path(path: String) -> Result<(), String> {
+    let entry = resolve_existing_entry(&path)?;
+    trash::delete(&entry).map_err(|e| format!("Failed to move item to trash: {e}"))
 }
 
 // ============================================================================
@@ -616,6 +786,95 @@ pub fn allow_assets(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn test_rename_path_renames_file_without_overwriting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let original = tmp.path().join("old.md");
+        std::fs::write(&original, "content").unwrap();
+
+        let renamed =
+            rename_path(original.to_str().unwrap().to_string(), "new.md".to_string()).unwrap();
+
+        assert!(!original.exists());
+        assert_eq!(std::fs::read_to_string(renamed).unwrap(), "content");
+
+        std::fs::write(tmp.path().join("taken.md"), "taken").unwrap();
+        let collision = rename_path(
+            tmp.path().join("new.md").to_str().unwrap().to_string(),
+            "taken.md".to_string(),
+        );
+        assert!(collision.is_err());
+    }
+
+    #[test]
+    fn test_rename_no_replace_preserves_existing_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source.md");
+        let destination = tmp.path().join("destination.md");
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(&destination, "destination").unwrap();
+
+        let result = rename_no_replace(&source, &destination);
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(source).unwrap(), "source");
+        assert_eq!(std::fs::read_to_string(destination).unwrap(), "destination");
+    }
+
+    #[test]
+    fn test_copy_then_remove_no_replace_moves_file_safely() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source.md");
+        let destination = tmp.path().join("destination.md");
+        std::fs::write(&source, "source").unwrap();
+
+        copy_then_remove_no_replace(&source, &destination).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(std::fs::read_to_string(destination).unwrap(), "source");
+    }
+
+    #[test]
+    fn test_rename_path_rejects_directory_components() {
+        let tmp = tempfile::tempdir().unwrap();
+        let original = tmp.path().join("old.md");
+        std::fs::write(&original, "content").unwrap();
+
+        let result = rename_path(
+            original.to_str().unwrap().to_string(),
+            "sub/new.md".to_string(),
+        );
+
+        assert!(result.is_err());
+        assert!(original.exists());
+    }
+
+    #[test]
+    fn test_move_document_moves_file_and_rejects_collision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("note.md");
+        let destination_dir = tmp.path().join("folder");
+        std::fs::write(&source, "note").unwrap();
+        std::fs::create_dir(&destination_dir).unwrap();
+
+        let moved = move_document(
+            source.to_str().unwrap().to_string(),
+            destination_dir.to_str().unwrap().to_string(),
+        )
+        .unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read_to_string(&moved).unwrap(), "note");
+
+        let second = tmp.path().join("note.md");
+        std::fs::write(&second, "second").unwrap();
+        let collision = move_document(
+            second.to_str().unwrap().to_string(),
+            destination_dir.to_str().unwrap().to_string(),
+        );
+        assert!(collision.is_err());
+        assert_eq!(std::fs::read_to_string(second).unwrap(), "second");
+    }
 
     /// Test copy_file_to_folder: basic copy into empty dir
     #[test]

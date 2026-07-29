@@ -26,7 +26,15 @@
     "filenamePlaceholder": "文件名.md",
     "folderPlaceholder": "文件夹名称",
     "failedReadPinned": "读取固定文件夹失败：{error}",
-    "failedReadFolder": "读取文件夹失败：{error}"
+    "failedReadFolder": "读取文件夹失败：{error}",
+    "rename": "重命名",
+    "delete": "删除",
+    "renamed": "已重命名",
+    "moved": "已移动文档",
+    "movedToTrash": "已移到回收站",
+    "deleteFileConfirm": "将“{name}”移到回收站？",
+    "deleteFolderConfirm": "将文件夹“{name}”及其内容移到回收站？",
+    "deleteConfirmUnsaved": "“{name}”中有尚未保存的修改。仍要移到回收站吗？"
   },
   "settings": {
     "title": "设置",
@@ -76,6 +84,7 @@
     "hideSidebar": "隐藏侧栏",
     "showSidebar": "显示侧栏",
     "settings": "设置",
+    "exportPdf": "导出 PDF（⇧⌘P）",
     "minimize": "最小化",
     "maximize": "最大化",
     "close": "关闭",

@@ -185,6 +185,10 @@ export async function trashPath(path: string): Promise<void> {
   return invoke("trash_path", { path });
 }
 
+export async function printCurrentWebview(): Promise<void> {
+  return invoke("print_webview");
+}
+
 export async function pathExists(path: string): Promise<boolean> {
   return invoke<boolean>("path_exists", { path });
 }

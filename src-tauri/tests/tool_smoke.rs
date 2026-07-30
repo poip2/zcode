@@ -7,22 +7,19 @@ use zcode_lib::error::Result;
 use zcode_lib::tools::ToolRegistry;
 
 #[test]
-fn test_tool_registry_subset() {
+fn test_tool_registry_contains_only_core_tools() {
     let cwd = Path::new(".");
-    let enabled = &["read", "grep", "find", "ls"];
+    let enabled = &["read", "write", "edit", "shell", "grep", "find", "ls"];
     let registry = ToolRegistry::new(enabled, cwd);
 
     let names: Vec<&str> = registry.tools().iter().map(|t| t.name()).collect();
-    eprintln!("Registered tools: {:?}", names);
-    assert_eq!(registry.tools().len(), 4);
-    assert!(registry.get("read").is_some());
-    assert!(registry.get("grep").is_some());
-    assert!(registry.get("find").is_some());
-    assert!(registry.get("ls").is_some());
+    eprintln!("Registered tools: {names:?}");
+    assert_eq!(names, vec!["read", "write", "edit", "shell"]);
+    assert!(registry.get("grep").is_none());
+    assert!(registry.get("find").is_none());
+    assert!(registry.get("ls").is_none());
     assert!(registry.get("bash").is_none());
-    assert!(registry.get("shell").is_none());
-    assert!(registry.get("edit").is_none());
-    eprintln!("PASS: ToolRegistry subset works");
+    eprintln!("PASS: ToolRegistry exposes only core tools");
 }
 
 #[tokio::test]
@@ -89,29 +86,6 @@ async fn test_edit_tool() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_ls_tool() -> Result<()> {
-    let tmp = tempfile::tempdir()?;
-    std::fs::write(tmp.path().join("a.txt"), "a")?;
-    std::fs::create_dir(tmp.path().join("subdir"))?;
-
-    let registry = ToolRegistry::new(&["ls"], tmp.path());
-    let tool = registry.get("ls").unwrap();
-    let output = tool
-        .execute("test-id", serde_json::json!({"path": "."}), None)
-        .await?;
-    assert!(!output.is_error);
-    let text = &output.content[0];
-    // Check it contains our files
-    if let zcode_lib::model::ContentBlock::Text(tc) = text {
-        assert!(tc.text.contains("a.txt"));
-        assert!(tc.text.contains("subdir/"));
-        eprintln!("LS output:\n{}", tc.text);
-    }
-    eprintln!("PASS: LsTool works");
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_shell_tool() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let registry = ToolRegistry::new(&["shell"], tmp.path());
@@ -134,38 +108,141 @@ async fn test_shell_tool() -> Result<()> {
 
 #[cfg(not(windows))]
 #[tokio::test]
-async fn test_grep_tool_if_rg_available() -> Result<()> {
+async fn test_shell_search_with_portable_fallbacks() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     std::fs::write(
         tmp.path().join("test.txt"),
         "hello world\nfoo bar\nhello again\n",
     )?;
 
-    let registry = ToolRegistry::new(&["grep"], tmp.path());
-    let tool = registry.get("grep").unwrap();
+    let registry = ToolRegistry::new(&["shell"], tmp.path());
+    let tool = registry.get("shell").unwrap();
     let output = tool
         .execute(
             "test-id",
-            serde_json::json!({"pattern": "hello", "path": "."}),
+            serde_json::json!({
+                "command": "find . -type f -name '*.txt' -print; grep -R -n -- 'hello' .",
+                "successExitCodes": [0, 1]
+            }),
             None,
         )
-        .await;
+        .await?;
 
-    match output {
-        Ok(out) => {
-            if let zcode_lib::model::ContentBlock::Text(tc) = &out.content[0] {
-                eprintln!("Grep output: {}", tc.text);
-                if out.is_error {
-                    eprintln!("Grep error (rg not installed): {}", tc.text);
-                } else {
-                    assert!(tc.text.contains("hello"), "Expected grep to find 'hello'");
-                }
-            }
-            eprintln!("PASS: GrepTool works (with rg)");
-        }
-        Err(_) => {
-            eprintln!("SKIP: rg not available, grep test skipped");
-        }
+    assert!(!output.is_error);
+    if let zcode_lib::model::ContentBlock::Text(tc) = &output.content[0] {
+        eprintln!("Shell search output: {}", tc.text);
+        assert!(tc.text.contains("test.txt"));
+        assert!(tc.text.contains("hello"));
     }
+
+    let no_matches = tool
+        .execute(
+            "test-id-no-matches",
+            serde_json::json!({
+                "command": "grep -R -n -- 'absent-pattern' .",
+                "successExitCodes": [0, 1]
+            }),
+            None,
+        )
+        .await?;
+    assert!(!no_matches.is_error, "exit code 1 must mean no matches");
+    assert_eq!(
+        no_matches
+            .details
+            .as_ref()
+            .and_then(|v| v["exitCode"].as_i64()),
+        Some(1)
+    );
+
+    let default_nonzero = tool
+        .execute(
+            "test-id-default-error",
+            serde_json::json!({"command": "exit 1"}),
+            None,
+        )
+        .await?;
+    assert!(
+        default_nonzero.is_error,
+        "non-search commands still reject exit 1"
+    );
+
+    eprintln!("PASS: shell searches and preserves no-match semantics");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn test_shell_output_is_bounded_by_lines_and_bytes() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let registry = ToolRegistry::new(&["shell"], tmp.path());
+    let tool = registry.get("shell").unwrap();
+
+    let many_lines = tool
+        .execute(
+            "test-id-line-limit",
+            serde_json::json!({
+                "command": "awk 'BEGIN { for (i = 1; i <= 400; i++) print \"line-\" i }'"
+            }),
+            None,
+        )
+        .await?;
+    if let zcode_lib::model::ContentBlock::Text(tc) = &many_lines.content[0] {
+        assert!(tc.text.lines().count() <= 201);
+        assert!(tc.text.contains("lines omitted"));
+    }
+
+    let many_bytes = tool
+        .execute(
+            "test-id-byte-limit",
+            serde_json::json!({
+                "command": "awk 'BEGIN { for (i = 1; i <= 400; i++) { for (j = 1; j <= 200; j++) printf \"x\"; print \"\" } }'"
+            }),
+            None,
+        )
+        .await?;
+    if let zcode_lib::model::ContentBlock::Text(tc) = &many_bytes.content[0] {
+        assert!(tc.text.len() <= 30_000);
+        assert!(tc.text.contains("bytes omitted"));
+    }
+
+    eprintln!("PASS: shell output stays within line and byte limits");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn test_shell_git_fallback_includes_untracked_files() -> Result<()> {
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("SKIP: git not available");
+        return Ok(());
+    }
+
+    let tmp = tempfile::tempdir()?;
+    std::fs::write(tmp.path().join("tracked.txt"), "tracked content\n")?;
+    std::fs::write(tmp.path().join("untracked.txt"), "untracked needle\n")?;
+
+    let registry = ToolRegistry::new(&["shell"], tmp.path());
+    let tool = registry.get("shell").unwrap();
+    let output = tool
+        .execute(
+            "test-id-git-untracked",
+            serde_json::json!({
+                "command": "git init -q && git add tracked.txt && while IFS= read -r -d '' file; do grep -nH -- 'needle' \"$file\"; code=$?; case \"$code\" in 0|1) ;; *) exit \"$code\" ;; esac; done < <(git ls-files -co --exclude-standard -z)",
+                "successExitCodes": [0, 1]
+            }),
+            None,
+        )
+        .await?;
+
+    assert!(!output.is_error);
+    if let zcode_lib::model::ContentBlock::Text(tc) = &output.content[0] {
+        assert!(tc.text.contains("untracked.txt"));
+        assert!(tc.text.contains("untracked needle"));
+    }
+    eprintln!("PASS: git fallback searches untracked non-ignored files");
     Ok(())
 }

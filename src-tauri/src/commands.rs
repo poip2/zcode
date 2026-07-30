@@ -440,6 +440,25 @@ pub fn trash_path(path: String) -> Result<(), String> {
     trash::delete(&entry).map_err(|e| format!("Failed to move item to trash: {e}"))
 }
 
+/// Open native print dialog for current webview.
+/// Tauri's native implementation is required on macOS, where `window.print()`
+/// inside WKWebView does not reliably open print dialog.
+#[tauri::command]
+pub fn print_webview(webview: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        return webview
+            .print()
+            .map_err(|e| format!("Failed to open print dialog: {e}"));
+    }
+
+    #[cfg(not(desktop))]
+    {
+        let _ = webview;
+        Err("Printing is not supported on this platform".to_string())
+    }
+}
+
 // ============================================================================
 // App paths
 // ============================================================================

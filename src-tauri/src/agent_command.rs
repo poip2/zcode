@@ -14,7 +14,7 @@
 //! - Current-file and user-skill edits skip confirmation. User skills gain an
 //!   immediate per-turn pass; project skills gain one after their first approved
 //!   dangerous action, preventing untrusted repositories from silent execution.
-//! - Read-only tools (read, grep, find, ls) execute immediately.
+//! - Read-only file access (`read`) executes immediately.
 
 use crate::agent::{Agent, AgentConfig, AgentEvent};
 use crate::error::Result as AgentResult;
@@ -719,6 +719,7 @@ fn build_confirmation_details(tool_name: &str, input: &serde_json::Value) -> ser
         "shell" => serde_json::json!({
             "command": input.get("command"),
             "timeout": input.get("timeout"),
+            "successExitCodes": input.get("successExitCodes"),
         }),
         _ => serde_json::json!({}),
     }
@@ -743,10 +744,7 @@ fn build_guarded_registry(
     augmented_path: Option<&str>,
     venv_dir: Option<&Path>,
 ) -> ToolRegistry {
-    use crate::tools::{
-        bash::BashTool, edit::EditTool, find::FindTool, grep::GrepTool, ls::LsTool, read::ReadTool,
-        write::WriteTool,
-    };
+    use crate::tools::{bash::BashTool, edit::EditTool, read::ReadTool, write::WriteTool};
 
     let mut tools: Vec<Box<dyn Tool>> = Vec::new();
     for name in tool_names {
@@ -765,9 +763,6 @@ fn build_guarded_registry(
             }
             "edit" => Box::new(EditTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
             "write" => Box::new(WriteTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
-            "grep" => Box::new(GrepTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
-            "find" => Box::new(FindTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
-            "ls" => Box::new(LsTool::with_allowed_roots(cwd, workspace_roots.to_vec())),
             _ => continue,
         };
         let guarded: Box<dyn Tool> = Box::new(GuardedTool {
@@ -909,10 +904,7 @@ fn build_system_prompt(
     if cfg!(windows) {
         prompt.push_str(include_str!("prompts/windows_shell.md"));
     } else {
-        prompt.push_str(
-            "The `shell` tool runs commands through a POSIX shell (bash/sh) on \
-             this Unix-like system.\n",
-        );
+        prompt.push_str(include_str!("prompts/unix_shell.md"));
     }
     prompt.push('\n');
 
@@ -1222,7 +1214,7 @@ pub async fn start_agent_turn(
     let mut map = sessions.lock().await;
 
     let allowed_tools_for_rebuild: Vec<String> = if allowed_tools.is_empty() {
-        vec!["read", "write", "edit", "shell", "grep", "find", "ls"]
+        vec!["read", "write", "edit", "shell"]
             .into_iter()
             .map(|s| s.to_string())
             .collect()

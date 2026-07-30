@@ -14,6 +14,7 @@
     openInShell,
     copyFileToFolder,
     getDefaultDataDir,
+    printCurrentWebview,
   } from "$lib/tauri/files";
   import { startFileWatcher, stopFileWatcher } from "$lib/tauri/watcher";
   import { load as loadSettings, resolveWorkspaceFolders } from "$lib/stores/settings";
@@ -298,7 +299,16 @@
     isEditing = false;
     await tick();
     await waitForPrintableAssets();
-    window.print();
+    try {
+      if (navigator.platform.includes("Mac")) {
+        await printCurrentWebview();
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      flashStatus(tt("editor.exportPdfFailed", { error: String(err) }));
+    }
   }
 
   async function handleSave() {

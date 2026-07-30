@@ -141,6 +141,7 @@
     "openFileBtn": "Open File…",
     "saved": "Saved",
     "saveFailed": "Save failed: {error}",
+    "exportPdfFailed": "PDF export failed: {error}",
     "unsaved": "(unsaved)",
     "editing": "— Editing",
     "preview": "— Preview",

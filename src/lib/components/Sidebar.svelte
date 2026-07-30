@@ -59,6 +59,16 @@
   let operationError = $state("");
   let draggedPath = $state<string | null>(null);
   let dropTargetPath = $state<string | null>(null);
+  let pointerDrag = $state<{
+    pointerId: number;
+    sourcePath: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+  } | null>(null);
+  let suppressFileClickUntil = $state(0);
+
+  const POINTER_DRAG_THRESHOLD = 5;
 
   let doc = $derived($docStore);
   let ft = $derived($folderTree);
@@ -220,6 +230,7 @@
   }
 
   function handleFileClick(node: DirNode) {
+    if (Date.now() < suppressFileClickUntil) return;
     selectedFolder = null;
     if (isMarkdownExt(node.name)) {
       externalFile.set(null);
@@ -348,26 +359,41 @@
     }
   }
 
-  function startDocumentDrag(event: DragEvent, node: DirNode) {
-    draggedPath = node.path;
-    event.dataTransfer?.setData("text/plain", node.path);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  function folderAtPoint(x: number, y: number, sourcePath: string): string | null {
+    const element = document.elementFromPoint(x, y)?.closest("[data-folder-path]") as HTMLElement | null;
+    const folderPath = element?.dataset.folderPath;
+    if (!folderPath || pathContains(sourcePath, folderPath)) return null;
+    return folderPath;
   }
 
-  function allowFolderDrop(event: DragEvent, folderPath: string) {
-    if (!draggedPath || pathContains(draggedPath, folderPath)) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    dropTargetPath = folderPath;
+  function startDocumentPointerDrag(event: PointerEvent, node: DirNode) {
+    if (event.button !== 0) return;
+    pointerDrag = {
+      pointerId: event.pointerId,
+      sourcePath: node.path,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   }
 
-  async function dropDocument(event: DragEvent, folderPath: string) {
-    event.preventDefault();
-    const sourcePath = draggedPath ?? event.dataTransfer?.getData("text/plain");
-    draggedPath = null;
-    dropTargetPath = null;
-    if (!sourcePath) return;
+  function updateDocumentPointerDrag(event: PointerEvent) {
+    const drag = pointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
+    if (!drag.active) {
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (distance < POINTER_DRAG_THRESHOLD) return;
+      pointerDrag = { ...drag, active: true };
+      draggedPath = drag.sourcePath;
+    }
+
+    event.preventDefault();
+    dropTargetPath = folderAtPoint(event.clientX, event.clientY, drag.sourcePath);
+  }
+
+  async function moveDocumentToFolder(sourcePath: string, folderPath: string) {
     operationError = "";
     try {
       const newPath = await moveDocument(sourcePath, folderPath);
@@ -380,9 +406,31 @@
     }
   }
 
-  function finishDocumentDrag() {
+  async function finishDocumentPointerDrag(event: PointerEvent) {
+    const drag = pointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const folderPath = drag.active ? dropTargetPath : null;
+    if (drag.active) {
+      event.preventDefault();
+      suppressFileClickUntil = Date.now() + 250;
+    }
+
+    pointerDrag = null;
     draggedPath = null;
     dropTargetPath = null;
+    const target = event.currentTarget as HTMLElement;
+    if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+
+    if (folderPath) await moveDocumentToFolder(drag.sourcePath, folderPath);
+  }
+
+  function cancelDocumentPointerDrag(event: PointerEvent) {
+    if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+    pointerDrag = null;
+    draggedPath = null;
+    dropTargetPath = null;
+    suppressFileClickUntil = 0;
   }
 </script>
 
@@ -398,11 +446,7 @@
       class:drop-target={dropTargetPath === node.path}
       style={`padding-left: ${rowPadding}px`}
       oncontextmenu={(event) => openContextMenu(event, node)}
-      ondragover={(event) => allowFolderDrop(event, node.path)}
-      ondragleave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) dropTargetPath = null;
-      }}
-      ondrop={(event) => dropDocument(event, node.path)}
+      data-folder-path={node.path}
     >
       {#if hasKids}
         <button
@@ -478,9 +522,11 @@
       onclick={() => handleFileClick(node)}
       onkeydown={(event) => handleFileKeydown(event, node)}
       oncontextmenu={(event) => openContextMenu(event, node)}
-      draggable="true"
-      ondragstart={(event) => startDocumentDrag(event, node)}
-      ondragend={finishDocumentDrag}
+      onpointerdown={(event) => startDocumentPointerDrag(event, node)}
+      onpointermove={updateDocumentPointerDrag}
+      onpointerup={finishDocumentPointerDrag}
+      onpointercancel={cancelDocumentPointerDrag}
+      onlostpointercapture={cancelDocumentPointerDrag}
       data-tauri-drag-region="false"
     >
       <span class="tree-chevron-placeholder"></span>
@@ -662,7 +708,7 @@
   .tree-row.active { background:var(--zc-active-row,#EAE6DD); font-weight:600; }
   .tree-row.selected { background:var(--zc-bg-chrome,#F4F2ED); outline:1px solid var(--zc-border,#E7E4DD); outline-offset:-1px; }
   .tree-row.drop-target { background:#e5eee2; outline:1px solid #9aae93; outline-offset:-1px; }
-  .tree-row.dragging { opacity:.45; }
+  .tree-row.dragging { opacity:.45; cursor:grabbing; user-select:none; }
   .tree-folder-label { display:flex; align-items:center; gap:2px; flex:1; min-width:0; border:0; background:transparent; padding:0; cursor:pointer; font-family:inherit; font-size:inherit; color:inherit; }
   .tree-chevron,.tree-chevron-placeholder { width:20px; height:20px; flex-shrink:0; }
   .tree-chevron { display:flex; align-items:center; justify-content:center; border:0; background:transparent; color:var(--zc-text-tertiary,#A8A49D); cursor:pointer; padding:0; border-radius:3px; }

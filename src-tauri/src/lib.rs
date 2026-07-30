@@ -55,6 +55,7 @@ pub fn run() {
             commands::rename_path,
             commands::move_document,
             commands::trash_path,
+            commands::print_webview,
             commands::get_default_data_dir,
             commands::join_path,
             commands::copy_file_to_folder,

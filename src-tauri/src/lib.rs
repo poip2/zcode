@@ -22,6 +22,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
+            // macOS keeps native decorations so Overlay can display traffic lights.
+            // Other platforms use the custom controls rendered by TitleBar.svelte.
+            #[cfg(not(target_os = "macos"))]
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_decorations(false)?;
+            }
+
             // Migrate legacy cleartext apiKey from zcode-settings.json to keychain.
             // tauri-plugin-store may persist to app_data_dir or app_config_dir,
             // so check both.

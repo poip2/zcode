@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "repo_fingerprint": "e157c364fcc3426c",
+  "round": 1,
+  "nodes": {
+    "app.entry": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "app.commands": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "app.keychain": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "app.sidebar_files": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "editor.markdown_render": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "editor.editor": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.core_loop": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.stream_provider": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.tools": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.sessions": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.compaction": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.skills_loader": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.runtime_env": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "frontend.main_ui": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "frontend.stores": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "app.file_watcher": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "app.i18n": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    },
+    "agent.sse": {
+      "status": "unvisited",
+      "verified": false,
+      "quiz_attempts": 0,
+      "updated_at": "2026-07-22T10:00:00Z"
+    }
+  },
+  "stats": {
+    "total_nodes": 18,
+    "understood": 0,
+    "unknown": 0,
+    "unvisited": 18
+  }
+}

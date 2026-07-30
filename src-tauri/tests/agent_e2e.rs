@@ -125,7 +125,7 @@ async fn test_agent_with_tools() -> Result<()> {
         Some("https://api.deepseek.com/v1/chat/completions"),
     )?);
 
-    let tools = ToolRegistry::new(&["read", "ls"], cwd);
+    let tools = ToolRegistry::new(&["read", "shell"], cwd);
 
     let mut stream_opts = StreamOptions {
         max_tokens: Some(200),
@@ -139,7 +139,7 @@ async fn test_agent_with_tools() -> Result<()> {
         system_prompt: Some(format!(
             "You are an expert coding assistant operating inside zcode. \
              You help users by reading files and executing commands.\n\
-             Available tools: read, ls\n\
+             Available tools: read, shell\n\
              Working directory: {}",
             cwd.display()
         )),
@@ -151,18 +151,20 @@ async fn test_agent_with_tools() -> Result<()> {
 
     let result = agent
         .run(
-            "Use the ls tool to list the current directory, then use read on whatever files you find.",
-            move |ev| {
-                match &ev {
-                    AgentEvent::TurnStart { turn_index, .. } => eprintln!("--- Turn #{turn_index} ---"),
-                    AgentEvent::ToolStart { tool_name, .. } => eprintln!("  [Tool: {tool_name}]"),
-                    AgentEvent::ToolEnd { tool_name, is_error, .. } => {
-                        eprintln!("  [ToolEnd: {tool_name} error={is_error}]")
-                    }
-                    AgentEvent::MessageUpdate { delta, .. } => print!("{delta}"),
-                    AgentEvent::AgentEnd { .. } => eprintln!("\n[AgentEnd]"),
-                    _ => {}
+            "Use shell to list the current directory, then use read on whatever files you find.",
+            move |ev| match &ev {
+                AgentEvent::TurnStart { turn_index, .. } => eprintln!("--- Turn #{turn_index} ---"),
+                AgentEvent::ToolStart { tool_name, .. } => eprintln!("  [Tool: {tool_name}]"),
+                AgentEvent::ToolEnd {
+                    tool_name,
+                    is_error,
+                    ..
+                } => {
+                    eprintln!("  [ToolEnd: {tool_name} error={is_error}]")
                 }
+                AgentEvent::MessageUpdate { delta, .. } => print!("{delta}"),
+                AgentEvent::AgentEnd { .. } => eprintln!("\n[AgentEnd]"),
+                _ => {}
             },
             CancellationToken::new(),
         )

@@ -250,7 +250,7 @@ function createSession(sessionId: string, initialMessages: ChatMessage[] = []) {
     const args: StartAgentTurnArgs = {
       sessionId,
       userMessage,
-      allowedTools: ["read", "write", "edit", "shell", "grep", "find", "ls"],
+      allowedTools: ["read", "write", "edit", "shell"],
       baseUrl: settings.baseUrl,
       model: settings.model,
       providerName: settings.providerName,

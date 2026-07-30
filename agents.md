@@ -17,7 +17,7 @@ agent.rs          ←── 主循环：输入 → Provider 调用 → 工具执
   │
   ├── provider.rs       ← LLM 抽象层（trait Provider）
   ├── providers/        ← Anthropic / OpenAI 实现
-  ├── tools/            ← 7 个工具（read/bash/edit/write/grep/find/ls）
+  ├── tools/            ← 4 个核心工具（read/shell/edit/write；搜索由 shell 完成）
   ├── skills.rs         ← 技能加载注入
   ├── compaction.rs     ← 上下文压缩（v0.6）
   ├── runtime_env.rs    ← 内置运行时管理（Python + uv + Bun）
@@ -215,17 +215,16 @@ pub trait Tool: Send + Sync {
 }
 ```
 
-### 工具注册表（7 个）
+### 工具注册表（4 个）
 
 | 工具 | 文件 | 危险 | 说明 |
 |---|---|---|---|
-| **read** | `read.rs` | ❌ | 文件读取：offset/limit、图片（png/jpg/gif/webp/bmp）、截断 2000 行/50KB |
-| **bash** | `bash.rs` | ✅ | Shell 执行：120s 超时、输出截断 2000 行/50KB、保存到临时文件。当内置运行时可用时，注入增强 PATH（含 Python venv 和 Bun 目录）和 `VIRTUAL_ENV` 环境变量 |
-| **edit** | `edit.rs` | ❌ | 精确文本替换：多编辑批量、oldText 唯一性校验、边界检查 |
-| **write** | `write.rs` | ❌ | 文件创建/覆盖：自动建父目录、路径限制 100MB |
-| **grep** | `grep.rs` | ❌ | ripgrep 文本搜索（需系统装 `rg`） |
-| **find** | `find.rs` | ❌ | fd-find 文件搜索（需系统装 `fd`） |
-| **ls** | `ls.rs` | ❌ | 目录列表：截断 500 条目、扫描上限 20000 |
+| **read** | `read.rs` | ❌ | 文件读取：offset/limit、图片（png/jpg/gif/webp/bmp）、截断 500 行/100KB |
+| **shell** | `bash.rs` | ✅ | 目录浏览、路径/内容搜索、Git、构建和测试；120s 超时、最多保留 200 行（另加截断提示）、总输出硬限制 30KB。当内置运行时可用时，注入增强 PATH（含 Python venv 和 Bun 目录）和 `VIRTUAL_ENV` 环境变量 |
+| **edit** | `edit.rs` | ✅ | 精确文本替换：多编辑批量、oldText 唯一性校验、边界检查 |
+| **write** | `write.rs` | ✅ | 文件创建/覆盖：自动建父目录、路径限制 100MB |
+
+搜索不再暴露 `grep`/`find`/`ls` 专用工具。Unix 平台由 `shell` 优先调用 `rg`，缺失时回退 `git grep`、BSD/POSIX `find`/`grep`；Windows 使用 PowerShell `Get-ChildItem` 和 `Select-String`。因此不再要求 macOS 额外安装 `rg` 或 `fd`。
 
 ### 路径安全
 
@@ -235,7 +234,8 @@ pub trait Tool: Send + Sync {
 
 ### 工具输出策略
 
-- 最大 500 行 / 100KB（v0.6 从 2000 行/1MB 收紧）
+- `read`：最大 500 行 / 100KB
+- `shell`：最多保留 200 行（另加截断提示），总输出硬限制 30KB；搜索命令还在命令侧限制为 200 行
 - Head+tail 截断：保留头部上下文 + 尾部错误信息
 - 截断标记注明省略字节/行数
 - UTF-8 安全截断：`truncate_at_char_boundary()`（v0.5）
@@ -358,7 +358,7 @@ startAgentTurn(args: StartAgentTurnArgs): Promise<void>
 | `provider_smoke.rs` | 两个 Provider 流式调用冒烟 |
 | `settings_keychain.rs` | keychain 存储+迁移+mask 边界（v0.4） |
 | `skill_e2e.rs` | 技能注入+模型识别端到端（需 API key） |
-| `tool_smoke.rs` | 所有 7 个工具单元测试 |
+| `tool_smoke.rs` | 4 个核心工具及 shell 搜索回退测试 |
 
 ---
 

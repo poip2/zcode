@@ -4,9 +4,6 @@
 
 pub mod bash;
 pub mod edit;
-pub mod find;
-pub mod grep;
-pub mod ls;
 pub mod read;
 pub mod write;
 
@@ -129,9 +126,6 @@ impl ToolRegistry {
     pub fn new(enabled: &[&str], cwd: &Path) -> Self {
         use bash::BashTool;
         use edit::EditTool;
-        use find::FindTool;
-        use grep::GrepTool;
-        use ls::LsTool;
         use read::ReadTool;
         use write::WriteTool;
 
@@ -142,9 +136,6 @@ impl ToolRegistry {
                 "shell" => tools.push(Box::new(BashTool::new(cwd))),
                 "edit" => tools.push(Box::new(EditTool::new(cwd))),
                 "write" => tools.push(Box::new(WriteTool::new(cwd))),
-                "grep" => tools.push(Box::new(GrepTool::new(cwd))),
-                "find" => tools.push(Box::new(FindTool::new(cwd))),
-                "ls" => tools.push(Box::new(LsTool::new(cwd))),
                 _ => {}
             }
         }
@@ -263,11 +254,6 @@ pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub const DEFAULT_MAX_LINES: usize = 500;
 pub const DEFAULT_MAX_BYTES: usize = 100_000;
-pub const GREP_MAX_LINE_LENGTH: usize = 500;
-pub const DEFAULT_GREP_LIMIT: usize = 100;
-pub const DEFAULT_FIND_LIMIT: usize = 1000;
-pub const DEFAULT_LS_LIMIT: usize = 500;
-pub const LS_SCAN_HARD_LIMIT: usize = 20_000;
 pub const READ_TOOL_MAX_BYTES: u64 = 100 * 1024 * 1024;
 pub const WRITE_TOOL_MAX_BYTES: usize = 100 * 1024 * 1024;
 pub const IMAGE_MAX_BYTES: usize = 4_718_592;
